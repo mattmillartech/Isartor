@@ -111,9 +111,7 @@ pub fn format_classify_prompt(prompt: &str) -> String {
 
 /// Format a simple task execution prompt using the Gemma-2 chat template.
 pub fn format_simple_prompt(prompt: &str) -> String {
-    format!(
-        "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
-    )
+    format!("<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n")
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -253,15 +251,11 @@ impl EmbeddedClassifier {
             .map_err(|e| anyhow::anyhow!("failed to load tokenizer: {e}"))?;
 
         // Resolve the end-of-turn token ID.
-        let eot_token_id = tokenizer
-            .token_to_id("<end_of_turn>")
-            .unwrap_or_else(|| {
-                tracing::warn!(
-                    "EmbeddedClassifier: <end_of_turn> token not found, using EOS fallback"
-                );
-                // Gemma-2 EOS token ID is typically 1.
-                tokenizer.token_to_id("<eos>").unwrap_or(1)
-            });
+        let eot_token_id = tokenizer.token_to_id("<end_of_turn>").unwrap_or_else(|| {
+            tracing::warn!("EmbeddedClassifier: <end_of_turn> token not found, using EOS fallback");
+            // Gemma-2 EOS token ID is typically 1.
+            tokenizer.token_to_id("<eos>").unwrap_or(1)
+        });
 
         let total_load_ms = load_start.elapsed().as_millis();
         tracing::info!(
@@ -316,8 +310,7 @@ impl EmbeddedClassifier {
             "EmbeddedClassifier: loading GGUF weights into memory"
         );
 
-        let mut file = std::fs::File::open(model_path)
-            .context("failed to open GGUF model file")?;
+        let mut file = std::fs::File::open(model_path).context("failed to open GGUF model file")?;
 
         let content = candle_core::quantized::gguf_file::Content::read(&mut file)
             .map_err(|e| anyhow::anyhow!("failed to parse GGUF content: {e}"))?;
@@ -466,7 +459,8 @@ impl EmbeddedClassifier {
             .forward(&prompt_tensor, 0)
             .map_err(|e| anyhow::anyhow!("forward pass (prefill) failed: {e}"))?;
 
-        let mut next_token = Self::sample_token(&logits, &all_tokens, temperature, repetition_penalty)?;
+        let mut next_token =
+            Self::sample_token(&logits, &all_tokens, temperature, repetition_penalty)?;
 
         generated.push(next_token);
         all_tokens.push(next_token);
@@ -542,10 +536,7 @@ impl EmbeddedClassifier {
         } else {
             // Temperature-scaled softmax sampling.
             let temp = temperature as f32;
-            let max_logit = logits_vec
-                .iter()
-                .cloned()
-                .fold(f32::NEG_INFINITY, f32::max);
+            let max_logit = logits_vec.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
             let exp_sum: f32 = logits_vec
                 .iter()

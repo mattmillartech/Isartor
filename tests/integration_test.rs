@@ -12,16 +12,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper — start the gateway on a random port and return its address.
 /// We inline the router setup here because we can't import from a bin crate.
-async fn start_gateway(
-    api_key: &str,
-    sidecar_url: &str,
-    embed_url: &str,
-) -> SocketAddr {
+async fn start_gateway(api_key: &str, sidecar_url: &str, embed_url: &str) -> SocketAddr {
     use axum::{
         extract::Request,
         middleware as axum_mw,
@@ -41,39 +37,45 @@ async fn start_gateway(
 
     tokio::spawn(async move {
         let app = Router::new()
-            .route("/healthz", get(|| async {
-                axum::Json(serde_json::json!({ "status": "ok" }))
-            }))
-            .route("/api/echo", post(|body: axum::body::Bytes| async move {
-                // Simple echo endpoint for testing auth pass-through.
-                axum::response::Response::builder()
-                    .status(200)
-                    .body(axum::body::Body::from(body))
-                    .unwrap()
-            }))
-            .layer(axum_mw::from_fn(move |req: Request, next: axum_mw::Next| {
-                let key = api_key.clone();
-                async move {
-                    let provided = req
-                        .headers()
-                        .get("X-API-Key")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("");
-                    if provided == key {
-                        next.run(req).await
-                    } else {
-                        axum::response::Response::builder()
-                            .status(401)
-                            .body(axum::body::Body::from(
-                                serde_json::to_vec(&serde_json::json!({
-                                    "error": "Unauthorized"
-                                }))
-                                .unwrap(),
-                            ))
-                            .unwrap()
+            .route(
+                "/healthz",
+                get(|| async { axum::Json(serde_json::json!({ "status": "ok" })) }),
+            )
+            .route(
+                "/api/echo",
+                post(|body: axum::body::Bytes| async move {
+                    // Simple echo endpoint for testing auth pass-through.
+                    axum::response::Response::builder()
+                        .status(200)
+                        .body(axum::body::Body::from(body))
+                        .unwrap()
+                }),
+            )
+            .layer(axum_mw::from_fn(
+                move |req: Request, next: axum_mw::Next| {
+                    let key = api_key.clone();
+                    async move {
+                        let provided = req
+                            .headers()
+                            .get("X-API-Key")
+                            .and_then(|v| v.to_str().ok())
+                            .unwrap_or("");
+                        if provided == key {
+                            next.run(req).await
+                        } else {
+                            axum::response::Response::builder()
+                                .status(401)
+                                .body(axum::body::Body::from(
+                                    serde_json::to_vec(&serde_json::json!({
+                                        "error": "Unauthorized"
+                                    }))
+                                    .unwrap(),
+                                ))
+                                .unwrap()
+                        }
                     }
-                }
-            }));
+                },
+            ));
 
         axum::serve(listener, app).await.unwrap();
     });
@@ -208,5 +210,8 @@ async fn wiremock_simulates_sidecar_endpoints() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let json: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(json["data"][0]["embedding"], serde_json::json!([0.1, 0.2, 0.3]));
+    assert_eq!(
+        json["data"][0]["embedding"],
+        serde_json::json!([0.1, 0.2, 0.3])
+    );
 }

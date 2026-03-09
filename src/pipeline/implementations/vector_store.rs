@@ -147,7 +147,10 @@ mod tests {
     async fn insert_and_search_hit() {
         let store = InMemoryVectorStore::new(300, 100);
         let embedding = vec![1.0, 0.0, 0.0];
-        store.insert(embedding.clone(), "response".into()).await.unwrap();
+        store
+            .insert(embedding.clone(), "response".into())
+            .await
+            .unwrap();
 
         let result = store.search(&embedding, 0.9).await.unwrap();
         assert!(result.is_some());

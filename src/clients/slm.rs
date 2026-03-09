@@ -286,8 +286,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_completion_response("SIMPLE_LOOKUP")),
+                ResponseTemplate::new(200).set_body_json(mock_completion_response("SIMPLE_LOOKUP")),
             )
             .mount(&server)
             .await;
@@ -340,8 +339,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_completion_response("Hello there!")),
+                ResponseTemplate::new(200).set_body_json(mock_completion_response("Hello there!")),
             )
             .mount(&server)
             .await;
@@ -351,7 +349,10 @@ mod tests {
             role: "user".into(),
             content: "Hi".into(),
         }];
-        let result = client.chat_completion(messages, Some(0.7), Some(100)).await.unwrap();
+        let result = client
+            .chat_completion(messages, Some(0.7), Some(100))
+            .await
+            .unwrap();
         assert_eq!(result, "Hello there!");
     }
 
@@ -366,9 +367,7 @@ mod tests {
             .await;
 
         let client = SlmClient::new(&test_settings(&server.uri()));
-        let result = client
-            .chat_completion(vec![], None, None)
-            .await;
+        let result = client.chat_completion(vec![], None, None).await;
         assert!(result.is_err());
     }
 
@@ -378,17 +377,12 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_string("not valid json"),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_string("not valid json"))
             .mount(&server)
             .await;
 
         let client = SlmClient::new(&test_settings(&server.uri()));
-        let result = client
-            .chat_completion(vec![], None, None)
-            .await;
+        let result = client.chat_completion(vec![], None, None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("parse"));
     }

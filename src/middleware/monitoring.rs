@@ -4,8 +4,8 @@ use std::time::Instant;
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
-use opentelemetry::{global, KeyValue};
 use opentelemetry::metrics::Counter;
+use opentelemetry::{global, KeyValue};
 use tracing::{info_span, Instrument};
 
 use crate::state::AppState;
@@ -15,10 +15,7 @@ use crate::state::AppState;
 /// Starts the parent trace span for the request, yielding performance metrics.
 /// On completion, it records a standard `gateway_requests_total` metric
 /// with labels indicating the final layer that handled the query.
-pub async fn root_monitoring_middleware(
-    request: Request,
-    next: Next,
-) -> impl IntoResponse {
+pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl IntoResponse {
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
 
@@ -57,10 +54,10 @@ pub async fn root_monitoring_middleware(
 
         let duration = start_time.elapsed();
 
-        // Attempt to extract the "final_handling_layer" attribute from the span 
+        // Attempt to extract the "final_handling_layer" attribute from the span
         // to categorize cost. This must be set by the child layers.
         // For metrics, we need to extract exactly what the child layers reported via extensions or headers.
-        
+
         let mut handled_by_layer = "unknown";
         if let Some(extensions) = response.extensions().get::<crate::models::ChatResponse>() {
             handled_by_layer = match extensions.layer {
@@ -104,13 +101,13 @@ pub async fn root_monitoring_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, routing::post, Router, middleware as axum_mw, Json};
     use axum::http::StatusCode;
+    use axum::{body::Body, middleware as axum_mw, routing::post, Json, Router};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     use crate::clients::slm::SlmClient;
-    use crate::config::{AppConfig, CacheMode, Layer2Settings, EmbeddingSidecarSettings};
+    use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::models::ChatResponse;
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
@@ -176,21 +173,29 @@ mod tests {
 
     fn monitoring_app(state: Arc<AppState>) -> Router {
         Router::new()
-            .route("/api/chat", post(|| async {
-                (StatusCode::OK, Json(ChatResponse {
-                    layer: 3,
-                    message: "ok".into(),
-                    model: None,
-                }))
-            }))
+            .route(
+                "/api/chat",
+                post(|| async {
+                    (
+                        StatusCode::OK,
+                        Json(ChatResponse {
+                            layer: 3,
+                            message: "ok".into(),
+                            model: None,
+                        }),
+                    )
+                }),
+            )
             .layer(axum_mw::from_fn(root_monitoring_middleware))
-            .layer(axum_mw::from_fn(move |mut req: axum::extract::Request, next: axum_mw::Next| {
-                let st = state.clone();
-                async move {
-                    req.extensions_mut().insert(st);
-                    next.run(req).await
-                }
-            }))
+            .layer(axum_mw::from_fn(
+                move |mut req: axum::extract::Request, next: axum_mw::Next| {
+                    let st = state.clone();
+                    async move {
+                        req.extensions_mut().insert(st);
+                        next.run(req).await
+                    }
+                },
+            ))
     }
 
     #[tokio::test]
@@ -231,17 +236,20 @@ mod tests {
         let state = test_state(false);
         // Build an app that returns 401
         let app = Router::new()
-            .route("/api/chat", post(|| async {
-                StatusCode::UNAUTHORIZED.into_response()
-            }))
+            .route(
+                "/api/chat",
+                post(|| async { StatusCode::UNAUTHORIZED.into_response() }),
+            )
             .layer(axum_mw::from_fn(root_monitoring_middleware))
-            .layer(axum_mw::from_fn(move |mut req: axum::extract::Request, next: axum_mw::Next| {
-                let st = state.clone();
-                async move {
-                    req.extensions_mut().insert(st);
-                    next.run(req).await
-                }
-            }));
+            .layer(axum_mw::from_fn(
+                move |mut req: axum::extract::Request, next: axum_mw::Next| {
+                    let st = state.clone();
+                    async move {
+                        req.extensions_mut().insert(st);
+                        next.run(req).await
+                    }
+                },
+            ));
 
         let req = axum::extract::Request::builder()
             .method("POST")

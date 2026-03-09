@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::RwLock;
 use rig::agent::Agent;
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
-use rig::providers::{openai, azure, anthropic, xai};
+use rig::providers::{anthropic, azure, openai, xai};
+use tokio::sync::RwLock;
 
 use crate::clients::slm::SlmClient;
 use crate::config::AppConfig;
@@ -57,7 +57,13 @@ impl ExactCache {
                 entries.remove(&oldest_key);
             }
         }
-        entries.insert(key, ExactEntry { response, created_at: now });
+        entries.insert(
+            key,
+            ExactEntry {
+                response,
+                created_at: now,
+            },
+        );
     }
 }
 
@@ -80,7 +86,10 @@ where
     M: rig::completion::CompletionModel + Send + Sync,
 {
     async fn chat(&self, prompt: &str) -> anyhow::Result<String> {
-        self.agent.prompt(prompt).await.map_err(|e| anyhow::anyhow!(e))
+        self.agent
+            .prompt(prompt)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     fn provider_name(&self) -> &'static str {
@@ -96,7 +105,7 @@ pub struct AppState {
     pub http_client: reqwest::Client,
     pub exact_cache: Arc<ExactCache>,
     pub vector_cache: Arc<VectorCache>,
-    
+
     /// Rig AI Agent encapsulating the configured Layer 3 provider.
     pub llm_agent: Arc<dyn AppLlmAgent>,
 
@@ -111,8 +120,15 @@ impl AppState {
             .build()
             .expect("failed to build reqwest client");
 
-        let exact_cache = Arc::new(ExactCache::new(config.cache_ttl_secs, config.cache_max_capacity));
-        let vector_cache = Arc::new(VectorCache::new(config.similarity_threshold, config.cache_ttl_secs, config.cache_max_capacity));
+        let exact_cache = Arc::new(ExactCache::new(
+            config.cache_ttl_secs,
+            config.cache_max_capacity,
+        ));
+        let vector_cache = Arc::new(VectorCache::new(
+            config.similarity_threshold,
+            config.cache_ttl_secs,
+            config.cache_max_capacity,
+        ));
 
         let agent: Arc<dyn AppLlmAgent> = match config.llm_provider.as_str() {
             "azure" => {
@@ -122,22 +138,34 @@ impl AppState {
                     .api_version(&config.azure_api_version)
                     .build()
                     .expect("Failed to initialize Azure OpenAI client");
-                Arc::new(RigAgent { name: "azure", agent: client.agent(&config.azure_deployment_id).build() })
+                Arc::new(RigAgent {
+                    name: "azure",
+                    agent: client.agent(&config.azure_deployment_id).build(),
+                })
             }
             "anthropic" => {
                 let client = anthropic::Client::new(&config.external_llm_api_key)
                     .expect("Failed to initialize Anthropic client");
-                Arc::new(RigAgent { name: "anthropic", agent: client.agent(&config.external_llm_model).build() })
+                Arc::new(RigAgent {
+                    name: "anthropic",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
             }
             "xai" => {
                 let client = xai::Client::new(&config.external_llm_api_key)
                     .expect("Failed to initialize xAI client");
-                Arc::new(RigAgent { name: "xai", agent: client.agent(&config.external_llm_model).build() })
+                Arc::new(RigAgent {
+                    name: "xai",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
             }
             _ => {
                 let client = openai::Client::new(&config.external_llm_api_key)
                     .expect("Failed to initialize OpenAI client");
-                Arc::new(RigAgent { name: "openai", agent: client.agent(&config.external_llm_model).build() })
+                Arc::new(RigAgent {
+                    name: "openai",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
             }
         };
 

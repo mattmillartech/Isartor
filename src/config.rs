@@ -72,7 +72,6 @@ pub struct AppConfig {
     pub gateway_api_key: String,
 
     // ── Layer 1 — Cache ─────────────────────────────────────────────
-
     /// Cache strategy: "exact", "semantic", or "both".
     pub cache_mode: CacheMode,
 
@@ -91,7 +90,6 @@ pub struct AppConfig {
     pub cache_max_capacity: u64,
 
     // ── Layer 2 — SLM Sidecar (llama.cpp) ───────────────────────────
-
     /// Nested Layer 2 sidecar settings (generation model).
     pub layer2: Layer2Settings,
 
@@ -104,12 +102,10 @@ pub struct AppConfig {
     pub local_slm_model: String,
 
     // ── Embedding Sidecar ───────────────────────────────────────────
-
     /// Nested embedding sidecar settings (dedicated embedding model).
     pub embedding_sidecar: EmbeddingSidecarSettings,
 
     // ── Layer 3 — External LLM ──────────────────────────────────────
-
     /// LLM provider: "openai", "azure", "anthropic", or "xai".
     pub llm_provider: String,
 
@@ -127,7 +123,6 @@ pub struct AppConfig {
     pub external_llm_api_key: String,
 
     // ── Azure-specific ──────────────────────────────────────────────
-
     /// Azure OpenAI deployment ID (only used when `llm_provider` = "azure").
     pub azure_deployment_id: String,
 
@@ -139,7 +134,6 @@ pub struct AppConfig {
     pub otel_exporter_endpoint: String,
 
     // ── Pipeline v2 — Algorithmic Gateway ────────────────────────
-
     /// Embedding model dimension (must match the model served by the sidecar).
     /// Common values: 384 (all-minilm), 768 (nomic-embed-text), 1024 (mxbai-embed-large).
     pub pipeline_embedding_dim: u64,
@@ -196,7 +190,10 @@ impl AppConfig {
             .set_default("embedding_sidecar.timeout_seconds", 10_i64)?
             // Layer 3
             .set_default("llm_provider", "openai")?
-            .set_default("external_llm_url", "https://api.openai.com/v1/chat/completions")?
+            .set_default(
+                "external_llm_url",
+                "https://api.openai.com/v1/chat/completions",
+            )?
             .set_default("external_llm_model", "gpt-4o-mini")?
             .set_default("external_llm_api_key", "")?
             // Azure
@@ -213,15 +210,9 @@ impl AppConfig {
             .set_default("pipeline_min_concurrency", 4_i64)?
             .set_default("pipeline_target_latency_ms", 500_i64)?
             // Optional config file -------------------------------------
-            .add_source(
-                config::File::with_name("isartor")
-                    .required(false),
-            )
+            .add_source(config::File::with_name("isartor").required(false))
             // Environment overrides (ISARTOR_ prefix) ------------------
-            .add_source(
-                config::Environment::with_prefix("ISARTOR")
-                    .separator("__"),
-            )
+            .add_source(config::Environment::with_prefix("ISARTOR").separator("__"))
             .build()?;
 
         Ok(cfg.try_deserialize()?)
@@ -263,7 +254,8 @@ mod tests {
 
     #[test]
     fn layer2_settings_deserialize() {
-        let json = r#"{"sidecar_url":"http://localhost:8081","model_name":"phi-3","timeout_seconds":30}"#;
+        let json =
+            r#"{"sidecar_url":"http://localhost:8081","model_name":"phi-3","timeout_seconds":30}"#;
         let settings: Layer2Settings = serde_json::from_str(json).unwrap();
         assert_eq!(settings.sidecar_url, "http://localhost:8081");
         assert_eq!(settings.model_name, "phi-3");
@@ -309,7 +301,10 @@ mod tests {
                 assert_eq!(config.layer2.sidecar_url, "http://127.0.0.1:8081");
                 assert_eq!(config.layer2.model_name, "phi-3-mini");
                 assert_eq!(config.layer2.timeout_seconds, 30);
-                assert_eq!(config.embedding_sidecar.sidecar_url, "http://127.0.0.1:8082");
+                assert_eq!(
+                    config.embedding_sidecar.sidecar_url,
+                    "http://127.0.0.1:8082"
+                );
                 assert_eq!(config.embedding_sidecar.model_name, "all-minilm");
                 assert_eq!(config.embedding_sidecar.timeout_seconds, 10);
                 assert_eq!(config.llm_provider, "openai");
@@ -330,41 +325,78 @@ mod tests {
         // Build config directly from the builder with env overrides injected
         // as explicit config values, avoiding env::set_var race conditions.
         let cfg = config::Config::builder()
-            .set_default("host_port", "0.0.0.0:8080").unwrap()
-            .set_default("gateway_api_key", "changeme").unwrap()
-            .set_default("cache_mode", "both").unwrap()
-            .set_default("embedding_model", "all-minilm").unwrap()
-            .set_default("similarity_threshold", 0.85).unwrap()
-            .set_default("cache_ttl_secs", 300_i64).unwrap()
-            .set_default("cache_max_capacity", 10_000_i64).unwrap()
-            .set_default("layer2.sidecar_url", "http://127.0.0.1:8081").unwrap()
-            .set_default("layer2.model_name", "phi-3-mini").unwrap()
-            .set_default("layer2.timeout_seconds", 30_i64).unwrap()
-            .set_default("local_slm_url", "http://localhost:11434/api/generate").unwrap()
-            .set_default("local_slm_model", "llama3").unwrap()
-            .set_default("embedding_sidecar.sidecar_url", "http://127.0.0.1:8082").unwrap()
-            .set_default("embedding_sidecar.model_name", "all-minilm").unwrap()
-            .set_default("embedding_sidecar.timeout_seconds", 10_i64).unwrap()
-            .set_default("llm_provider", "openai").unwrap()
-            .set_default("external_llm_url", "https://api.openai.com/v1/chat/completions").unwrap()
-            .set_default("external_llm_model", "gpt-4o-mini").unwrap()
-            .set_default("external_llm_api_key", "").unwrap()
-            .set_default("azure_deployment_id", "").unwrap()
-            .set_default("azure_api_version", "2024-08-01-preview").unwrap()
-            .set_default("enable_monitoring", false).unwrap()
-            .set_default("otel_exporter_endpoint", "http://localhost:4317").unwrap()
-            .set_default("pipeline_embedding_dim", 384_i64).unwrap()
-            .set_default("pipeline_similarity_threshold", 0.92).unwrap()
-            .set_default("pipeline_rerank_top_k", 5_i64).unwrap()
-            .set_default("pipeline_max_concurrency", 256_i64).unwrap()
-            .set_default("pipeline_min_concurrency", 4_i64).unwrap()
-            .set_default("pipeline_target_latency_ms", 500_i64).unwrap()
+            .set_default("host_port", "0.0.0.0:8080")
+            .unwrap()
+            .set_default("gateway_api_key", "changeme")
+            .unwrap()
+            .set_default("cache_mode", "both")
+            .unwrap()
+            .set_default("embedding_model", "all-minilm")
+            .unwrap()
+            .set_default("similarity_threshold", 0.85)
+            .unwrap()
+            .set_default("cache_ttl_secs", 300_i64)
+            .unwrap()
+            .set_default("cache_max_capacity", 10_000_i64)
+            .unwrap()
+            .set_default("layer2.sidecar_url", "http://127.0.0.1:8081")
+            .unwrap()
+            .set_default("layer2.model_name", "phi-3-mini")
+            .unwrap()
+            .set_default("layer2.timeout_seconds", 30_i64)
+            .unwrap()
+            .set_default("local_slm_url", "http://localhost:11434/api/generate")
+            .unwrap()
+            .set_default("local_slm_model", "llama3")
+            .unwrap()
+            .set_default("embedding_sidecar.sidecar_url", "http://127.0.0.1:8082")
+            .unwrap()
+            .set_default("embedding_sidecar.model_name", "all-minilm")
+            .unwrap()
+            .set_default("embedding_sidecar.timeout_seconds", 10_i64)
+            .unwrap()
+            .set_default("llm_provider", "openai")
+            .unwrap()
+            .set_default(
+                "external_llm_url",
+                "https://api.openai.com/v1/chat/completions",
+            )
+            .unwrap()
+            .set_default("external_llm_model", "gpt-4o-mini")
+            .unwrap()
+            .set_default("external_llm_api_key", "")
+            .unwrap()
+            .set_default("azure_deployment_id", "")
+            .unwrap()
+            .set_default("azure_api_version", "2024-08-01-preview")
+            .unwrap()
+            .set_default("enable_monitoring", false)
+            .unwrap()
+            .set_default("otel_exporter_endpoint", "http://localhost:4317")
+            .unwrap()
+            .set_default("pipeline_embedding_dim", 384_i64)
+            .unwrap()
+            .set_default("pipeline_similarity_threshold", 0.92)
+            .unwrap()
+            .set_default("pipeline_rerank_top_k", 5_i64)
+            .unwrap()
+            .set_default("pipeline_max_concurrency", 256_i64)
+            .unwrap()
+            .set_default("pipeline_min_concurrency", 4_i64)
+            .unwrap()
+            .set_default("pipeline_target_latency_ms", 500_i64)
+            .unwrap()
             // Simulate env overrides by setting values directly.
-            .set_override("host_port", "127.0.0.1:9090").unwrap()
-            .set_override("gateway_api_key", "my-secret-key").unwrap()
-            .set_override("cache_mode", "exact").unwrap()
-            .set_override("cache_ttl_secs", 600_i64).unwrap()
-            .set_override("enable_monitoring", true).unwrap()
+            .set_override("host_port", "127.0.0.1:9090")
+            .unwrap()
+            .set_override("gateway_api_key", "my-secret-key")
+            .unwrap()
+            .set_override("cache_mode", "exact")
+            .unwrap()
+            .set_override("cache_ttl_secs", 600_i64)
+            .unwrap()
+            .set_override("enable_monitoring", true)
+            .unwrap()
             .build()
             .unwrap();
 
@@ -381,40 +413,76 @@ mod tests {
     fn app_config_nested_env_override() {
         // Build config directly with nested overrides to avoid env::set_var issues.
         let cfg = config::Config::builder()
-            .set_default("host_port", "0.0.0.0:8080").unwrap()
-            .set_default("gateway_api_key", "changeme").unwrap()
-            .set_default("cache_mode", "both").unwrap()
-            .set_default("embedding_model", "all-minilm").unwrap()
-            .set_default("similarity_threshold", 0.85).unwrap()
-            .set_default("cache_ttl_secs", 300_i64).unwrap()
-            .set_default("cache_max_capacity", 10_000_i64).unwrap()
-            .set_default("layer2.sidecar_url", "http://127.0.0.1:8081").unwrap()
-            .set_default("layer2.model_name", "phi-3-mini").unwrap()
-            .set_default("layer2.timeout_seconds", 30_i64).unwrap()
-            .set_default("local_slm_url", "http://localhost:11434/api/generate").unwrap()
-            .set_default("local_slm_model", "llama3").unwrap()
-            .set_default("embedding_sidecar.sidecar_url", "http://127.0.0.1:8082").unwrap()
-            .set_default("embedding_sidecar.model_name", "all-minilm").unwrap()
-            .set_default("embedding_sidecar.timeout_seconds", 10_i64).unwrap()
-            .set_default("llm_provider", "openai").unwrap()
-            .set_default("external_llm_url", "https://api.openai.com/v1/chat/completions").unwrap()
-            .set_default("external_llm_model", "gpt-4o-mini").unwrap()
-            .set_default("external_llm_api_key", "").unwrap()
-            .set_default("azure_deployment_id", "").unwrap()
-            .set_default("azure_api_version", "2024-08-01-preview").unwrap()
-            .set_default("enable_monitoring", false).unwrap()
-            .set_default("otel_exporter_endpoint", "http://localhost:4317").unwrap()
-            .set_default("pipeline_embedding_dim", 384_i64).unwrap()
-            .set_default("pipeline_similarity_threshold", 0.92).unwrap()
-            .set_default("pipeline_rerank_top_k", 5_i64).unwrap()
-            .set_default("pipeline_max_concurrency", 256_i64).unwrap()
-            .set_default("pipeline_min_concurrency", 4_i64).unwrap()
-            .set_default("pipeline_target_latency_ms", 500_i64).unwrap()
+            .set_default("host_port", "0.0.0.0:8080")
+            .unwrap()
+            .set_default("gateway_api_key", "changeme")
+            .unwrap()
+            .set_default("cache_mode", "both")
+            .unwrap()
+            .set_default("embedding_model", "all-minilm")
+            .unwrap()
+            .set_default("similarity_threshold", 0.85)
+            .unwrap()
+            .set_default("cache_ttl_secs", 300_i64)
+            .unwrap()
+            .set_default("cache_max_capacity", 10_000_i64)
+            .unwrap()
+            .set_default("layer2.sidecar_url", "http://127.0.0.1:8081")
+            .unwrap()
+            .set_default("layer2.model_name", "phi-3-mini")
+            .unwrap()
+            .set_default("layer2.timeout_seconds", 30_i64)
+            .unwrap()
+            .set_default("local_slm_url", "http://localhost:11434/api/generate")
+            .unwrap()
+            .set_default("local_slm_model", "llama3")
+            .unwrap()
+            .set_default("embedding_sidecar.sidecar_url", "http://127.0.0.1:8082")
+            .unwrap()
+            .set_default("embedding_sidecar.model_name", "all-minilm")
+            .unwrap()
+            .set_default("embedding_sidecar.timeout_seconds", 10_i64)
+            .unwrap()
+            .set_default("llm_provider", "openai")
+            .unwrap()
+            .set_default(
+                "external_llm_url",
+                "https://api.openai.com/v1/chat/completions",
+            )
+            .unwrap()
+            .set_default("external_llm_model", "gpt-4o-mini")
+            .unwrap()
+            .set_default("external_llm_api_key", "")
+            .unwrap()
+            .set_default("azure_deployment_id", "")
+            .unwrap()
+            .set_default("azure_api_version", "2024-08-01-preview")
+            .unwrap()
+            .set_default("enable_monitoring", false)
+            .unwrap()
+            .set_default("otel_exporter_endpoint", "http://localhost:4317")
+            .unwrap()
+            .set_default("pipeline_embedding_dim", 384_i64)
+            .unwrap()
+            .set_default("pipeline_similarity_threshold", 0.92)
+            .unwrap()
+            .set_default("pipeline_rerank_top_k", 5_i64)
+            .unwrap()
+            .set_default("pipeline_max_concurrency", 256_i64)
+            .unwrap()
+            .set_default("pipeline_min_concurrency", 4_i64)
+            .unwrap()
+            .set_default("pipeline_target_latency_ms", 500_i64)
+            .unwrap()
             // Nested struct overrides.
-            .set_override("layer2.sidecar_url", "http://custom:9999").unwrap()
-            .set_override("layer2.model_name", "custom-model").unwrap()
-            .set_override("layer2.timeout_seconds", 60_i64).unwrap()
-            .set_override("embedding_sidecar.sidecar_url", "http://embed:7777").unwrap()
+            .set_override("layer2.sidecar_url", "http://custom:9999")
+            .unwrap()
+            .set_override("layer2.model_name", "custom-model")
+            .unwrap()
+            .set_override("layer2.timeout_seconds", 60_i64)
+            .unwrap()
+            .set_override("embedding_sidecar.sidecar_url", "http://embed:7777")
+            .unwrap()
             .build()
             .unwrap();
 

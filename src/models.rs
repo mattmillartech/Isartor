@@ -131,7 +131,9 @@ mod tests {
 
     #[test]
     fn chat_request_serialize_roundtrip() {
-        let req = ChatRequest { prompt: "test".into() };
+        let req = ChatRequest {
+            prompt: "test".into(),
+        };
         let json = serde_json::to_string(&req).unwrap();
         let back: ChatRequest = serde_json::from_str(&json).unwrap();
         assert_eq!(back.prompt, "test");

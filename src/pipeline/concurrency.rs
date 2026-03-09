@@ -149,7 +149,9 @@ impl AdaptiveConcurrencyLimiter {
     fn percentile(&self, window: &VecDeque<Duration>, pct: usize) -> Duration {
         let mut sorted: Vec<Duration> = window.iter().copied().collect();
         sorted.sort();
-        let idx = (sorted.len() * pct / 100).saturating_sub(1).min(sorted.len() - 1);
+        let idx = (sorted.len() * pct / 100)
+            .saturating_sub(1)
+            .min(sorted.len() - 1);
         sorted[idx]
     }
 }
@@ -272,9 +274,7 @@ mod tests {
 
         // Simulate 15 high-latency requests (> target latency).
         for _ in 0..15 {
-            limiter
-                .record_latency(Duration::from_millis(500))
-                .await;
+            limiter.record_latency(Duration::from_millis(500)).await;
         }
 
         let limit = limiter.current_limit();
@@ -293,9 +293,7 @@ mod tests {
 
         // Record 15 low-latency observations.
         for _ in 0..15 {
-            limiter
-                .record_latency(Duration::from_millis(1))
-                .await;
+            limiter.record_latency(Duration::from_millis(1)).await;
         }
 
         // The limit should stay at max or increase to max.

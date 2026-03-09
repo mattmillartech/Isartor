@@ -8,7 +8,9 @@
 use async_trait::async_trait;
 
 use super::context::IntentClassification;
-use super::traits::{Embedder, ExternalLlm, IntentClassifier, LocalExecutor, Reranker, VectorStore};
+use super::traits::{
+    Embedder, ExternalLlm, IntentClassifier, LocalExecutor, Reranker, VectorStore,
+};
 
 // ═════════════════════════════════════════════════════════════════════
 // Layer 1 Stubs
@@ -137,10 +139,7 @@ pub struct StubIntentClassifier;
 
 #[async_trait]
 impl IntentClassifier for StubIntentClassifier {
-    async fn classify(
-        &self,
-        text: &str,
-    ) -> anyhow::Result<(IntentClassification, f64)> {
+    async fn classify(&self, text: &str) -> anyhow::Result<(IntentClassification, f64)> {
         // TODO: Implement using local SLM performing Zero-Shot NLI task.
         //
         // Production implementation should:
@@ -203,7 +202,10 @@ impl LocalExecutor for StubLocalExecutor {
         // TODO: Implement via local SLM (Ollama, vLLM, or ONNX runtime).
         //
         // This stub returns a synthetic response for testing.
-        tracing::debug!(prompt_len = prompt.len(), "StubLocalExecutor: generating simple response");
+        tracing::debug!(
+            prompt_len = prompt.len(),
+            "StubLocalExecutor: generating simple response"
+        );
         Ok(format!(
             "[StubLocalExecutor] Simple response for: \"{}\"",
             truncate(prompt, 80),
@@ -241,14 +243,12 @@ impl Reranker for StubReranker {
         //   3. Sort by descending score and return top-K.
         //
         // This stub assigns a synthetic score based on keyword overlap.
-        let prompt_words: std::collections::HashSet<&str> =
-            prompt.split_whitespace().collect();
+        let prompt_words: std::collections::HashSet<&str> = prompt.split_whitespace().collect();
 
         let mut scored: Vec<(String, f64)> = documents
             .iter()
             .map(|doc| {
-                let doc_words: std::collections::HashSet<&str> =
-                    doc.split_whitespace().collect();
+                let doc_words: std::collections::HashSet<&str> = doc.split_whitespace().collect();
                 let overlap = prompt_words.intersection(&doc_words).count() as f64;
                 let score = overlap / (prompt_words.len().max(1) as f64);
                 (doc.clone(), score)
@@ -284,11 +284,7 @@ pub struct StubExternalLlm;
 
 #[async_trait]
 impl ExternalLlm for StubExternalLlm {
-    async fn complete(
-        &self,
-        prompt: &str,
-        context_documents: &[String],
-    ) -> anyhow::Result<String> {
+    async fn complete(&self, prompt: &str, context_documents: &[String]) -> anyhow::Result<String> {
         // TODO: Implement via rig-core Agent or direct HTTP call to
         //       the configured LLM provider.
         //
@@ -352,8 +348,8 @@ fn truncate(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pipeline::traits::*;
     use crate::pipeline::context::IntentClassification;
+    use crate::pipeline::traits::*;
 
     // ── StubEmbedder ─────────────────────────────────────────────
 
@@ -370,7 +366,10 @@ mod tests {
         let embedder = StubEmbedder::new(64);
         let vector = embedder.embed("test").await.unwrap();
         let magnitude: f64 = vector.iter().map(|x| x * x).sum::<f64>().sqrt();
-        assert!((magnitude - 1.0).abs() < 1e-6, "Embedding should be L2-normalised");
+        assert!(
+            (magnitude - 1.0).abs() < 1e-6,
+            "Embedding should be L2-normalised"
+        );
     }
 
     #[tokio::test]

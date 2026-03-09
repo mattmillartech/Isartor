@@ -97,10 +97,7 @@ impl LlamaCppIntentClassifier {
         let upper = raw.to_uppercase();
 
         // Extract label.
-        let label = if let Some(rest) = upper
-            .lines()
-            .find(|l| l.trim().starts_with("LABEL:"))
-        {
+        let label = if let Some(rest) = upper.lines().find(|l| l.trim().starts_with("LABEL:")) {
             rest.trim()
                 .strip_prefix("LABEL:")
                 .unwrap_or("")
@@ -142,10 +139,7 @@ impl LlamaCppIntentClassifier {
 
 #[async_trait]
 impl IntentClassifier for LlamaCppIntentClassifier {
-    async fn classify(
-        &self,
-        text: &str,
-    ) -> anyhow::Result<(IntentClassification, f64)> {
+    async fn classify(&self, text: &str) -> anyhow::Result<(IntentClassification, f64)> {
         let req = ChatCompletionRequest {
             model: self.model.clone(),
             messages: vec![
@@ -229,18 +223,16 @@ mod tests {
 
     #[test]
     fn parse_simple() {
-        let (intent, confidence) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: SIMPLE\nCONFIDENCE: 0.95",
-        );
+        let (intent, confidence) =
+            LlamaCppIntentClassifier::parse_response("LABEL: SIMPLE\nCONFIDENCE: 0.95");
         assert_eq!(intent, IntentClassification::Simple);
         assert!((confidence - 0.95).abs() < 1e-6);
     }
 
     #[test]
     fn parse_complex() {
-        let (intent, confidence) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: COMPLEX\nCONFIDENCE: 0.88",
-        );
+        let (intent, confidence) =
+            LlamaCppIntentClassifier::parse_response("LABEL: COMPLEX\nCONFIDENCE: 0.88");
         assert_eq!(intent, IntentClassification::Complex);
         assert!((confidence - 0.88).abs() < 1e-6);
     }
@@ -253,17 +245,14 @@ mod tests {
 
     #[test]
     fn parse_codegen() {
-        let (intent, _) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: CODEGEN\nCONFIDENCE: 0.85",
-        );
+        let (intent, _) =
+            LlamaCppIntentClassifier::parse_response("LABEL: CODEGEN\nCONFIDENCE: 0.85");
         assert_eq!(intent, IntentClassification::CodeGen);
     }
 
     #[test]
     fn parse_code_variant() {
-        let (intent, _) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: CODE\nCONFIDENCE: 0.80",
-        );
+        let (intent, _) = LlamaCppIntentClassifier::parse_response("LABEL: CODE\nCONFIDENCE: 0.80");
         assert_eq!(intent, IntentClassification::CodeGen);
     }
 
@@ -276,9 +265,8 @@ mod tests {
 
     #[test]
     fn parse_unrecognized_label_defaults_to_complex() {
-        let (intent, _) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: FOOBAR\nCONFIDENCE: 0.5",
-        );
+        let (intent, _) =
+            LlamaCppIntentClassifier::parse_response("LABEL: FOOBAR\nCONFIDENCE: 0.5");
         assert_eq!(intent, IntentClassification::Complex);
     }
 
@@ -290,9 +278,8 @@ mod tests {
 
     #[test]
     fn parse_confidence_clamped() {
-        let (_, confidence) = LlamaCppIntentClassifier::parse_response(
-            "LABEL: SIMPLE\nCONFIDENCE: 1.5",
-        );
+        let (_, confidence) =
+            LlamaCppIntentClassifier::parse_response("LABEL: SIMPLE\nCONFIDENCE: 1.5");
         assert!((confidence - 1.0).abs() < 1e-6);
     }
 
@@ -309,7 +296,10 @@ mod tests {
     fn constructor_appends_path() {
         let client = reqwest::Client::new();
         let c = LlamaCppIntentClassifier::new(client, "http://localhost:8081", "model".into());
-        assert_eq!(c.completions_url, "http://localhost:8081/v1/chat/completions");
+        assert_eq!(
+            c.completions_url,
+            "http://localhost:8081/v1/chat/completions"
+        );
     }
 
     #[test]
@@ -320,7 +310,10 @@ mod tests {
             "http://localhost:8081/v1/chat/completions",
             "model".into(),
         );
-        assert_eq!(c.completions_url, "http://localhost:8081/v1/chat/completions");
+        assert_eq!(
+            c.completions_url,
+            "http://localhost:8081/v1/chat/completions"
+        );
     }
 
     // ── Integration tests with wiremock ──────────────────────────
@@ -339,8 +332,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let classifier =
-            LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
+        let classifier = LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
         let (intent, confidence) = classifier.classify("hello").await.unwrap();
         assert_eq!(intent, IntentClassification::Simple);
         assert!((confidence - 0.95).abs() < 1e-6);
@@ -357,8 +349,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let classifier =
-            LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
+        let classifier = LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
         let result = classifier.classify("hello").await;
         assert!(result.is_err());
     }
@@ -370,15 +361,13 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({"choices": []})),
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})),
             )
             .mount(&server)
             .await;
 
         let client = reqwest::Client::new();
-        let classifier =
-            LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
+        let classifier = LlamaCppIntentClassifier::new(client, &server.uri(), "test-model".into());
         let (intent, _) = classifier.classify("hello").await.unwrap();
         // Empty content → fallback to Complex.
         assert_eq!(intent, IntentClassification::Complex);

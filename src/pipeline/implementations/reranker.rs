@@ -85,9 +85,8 @@ impl LlamaCppReranker {
 
     /// Score a single (query, document) pair via the local SLM.
     async fn score_document(&self, query: &str, document: &str) -> f64 {
-        let user_content = format!(
-            "QUERY: {query}\n\nDOCUMENT: {document}\n\nRelevance score (0-10):"
-        );
+        let user_content =
+            format!("QUERY: {query}\n\nDOCUMENT: {document}\n\nRelevance score (0-10):");
 
         let req = ChatCompletionRequest {
             model: self.model.clone(),
@@ -146,7 +145,10 @@ fn parse_score(text: &str) -> f64 {
 
     // Fallback: extract the first float-like token.
     for token in trimmed.split_whitespace() {
-        let cleaned: String = token.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+        let cleaned: String = token
+            .chars()
+            .filter(|c| c.is_ascii_digit() || *c == '.')
+            .collect();
         if let Ok(val) = cleaned.parse::<f64>() {
             return val.clamp(0.0, 10.0);
         }
@@ -284,7 +286,10 @@ mod tests {
     fn constructor_appends_path() {
         let client = reqwest::Client::new();
         let r = LlamaCppReranker::new(client, "http://localhost:8081", "model".into());
-        assert_eq!(r.completions_url, "http://localhost:8081/v1/chat/completions");
+        assert_eq!(
+            r.completions_url,
+            "http://localhost:8081/v1/chat/completions"
+        );
     }
 
     #[test]
@@ -302,10 +307,7 @@ mod tests {
 
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_score_response("8")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_score_response("8")))
             .mount(&server)
             .await;
 
@@ -340,10 +342,7 @@ mod tests {
         // Return a fixed score for all documents.
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_score_response("5")),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(mock_score_response("5")))
             .mount(&server)
             .await;
 

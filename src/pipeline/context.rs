@@ -117,7 +117,6 @@ pub struct PipelineResponse {
 #[derive(Debug, Clone)]
 pub struct PipelineContext {
     // ── Immutable input ─────────────────────────────────────────
-
     /// The raw prompt string as received from the client.
     pub original_prompt: String,
 
@@ -125,13 +124,11 @@ pub struct PipelineContext {
     pub request_id: String,
 
     // ── Layer 1 outputs (Semantic Cache) ────────────────────────
-
     /// Dense embedding vector computed by the `Embedder` at Layer 1.
     /// `None` until Layer 1 runs.
     pub request_vector: Option<Vec<f64>>,
 
     // ── Layer 2 outputs (SLM Router) ────────────────────────────
-
     /// Intent classification result from the `IntentClassifier`.
     pub intent_classification: IntentClassification,
 
@@ -140,7 +137,6 @@ pub struct PipelineContext {
     pub complexity_score: f64,
 
     // ── Layer 2.5 outputs (Context Optimiser) ───────────────────
-
     /// Raw candidate documents retrieved from the knowledge base
     /// *before* reranking. Populated just prior to Layer 2.5.
     pub retrieved_context_documents: Vec<String>,
@@ -150,7 +146,6 @@ pub struct PipelineContext {
     pub optimised_context_documents: Vec<String>,
 
     // ── Observability ───────────────────────────────────────────
-
     /// Ordered log of every processing step for full auditability.
     pub processing_log: Vec<ProcessingLogEntry>,
 
@@ -231,7 +226,10 @@ mod tests {
         assert_eq!(IntentClassification::Complex.to_string(), "COMPLEX");
         assert_eq!(IntentClassification::Rag.to_string(), "RAG");
         assert_eq!(IntentClassification::CodeGen.to_string(), "CODEGEN");
-        assert_eq!(IntentClassification::Unclassifiable.to_string(), "UNCLASSIFIABLE");
+        assert_eq!(
+            IntentClassification::Unclassifiable.to_string(),
+            "UNCLASSIFIABLE"
+        );
     }
 
     #[test]

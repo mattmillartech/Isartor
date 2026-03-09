@@ -34,11 +34,7 @@ impl RigExternalLlm {
 
 #[async_trait]
 impl ExternalLlm for RigExternalLlm {
-    async fn complete(
-        &self,
-        prompt: &str,
-        context_documents: &[String],
-    ) -> anyhow::Result<String> {
+    async fn complete(&self, prompt: &str, context_documents: &[String]) -> anyhow::Result<String> {
         // Construct the context-augmented prompt.
         let augmented_prompt = if context_documents.is_empty() {
             prompt.to_string()
@@ -150,7 +146,10 @@ mod tests {
         });
         let llm = RigExternalLlm::new(agent.clone(), "gpt-4o".into());
 
-        let docs = vec!["Document A content".to_string(), "Document B content".to_string()];
+        let docs = vec![
+            "Document A content".to_string(),
+            "Document B content".to_string(),
+        ];
         let _result = llm.complete("What is Rust?", &docs).await.unwrap();
 
         let captured = agent.captured.lock().await;

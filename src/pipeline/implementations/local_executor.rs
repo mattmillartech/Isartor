@@ -77,12 +77,10 @@ impl LocalExecutor for LlamaCppLocalExecutor {
     async fn execute_simple(&self, prompt: &str) -> anyhow::Result<String> {
         let req = ChatCompletionRequest {
             model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: prompt.to_string(),
-                },
-            ],
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
             stream: false,
         };
 
@@ -147,7 +145,10 @@ mod tests {
     fn constructor_appends_path() {
         let client = reqwest::Client::new();
         let e = LlamaCppLocalExecutor::new(client, "http://localhost:8081", "model".into());
-        assert_eq!(e.completions_url, "http://localhost:8081/v1/chat/completions");
+        assert_eq!(
+            e.completions_url,
+            "http://localhost:8081/v1/chat/completions"
+        );
     }
 
     #[test]
@@ -164,8 +165,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(mock_response("The answer is 4.")),
+                ResponseTemplate::new(200).set_body_json(mock_response("The answer is 4.")),
             )
             .mount(&server)
             .await;
@@ -216,8 +216,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({"choices": []})),
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"choices": []})),
             )
             .mount(&server)
             .await;

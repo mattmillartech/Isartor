@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use opentelemetry::{global, KeyValue};
+use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     metrics::{MeterProviderBuilder, PeriodicReader},
     trace::TracerProviderBuilder,
     Resource,
 };
 use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
-use opentelemetry_otlp::WithExportConfig;
+use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::config::AppConfig;
@@ -62,7 +62,7 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
         .with_resource(resource)
         .with_reader(reader)
         .build();
-    
+
     global::set_meter_provider(meter_provider.clone());
 
     // 3. Register standard tracing subscriber

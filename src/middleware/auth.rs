@@ -16,10 +16,7 @@ use crate::state::AppState;
 /// Validates the `X-API-Key` request header against the configured
 /// `gateway_api_key`. If the key is missing or does not match, the
 /// pipeline is short-circuited with a `401 Unauthorized` response.
-pub async fn auth_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn auth_middleware(request: Request, next: Next) -> Response {
     let state = request
         .extensions()
         .get::<Arc<AppState>>()
@@ -53,14 +50,14 @@ pub async fn auth_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, routing::post, Router, middleware as axum_mw};
+    use axum::{body::Body, middleware as axum_mw, routing::post, Router};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     use crate::clients::slm::SlmClient;
-    use crate::config::{AppConfig, CacheMode, Layer2Settings, EmbeddingSidecarSettings};
-    use crate::vector_cache::VectorCache;
+    use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::state::{AppLlmAgent, ExactCache};
+    use crate::vector_cache::VectorCache;
 
     /// Minimal mock LLM agent.
     struct MockAgent;

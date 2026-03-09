@@ -88,12 +88,12 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, routing::post, Router, middleware as axum_mw};
+    use axum::{body::Body, middleware as axum_mw, routing::post, Router};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     use crate::clients::slm::SlmClient;
-    use crate::config::{AppConfig, CacheMode, Layer2Settings, EmbeddingSidecarSettings};
+    use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
 
@@ -171,13 +171,15 @@ mod tests {
     fn handler_app(state: Arc<AppState>) -> Router {
         Router::new()
             .route("/api/chat", post(chat_handler))
-            .layer(axum_mw::from_fn(move |mut req: Request, next: axum_mw::Next| {
-                let st = state.clone();
-                async move {
-                    req.extensions_mut().insert(st);
-                    next.run(req).await
-                }
-            }))
+            .layer(axum_mw::from_fn(
+                move |mut req: Request, next: axum_mw::Next| {
+                    let st = state.clone();
+                    async move {
+                        req.extensions_mut().insert(st);
+                        next.run(req).await
+                    }
+                },
+            ))
     }
 
     #[tokio::test]
@@ -222,7 +224,10 @@ mod tests {
         let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["layer"], 3);
-        assert!(json["message"].as_str().unwrap().contains("provider outage"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("provider outage"));
     }
 
     #[tokio::test]

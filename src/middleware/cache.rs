@@ -30,10 +30,7 @@ use crate::state::AppState;
 /// On a miss the downstream response is captured and stored in the
 /// active cache(s). If the embedding service is unreachable in
 /// `semantic`/`both` modes, the layer gracefully falls through.
-pub async fn cache_middleware(
-    request: Request,
-    next: Next,
-) -> Response {
+pub async fn cache_middleware(request: Request, next: Next) -> Response {
     let span = info_span!("layer1_cache", gateway.cache.hit = false);
     async move {
         let state = request
@@ -186,12 +183,12 @@ pub async fn cache_middleware(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{routing::post, Router, middleware as axum_mw};
+    use axum::{middleware as axum_mw, routing::post, Router};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 
     use crate::clients::slm::SlmClient;
-    use crate::config::{AppConfig, CacheMode, Layer2Settings, EmbeddingSidecarSettings};
+    use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::models::ChatResponse;
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
@@ -261,21 +258,29 @@ mod tests {
     /// Build a router with cache middleware and a handler that echoes the body.
     fn cache_app(state: Arc<AppState>) -> Router {
         Router::new()
-            .route("/api/chat", post(|| async {
-                (StatusCode::OK, axum::Json(ChatResponse {
-                    layer: 3,
-                    message: "downstream response".into(),
-                    model: Some("gpt-4o".into()),
-                }))
-            }))
+            .route(
+                "/api/chat",
+                post(|| async {
+                    (
+                        StatusCode::OK,
+                        axum::Json(ChatResponse {
+                            layer: 3,
+                            message: "downstream response".into(),
+                            model: Some("gpt-4o".into()),
+                        }),
+                    )
+                }),
+            )
             .layer(axum_mw::from_fn(cache_middleware))
-            .layer(axum_mw::from_fn(move |mut req: axum::extract::Request, next: axum_mw::Next| {
-                let st = state.clone();
-                async move {
-                    req.extensions_mut().insert(st);
-                    next.run(req).await
-                }
-            }))
+            .layer(axum_mw::from_fn(
+                move |mut req: axum::extract::Request, next: axum_mw::Next| {
+                    let st = state.clone();
+                    async move {
+                        req.extensions_mut().insert(st);
+                        next.run(req).await
+                    }
+                },
+            ))
     }
 
     fn json_body(prompt: &str) -> Body {

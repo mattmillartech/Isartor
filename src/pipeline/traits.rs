@@ -79,11 +79,7 @@ pub trait VectorStore: Send + Sync {
     ) -> anyhow::Result<Option<(String, f64)>>;
 
     /// Insert a new embedding → response pair into the store.
-    async fn insert(
-        &self,
-        embedding: Vec<f64>,
-        response: String,
-    ) -> anyhow::Result<()>;
+    async fn insert(&self, embedding: Vec<f64>, response: String) -> anyhow::Result<()>;
 
     /// Returns the current number of entries in the store.
     async fn len(&self) -> usize;
@@ -205,11 +201,7 @@ pub trait ExternalLlm: Send + Sync {
     /// `prompt` is the original user prompt.
     /// `context_documents` is the reranked set of relevant documents
     /// that should be included as context in the LLM call.
-    async fn complete(
-        &self,
-        prompt: &str,
-        context_documents: &[String],
-    ) -> anyhow::Result<String>;
+    async fn complete(&self, prompt: &str, context_documents: &[String]) -> anyhow::Result<String>;
 
     /// Returns the provider name (for observability / logging).
     fn provider_name(&self) -> &str;

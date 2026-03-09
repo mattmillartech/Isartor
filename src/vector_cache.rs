@@ -54,7 +54,10 @@ impl VectorCache {
         }
 
         if let Some(resp) = best_response {
-            tracing::info!(similarity = format!("{:.4}", best_score), "Vector cache: match found");
+            tracing::info!(
+                similarity = format!("{:.4}", best_score),
+                "Vector cache: match found"
+            );
             Some(resp.to_string())
         } else {
             None
@@ -234,8 +237,12 @@ mod tests {
     async fn vector_cache_returns_best_match() {
         let cache = VectorCache::new(0.5, 300, 100);
         // Insert two similar vectors.
-        cache.insert(vec![1.0, 0.0, 0.0], "less similar".into()).await;
-        cache.insert(vec![1.0, 0.1, 0.0], "more similar".into()).await;
+        cache
+            .insert(vec![1.0, 0.0, 0.0], "less similar".into())
+            .await;
+        cache
+            .insert(vec![1.0, 0.1, 0.0], "more similar".into())
+            .await;
 
         // Query is [1.0, 0.1, 0.0] — exact match for "more similar".
         let query = vec![1.0f32, 0.1, 0.0];

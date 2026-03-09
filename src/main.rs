@@ -12,28 +12,19 @@ mod vector_cache;
 use std::sync::Arc;
 
 use axum::{
-    extract::Request,
-    http::StatusCode,
-    middleware as axum_mw,
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
+    extract::Request, http::StatusCode, middleware as axum_mw, response::IntoResponse,
+    routing::post, Json, Router,
 };
 use bytes::Bytes;
 use http_body_util::BodyExt;
 
 use crate::config::AppConfig;
-use crate::pipeline::{
-    AdaptiveConcurrencyLimiter, AlgorithmSuite, ConcurrencyConfig,
-};
 use crate::pipeline::implementations::{
-    embedder::LlamaCppEmbedder,
-    external_llm::RigExternalLlm,
-    intent_classifier::LlamaCppIntentClassifier,
-    local_executor::LlamaCppLocalExecutor,
-    reranker::LlamaCppReranker,
-    vector_store::InMemoryVectorStore,
+    embedder::LlamaCppEmbedder, external_llm::RigExternalLlm,
+    intent_classifier::LlamaCppIntentClassifier, local_executor::LlamaCppLocalExecutor,
+    reranker::LlamaCppReranker, vector_store::InMemoryVectorStore,
 };
+use crate::pipeline::{AdaptiveConcurrencyLimiter, AlgorithmSuite, ConcurrencyConfig};
 use crate::state::AppState;
 
 #[tokio::main]
@@ -69,14 +60,12 @@ async fn main() -> anyhow::Result<()> {
     //     alongside the existing middleware-based funnel. It can be
     //     accessed via /api/v2/chat.
     // ------------------------------------------------------------------
-    let concurrency_limiter = Arc::new(AdaptiveConcurrencyLimiter::new(
-        ConcurrencyConfig {
-            min_concurrency: config.pipeline_min_concurrency,
-            max_concurrency: config.pipeline_max_concurrency,
-            target_latency: std::time::Duration::from_millis(config.pipeline_target_latency_ms),
-            window_size: 100,
-        },
-    ));
+    let concurrency_limiter = Arc::new(AdaptiveConcurrencyLimiter::new(ConcurrencyConfig {
+        min_concurrency: config.pipeline_min_concurrency,
+        max_concurrency: config.pipeline_max_concurrency,
+        target_latency: std::time::Duration::from_millis(config.pipeline_target_latency_ms),
+        window_size: 100,
+    }));
     let algorithm_suite = Arc::new(AlgorithmSuite {
         embedder: Box::new(LlamaCppEmbedder::new(
             app_state.http_client.clone(),
@@ -137,66 +126,75 @@ async fn main() -> anyhow::Result<()> {
         // Routes
         .route("/api/chat", post(handler::chat_handler))
         // v2 pipeline route — the Algorithmic AI Gateway endpoint.
-        .route("/api/v2/chat", post({
-            move |request: Request| {
-                let limiter = limiter_for_route.clone();
-                let suite = suite_for_route.clone();
-                let pcfg = pcfg_for_route.clone();
-                async move {
-                    // Extract the prompt from the JSON body.
-                    let body_bytes: Bytes = match request.into_body().collect().await {
-                        Ok(collected) => collected.to_bytes(),
-                        Err(_) => {
-                            return (
-                                StatusCode::BAD_REQUEST,
-                                Json(serde_json::json!({
-                                    "error": "Failed to read request body"
-                                })),
-                            )
-                                .into_response();
-                        }
-                    };
+        .route(
+            "/api/v2/chat",
+            post({
+                move |request: Request| {
+                    let limiter = limiter_for_route.clone();
+                    let suite = suite_for_route.clone();
+                    let pcfg = pcfg_for_route.clone();
+                    async move {
+                        // Extract the prompt from the JSON body.
+                        let body_bytes: Bytes = match request.into_body().collect().await {
+                            Ok(collected) => collected.to_bytes(),
+                            Err(_) => {
+                                return (
+                                    StatusCode::BAD_REQUEST,
+                                    Json(serde_json::json!({
+                                        "error": "Failed to read request body"
+                                    })),
+                                )
+                                    .into_response();
+                            }
+                        };
 
-                    let prompt: String = serde_json::from_slice::<serde_json::Value>(&body_bytes[..])
-                        .ok()
-                        .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
-                        .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes[..]).to_string());
+                        let prompt: String =
+                            serde_json::from_slice::<serde_json::Value>(&body_bytes[..])
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("prompt").and_then(|p| p.as_str()).map(String::from)
+                                })
+                                .unwrap_or_else(|| {
+                                    String::from_utf8_lossy(&body_bytes[..]).to_string()
+                                });
 
-                    let response = pipeline::execute_pipeline(
-                        prompt,
-                        &limiter,
-                        &suite,
-                        &pcfg,
-                    )
-                    .await;
+                        let response =
+                            pipeline::execute_pipeline(prompt, &limiter, &suite, &pcfg).await;
 
-                    let status = if response.resolved_by_layer == 0 {
-                        StatusCode::SERVICE_UNAVAILABLE
-                    } else {
-                        StatusCode::OK
-                    };
+                        let status = if response.resolved_by_layer == 0 {
+                            StatusCode::SERVICE_UNAVAILABLE
+                        } else {
+                            StatusCode::OK
+                        };
 
-                    (status, Json(response)).into_response()
+                        (status, Json(response)).into_response()
+                    }
                 }
-            }
-        }))
+            }),
+        )
         .route("/healthz", axum::routing::get(healthz))
         // Layer 2 – SLM triage (innermost middleware).
-        .layer(axum_mw::from_fn(middleware::slm_triage::slm_triage_middleware))
+        .layer(axum_mw::from_fn(
+            middleware::slm_triage::slm_triage_middleware,
+        ))
         // Layer 1 – Cache (exact / semantic / both).
         .layer(axum_mw::from_fn(middleware::cache::cache_middleware))
         // Layer 0 – Authentication (outermost functional middleware).
         .layer(axum_mw::from_fn(middleware::auth::auth_middleware))
         // Layer -1 - Root Monitoring (Top level tracing capability).
-        .layer(axum_mw::from_fn(middleware::monitoring::root_monitoring_middleware))
+        .layer(axum_mw::from_fn(
+            middleware::monitoring::root_monitoring_middleware,
+        ))
         // Inject shared state into every request's extensions.
-        .layer(axum_mw::from_fn(move |mut req: axum::extract::Request, next: axum_mw::Next| {
-            let st = state_for_ext.clone();
-            async move {
-                req.extensions_mut().insert(st);
-                next.run(req).await
-            }
-        }));
+        .layer(axum_mw::from_fn(
+            move |mut req: axum::extract::Request, next: axum_mw::Next| {
+                let st = state_for_ext.clone();
+                async move {
+                    req.extensions_mut().insert(st);
+                    next.run(req).await
+                }
+            },
+        ));
 
     // ------------------------------------------------------------------
     // 4. Start the server.

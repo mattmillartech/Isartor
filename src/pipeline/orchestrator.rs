@@ -399,10 +399,7 @@ pub async fn execute_pipeline(
         Ok(text) => {
             ctx.log_step(
                 "Layer3_ExternalLLM",
-                format!(
-                    "Completion received ({} chars)",
-                    text.len()
-                ),
+                format!("Completion received ({} chars)", text.len()),
                 step3_start.elapsed().as_millis() as u64,
                 true,
                 Some(serde_json::json!({
@@ -515,8 +512,12 @@ mod tests {
         async fn embed(&self, _text: &str) -> anyhow::Result<Vec<f64>> {
             Err(anyhow::anyhow!("embedding service unavailable"))
         }
-        fn embedding_dimension(&self) -> usize { 128 }
-        fn model_name(&self) -> &str { "failing-embedder" }
+        fn embedding_dimension(&self) -> usize {
+            128
+        }
+        fn model_name(&self) -> &str {
+            "failing-embedder"
+        }
     }
 
     struct FailingClassifier;
@@ -525,7 +526,9 @@ mod tests {
         async fn classify(&self, _text: &str) -> anyhow::Result<(IntentClassification, f64)> {
             Err(anyhow::anyhow!("classifier unavailable"))
         }
-        fn model_name(&self) -> &str { "failing-classifier" }
+        fn model_name(&self) -> &str {
+            "failing-classifier"
+        }
     }
 
     struct FailingLocalExecutor;
@@ -534,7 +537,9 @@ mod tests {
         async fn execute_simple(&self, _prompt: &str) -> anyhow::Result<String> {
             Err(anyhow::anyhow!("local executor unavailable"))
         }
-        fn model_name(&self) -> &str { "failing-executor" }
+        fn model_name(&self) -> &str {
+            "failing-executor"
+        }
     }
 
     /// A classifier that always returns Simple, so we can test the
@@ -545,7 +550,9 @@ mod tests {
         async fn classify(&self, _text: &str) -> anyhow::Result<(IntentClassification, f64)> {
             Ok((IntentClassification::Simple, 0.95))
         }
-        fn model_name(&self) -> &str { "always-simple" }
+        fn model_name(&self) -> &str {
+            "always-simple"
+        }
     }
 
     struct FailingReranker;
@@ -559,17 +566,27 @@ mod tests {
         ) -> anyhow::Result<Vec<(String, f64)>> {
             Err(anyhow::anyhow!("reranker unavailable"))
         }
-        fn model_name(&self) -> &str { "failing-reranker" }
+        fn model_name(&self) -> &str {
+            "failing-reranker"
+        }
     }
 
     struct FailingExternalLlm;
     #[async_trait::async_trait]
     impl ExternalLlm for FailingExternalLlm {
-        async fn complete(&self, _prompt: &str, _context_documents: &[String]) -> anyhow::Result<String> {
+        async fn complete(
+            &self,
+            _prompt: &str,
+            _context_documents: &[String],
+        ) -> anyhow::Result<String> {
             Err(anyhow::anyhow!("external LLM unavailable"))
         }
-        fn provider_name(&self) -> &str { "failing-provider" }
-        fn model_name(&self) -> &str { "failing-model" }
+        fn provider_name(&self) -> &str {
+            "failing-provider"
+        }
+        fn model_name(&self) -> &str {
+            "failing-model"
+        }
     }
 
     fn test_pipeline_cfg() -> PipelineConfig {
@@ -872,8 +889,12 @@ mod tests {
             async fn search(&self, _qv: &[f64], _th: f64) -> anyhow::Result<Option<(String, f64)>> {
                 Err(anyhow::anyhow!("vector store unavailable"))
             }
-            async fn insert(&self, _e: Vec<f64>, _r: String) -> anyhow::Result<()> { Ok(()) }
-            async fn len(&self) -> usize { 0 }
+            async fn insert(&self, _e: Vec<f64>, _r: String) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn len(&self) -> usize {
+                0
+            }
         }
 
         let limiter = test_limiter();
