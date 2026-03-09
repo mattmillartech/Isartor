@@ -153,11 +153,22 @@ Pick the path that matches your situation:
 
 ### 🟢 Fastest — Single Binary (Level 1)
 
+Download and run the latest release binary instantly:
+
+**Linux / macOS:**
 ```bash
-git clone https://github.com/isartor-ai/isartor.git && cd isartor
-cargo build --release
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
 export ISARTOR_EXTERNAL_LLM_API_KEY="sk-..."
-./target/release/isartor
+isartor
+# → Gateway on http://localhost:8080
+# → Gemma-2-2B model auto-downloads on first start (~1.5 GB)
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
+$env:ISARTOR_EXTERNAL_LLM_API_KEY="sk-..."
+isartor
 # → Gateway on http://localhost:8080
 # → Gemma-2-2B model auto-downloads on first start (~1.5 GB)
 ```
