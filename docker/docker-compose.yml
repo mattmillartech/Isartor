@@ -1,0 +1,59 @@
+# Default Compose — Ollama + Isartor Gateway (OpenAI provider)
+#
+# Usage:
+#   cd docker
+#   docker compose up --build
+#
+# Pass your OpenAI key:
+#   OPENAI_API_KEY=sk-... docker compose up --build
+
+services:
+  # ── Ollama — Local AI engine (embeddings + SLM) ───────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: isartor-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Model puller — one-shot init that pulls required models ───────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: isartor-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "⏳ Pulling embedding model (all-minilm)..."
+        ollama pull all-minilm
+        echo "⏳ Pulling SLM triage model (llama3)..."
+        ollama pull llama3
+        echo "✅ All models ready."
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+
+  # ── Isartor Gateway ───────────────────────────────────────────────
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: isartor-gateway
+    depends_on:
+      ollama-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+
+volumes:
+  ollama_data:

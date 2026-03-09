@@ -1,0 +1,80 @@
+# All-in-One Isartor Observability Stack (Azure OpenAI Configured)
+#
+# Usage:
+#   cd docker
+#   docker-compose -f docker-compose.observability.yml up --build
+#
+# UI Endpoints:
+# - Grafana: http://localhost:3000 (Metrics Dashboards)
+# - Jaeger: http://localhost:16686 (Distributed Tracing UI)
+# - Gateway: http://localhost:8080/api/chat
+
+services:
+  # ── Isartor AI Gateway ──────────────────────────────────────────
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - ISARTOR_LLM_PROVIDER=azure
+      - ISARTOR_ENABLE_MONITORING=true
+      - ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
+      - ISARTOR_LOCAL_SLM_URL=http://ollama:11434/api/generate
+    depends_on:
+      - ollama
+      - otel-collector
+
+  # ── Local SLM & Embeddings (Layer 1 & 2) ────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # ── Observability: OTel Collector ───────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector:0.96.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+    depends_on:
+      - jaeger
+
+  # ── Observability: Jaeger (Tracing Backend) ─────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # UI
+
+  # ── Observability: Prometheus (Metrics Backend) ─────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # ── Observability: Grafana (Dashboards) ─────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - jaeger
+
+volumes:
+  ollama_data:

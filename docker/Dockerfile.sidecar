@@ -1,0 +1,51 @@
+# ============================================================================
+# Dockerfile.sidecar — Level 2 "mid-tier" gateway image
+#
+# Standard multi-stage build targeting debian-slim.  Unlike the Level 1
+# minimal/musl build, this one uses glibc and a small runtime with a
+# shell (useful for health-check curl/wget inside Compose).
+#
+# Build:
+#   docker build -f docker/Dockerfile.sidecar -t isartor:sidecar .
+#
+# Used by:
+#   docker/docker-compose.sidecar.yml
+# ============================================================================
+
+# ── Stage 1: Builder ────────────────────────────────────────────────────────
+FROM rust:1.85-bookworm AS builder
+
+WORKDIR /build
+
+# ── Dependency caching layer ────────────────────────────────────────────────
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+    && cargo build --release \
+    && rm -rf src
+
+# ── Application build ──────────────────────────────────────────────────────
+COPY src/ src/
+RUN touch src/main.rs \
+    && cargo build --release
+
+# ── Stage 2: Slim runtime ──────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+# Install only what we need for health checks and TLS root certs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/isartor /usr/local/bin/isartor
+
+LABEL org.opencontainers.image.title="isartor"
+LABEL org.opencontainers.image.description="Isartor AI Gateway — Level 2 sidecar image"
+
+ENV ISARTOR_HOST_PORT=0.0.0.0:8080
+EXPOSE 8080
+
+# Run as non-root.
+RUN groupadd -r isartor && useradd -r -g isartor isartor
+USER isartor
+
+ENTRYPOINT ["isartor"]

@@ -1,0 +1,121 @@
+# =============================================================================
+# docker-compose.sidecar.yml — Level 2 "Mid-Tier" Stack
+#
+# Two services: the Isartor gateway + a llama.cpp inference sidecar.
+# No observability stack — add docker-compose.observability.yml as an
+# override if you want Jaeger / Prometheus / Grafana.
+#
+# Usage (from repo root):
+#   docker compose -f docker/docker-compose.sidecar.yml up --build
+#
+# With observability:
+#   docker compose -f docker/docker-compose.sidecar.yml \
+#                  -f docker/docker-compose.observability.yml up --build
+#
+# Endpoints:
+#   Gateway:           http://localhost:3000/api/chat
+#   Health check:      http://localhost:3000/healthz
+#   Sidecar (direct):  http://localhost:8081/health
+#
+# Tear down:
+#   docker compose -f docker/docker-compose.sidecar.yml down -v
+# =============================================================================
+
+services:
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 1. INFERENCE SIDECAR — llama.cpp server (Phi-3-mini Q4)
+  # ═══════════════════════════════════════════════════════════════════
+  inference-sidecar:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: isartor-inference-sidecar
+    ports:
+      - "8081:8080"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--hf-repo"
+      - "microsoft/Phi-3-mini-4k-instruct-gguf"
+      - "--hf-file"
+      - "Phi-3-mini-4k-instruct-q4.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--n-gpu-layers"
+      - "99"
+    volumes:
+      # Persist downloaded model weights across restarts.
+      - model_cache:/root/.cache
+      # Mount a local directory if you prefer to supply your own GGUF files:
+      #   ./models/  on the host (repo root)  →  /models  inside the container
+      - ../models:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 2. ISARTOR GATEWAY
+  # ═══════════════════════════════════════════════════════════════════
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.sidecar
+    container_name: isartor-gateway
+    depends_on:
+      inference-sidecar:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    env_file:
+      - path: .env.sidecar
+        required: false
+    environment:
+      # ── General ──────────────────────────────────────────────────
+      ISARTOR_HOST_PORT: "0.0.0.0:8080"
+      ISARTOR_GATEWAY_API_KEY: "${ISARTOR_GATEWAY_API_KEY:-changeme}"
+
+      # ── Layer 1 — Cache ─────────────────────────────────────────
+      ISARTOR_CACHE_MODE: "both"
+      ISARTOR_SIMILARITY_THRESHOLD: "0.85"
+      ISARTOR_CACHE_TTL_SECS: "300"
+      ISARTOR_CACHE_MAX_CAPACITY: "10000"
+
+      # ── Layer 2 — Generation sidecar ────────────────────────────
+      # Docker Compose DNS resolves "inference-sidecar" to the
+      # container IP.  The gateway talks to the sidecar's internal
+      # port 8080 (mapped to host 8081 for direct debugging).
+      ISARTOR_LAYER2__SIDECAR_URL: "http://inference-sidecar:8080"
+      ISARTOR_LAYER2__MODEL_NAME: "phi-3-mini"
+      ISARTOR_LAYER2__TIMEOUT_SECONDS: "30"
+
+      # Legacy v1 middleware (same sidecar, OpenAI-compat path)
+      ISARTOR_LOCAL_SLM_URL: "http://inference-sidecar:8080/v1/chat/completions"
+      ISARTOR_LOCAL_SLM_MODEL: "phi-3-mini"
+
+      # ── Layer 3 — External LLM (pass-through from .env) ────────
+      ISARTOR_LLM_PROVIDER: "${ISARTOR_LLM_PROVIDER:-openai}"
+      ISARTOR_EXTERNAL_LLM_MODEL: "${ISARTOR_EXTERNAL_LLM_MODEL:-gpt-4o-mini}"
+      ISARTOR_EXTERNAL_LLM_API_KEY: "${ISARTOR_EXTERNAL_LLM_API_KEY:-}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+volumes:
+  model_cache:
