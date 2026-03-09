@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // SlmClient — HTTP client for the llama.cpp sidecar's OpenAI-compatible API.
 //

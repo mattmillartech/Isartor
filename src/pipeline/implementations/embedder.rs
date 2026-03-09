@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // LlamaCppEmbedder — Layer 1 Embedder backed by a llama.cpp sidecar's
 // OpenAI-compatible `/v1/embeddings` endpoint.

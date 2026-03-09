@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::Deserialize;
 
 /// Cache operating mode.
@@ -7,11 +8,12 @@ use serde::Deserialize;
 /// * `"exact"`    — SHA-256 hash of the prompt; only identical prompts hit.
 /// * `"semantic"` — Cosine similarity on embedding vectors.
 /// * `"both"`     — Exact match is checked first (fast), then semantic.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CacheMode {
     Exact,
     Semantic,
+    #[default]
     Both,
 }
 
@@ -154,11 +156,7 @@ pub struct AppConfig {
     pub pipeline_target_latency_ms: u64,
 }
 
-impl Default for CacheMode {
-    fn default() -> Self {
-        CacheMode::Both
-    }
-}
+
 
 impl AppConfig {
     /// Build configuration from environment variables prefixed with `ISARTOR_`

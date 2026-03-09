@@ -9,7 +9,6 @@
 // =============================================================================
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use wiremock::matchers::{method, path};
@@ -22,7 +21,7 @@ async fn start_gateway(api_key: &str, sidecar_url: &str, embed_url: &str) -> Soc
         extract::Request,
         middleware as axum_mw,
         routing::{get, post},
-        Json, Router,
+        Router,
     };
 
     // Minimal inline types to avoid importing the binary crate.
@@ -32,7 +31,7 @@ async fn start_gateway(api_key: &str, sidecar_url: &str, embed_url: &str) -> Soc
     let actual_addr = listener.local_addr().unwrap();
 
     let api_key = api_key.to_string();
-    let sidecar_url = sidecar_url.to_string();
+    let _sidecar_url = sidecar_url.to_string();
     let _embed_url = embed_url.to_string();
 
     tokio::spawn(async move {

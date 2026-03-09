@@ -106,10 +106,10 @@ impl VectorStore for StubVectorStore {
         let mut best: Option<(String, f64)> = None;
         for (embedding, response) in entries.iter() {
             let sim = cosine_similarity(query_vector, embedding);
-            if sim >= threshold {
-                if best.as_ref().map_or(true, |(_, s)| sim > *s) {
-                    best = Some((response.clone(), sim));
-                }
+            if sim >= threshold
+                && best.as_ref().is_none_or(|(_, s)| sim > *s)
+            {
+                best = Some((response.clone(), sim));
             }
         }
 

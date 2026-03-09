@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // LlamaCppIntentClassifier — Layer 2 Intent Classifier backed by a
 // llama.cpp sidecar's OpenAI-compatible `/v1/chat/completions` endpoint.

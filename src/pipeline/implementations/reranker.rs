@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // LlamaCppReranker — Layer 2.5 Cross-Encoder-style reranker via llama.cpp.
 //

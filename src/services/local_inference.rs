@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // Embedded Classifier — Rust-native intent classification using candle.
 //

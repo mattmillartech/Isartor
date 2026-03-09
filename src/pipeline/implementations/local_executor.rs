@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(clippy::trim_split_whitespace)]
 // =============================================================================
 // LlamaCppLocalExecutor — Layer 2 executor for simple tasks.
 //
