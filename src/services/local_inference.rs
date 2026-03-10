@@ -1,4 +1,3 @@
-#![cfg(feature = "embedded-inference")]
 #![allow(dead_code)]
 #![allow(clippy::trim_split_whitespace)]
 // =============================================================================

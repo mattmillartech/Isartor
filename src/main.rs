@@ -1,6 +1,7 @@
 mod clients;
 mod config;
 mod handler;
+mod layer1;
 mod middleware;
 mod models;
 mod pipeline;
@@ -9,7 +10,6 @@ mod services;
 mod state;
 mod telemetry;
 mod vector_cache;
-mod layer1;
 
 use std::sync::Arc;
 
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     // This blocks during startup (~1s) to load the ONNX model into RAM (~33 MB).
     let text_embedder = Arc::new(
         layer1::embeddings::TextEmbedder::new()
-            .expect("Failed to initialize fastembed TextEmbedder (bge-small-en-v1.5)")
+            .expect("Failed to initialize fastembed TextEmbedder (bge-small-en-v1.5)"),
     );
 
     let app_state = Arc::new(AppState::new(config.clone(), text_embedder));

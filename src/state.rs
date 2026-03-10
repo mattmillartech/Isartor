@@ -181,24 +181,26 @@ impl AppState {
         let slm_client = Arc::new(SlmClient::new(&config.layer2));
 
         #[cfg(feature = "embedded-inference")]
-        let embedded_classifier = if config.inference_engine == crate::config::InferenceEngineMode::Embedded {
-            // NOTE: In a real app we would want to bubble up this error instead of
-            // doing blocking initialization or panic, but for the sake of the architecture 
-            // state encapsulation we can block_on it or pass it in. Assuming blocking for now
-            // or we change AppState::new to be async.
-            let cfg = crate::services::local_inference::EmbeddedClassifierConfig::default();
-            // Since `AppState::new` is not async, we use a blocking fallback or expect initialization elsewhere.
-            // For simplicity in this sync constructor we will leave it as None and assume an async `init` method later,
-            // or just block_on. We use block_on here for convenience.
-            let engine = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    crate::services::local_inference::EmbeddedClassifier::new(cfg).await
+        let embedded_classifier =
+            if config.inference_engine == crate::config::InferenceEngineMode::Embedded {
+                // NOTE: In a real app we would want to bubble up this error instead of
+                // doing blocking initialization or panic, but for the sake of the architecture
+                // state encapsulation we can block_on it or pass it in. Assuming blocking for now
+                // or we change AppState::new to be async.
+                let cfg = crate::services::local_inference::EmbeddedClassifierConfig::default();
+                // Since `AppState::new` is not async, we use a blocking fallback or expect initialization elsewhere.
+                // For simplicity in this sync constructor we will leave it as None and assume an async `init` method later,
+                // or just block_on. We use block_on here for convenience.
+                let engine = tokio::task::block_in_place(|| {
+                    tokio::runtime::Handle::current().block_on(async {
+                        crate::services::local_inference::EmbeddedClassifier::new(cfg).await
+                    })
                 })
-            }).expect("Failed to initialize Embedded Classifier");
-            Some(Arc::new(engine))
-        } else {
-            None
-        };
+                .expect("Failed to initialize Embedded Classifier");
+                Some(Arc::new(engine))
+            } else {
+                None
+            };
 
         Self {
             config,

@@ -16,16 +16,21 @@ impl TextEmbedder {
     /// This function blocks during startup while downloading and loading the model into RAM.
     pub fn new() -> Result<Self> {
         let model = TextEmbedding::try_new(
-            InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(true)
+            InitOptions::new(EmbeddingModel::BGESmallENV15).with_show_download_progress(true),
         )
         .context("Failed to initialize fastembed TextEmbedding model: BGE-Small-EN-v1.5")?;
 
-        Ok(Self { model: Mutex::new(model) })
+        Ok(Self {
+            model: Mutex::new(model),
+        })
     }
 
     /// Generates embeddings for a single prompt string.
     pub fn generate_embedding(&self, text: &str) -> Result<Vec<f32>> {
-        let mut model = self.model.lock().map_err(|e| anyhow::anyhow!("embedder lock poisoned: {e}"))?;
+        let mut model = self
+            .model
+            .lock()
+            .map_err(|e| anyhow::anyhow!("embedder lock poisoned: {e}"))?;
         // fastembed expects a batch, so we wrap our single text in a Vec
         let mut embeddings = model
             .embed(vec![text], None)
@@ -42,6 +47,7 @@ impl TextEmbedder {
 
 /// Helper function to calculate the cosine similarity between two slice references.
 /// Formula: (A dot B) / (||A|| * ||B||)
+#[allow(dead_code)]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     let mut dot_product = 0.0;
     let mut norm_a = 0.0;
@@ -65,9 +71,8 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 #[cfg(test)]
 pub fn shared_test_embedder() -> std::sync::Arc<TextEmbedder> {
     use std::sync::{Arc, LazyLock};
-    static EMBEDDER: LazyLock<Arc<TextEmbedder>> = LazyLock::new(|| {
-        Arc::new(TextEmbedder::new().expect("shared test TextEmbedder"))
-    });
+    static EMBEDDER: LazyLock<Arc<TextEmbedder>> =
+        LazyLock::new(|| Arc::new(TextEmbedder::new().expect("shared test TextEmbedder")));
     EMBEDDER.clone()
 }
 
@@ -85,9 +90,15 @@ mod tests {
         let text3 = "I like eating apples.";
 
         // Generate embeddings
-        let emb1 = embedder.generate_embedding(text1).expect("Failed embedding 1");
-        let emb2 = embedder.generate_embedding(text2).expect("Failed embedding 2");
-        let emb3 = embedder.generate_embedding(text3).expect("Failed embedding 3");
+        let emb1 = embedder
+            .generate_embedding(text1)
+            .expect("Failed embedding 1");
+        let emb2 = embedder
+            .generate_embedding(text2)
+            .expect("Failed embedding 2");
+        let emb3 = embedder
+            .generate_embedding(text3)
+            .expect("Failed embedding 3");
 
         // Calculate similarities
         let sim1_2 = cosine_similarity(&emb1, &emb2);
@@ -97,9 +108,15 @@ mod tests {
         println!("Similarity between unrelated: {}", sim1_3);
 
         // Assert that the semantic match is reasonably high (BGE-small-en-v1.5 yields ~0.69 here)
-        assert!(sim1_2 > 0.6, "Similarity should be high for semantic matches, got {sim1_2}");
+        assert!(
+            sim1_2 > 0.6,
+            "Similarity should be high for semantic matches, got {sim1_2}"
+        );
         // Assert that the unrelated text has lower similarity
-        assert!(sim1_2 > sim1_3, "Semantic match should score higher than unrelated");
+        assert!(
+            sim1_2 > sim1_3,
+            "Semantic match should score higher than unrelated"
+        );
     }
 
     #[test]
