@@ -34,7 +34,7 @@ export ISARTOR_LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ISARTOR_CACHE_MODE` | `String` | `both` | `exact` — SHA-256 hash only; `semantic` — cosine similarity; `both` — exact first, then semantic |
-| `ISARTOR_EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational, must match sidecar) |
+| `ISARTOR_EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational; v1 pipeline uses in-process fastembed) |
 | `ISARTOR_SIMILARITY_THRESHOLD` | `f64` | `0.85` | Cosine similarity threshold for semantic cache hits (0.0–1.0) |
 | `ISARTOR_CACHE_TTL_SECS` | `u64` | `300` | Time-to-live for cached responses, in seconds |
 | `ISARTOR_CACHE_MAX_CAPACITY` | `u64` | `10000` | Maximum entries per cache (exact + semantic counted separately) |
@@ -54,13 +54,15 @@ export ISARTOR_LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | `ISARTOR_LOCAL_SLM_URL` | `String` | `http://localhost:11434/api/generate` | URL of the local SLM for v1 middleware triage |
 | `ISARTOR_LOCAL_SLM_MODEL` | `String` | `llama3` | Model name for v1 middleware requests |
 
-### Embedding Sidecar
+### Embedding Sidecar (v2 Pipeline Only)
+
+> **Note:** The v1 middleware pipeline (`/api/chat`) uses **in-process fastembed** (ONNX Runtime, BAAI/bge-small-en-v1.5) for Layer 1 embeddings — no sidecar required. These variables are only used by the v2 algorithmic pipeline (`/api/v2/chat`).
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) |
-| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name |
-| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls |
+| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) — v2 pipeline only |
+| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name — v2 pipeline only |
+| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls — v2 pipeline only |
 
 ### Layer 3 — External Cloud LLM
 
@@ -140,7 +142,7 @@ sidecar_url = "http://127.0.0.1:8081"
 model_name = "phi-3-mini"
 timeout_seconds = 30
 
-# Embedding Sidecar
+# Embedding Sidecar (v2 pipeline only — v1 uses in-process fastembed)
 [embedding_sidecar]
 sidecar_url = "http://127.0.0.1:8082"
 model_name = "all-minilm"
@@ -172,7 +174,7 @@ pipeline_target_latency_ms = 500
 ### Level 1 — Minimal (Edge / VPS)
 
 ```bash
-ISARTOR_CACHE_MODE=exact              # No embedding sidecar
+ISARTOR_CACHE_MODE=both               # In-process fastembed enables semantic cache at all tiers
 ISARTOR_CACHE_TTL_SECS=300
 ISARTOR_CACHE_MAX_CAPACITY=5000       # Smaller memory footprint
 ISARTOR_ENABLE_MONITORING=false       # No collector running

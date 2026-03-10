@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'Isartor Dashboards'
+    orgId: 1
+    folder: 'Isartor Gateway'
+    folderUid: 'isartor-gw'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/dashboards

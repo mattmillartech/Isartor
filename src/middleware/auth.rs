@@ -59,6 +59,8 @@ mod tests {
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
 
+    use crate::layer1::embeddings::shared_test_embedder;
+
     /// Minimal mock LLM agent.
     struct MockAgent;
 
@@ -76,6 +78,7 @@ mod tests {
     fn test_state(api_key: &str) -> Arc<AppState> {
         let config = Arc::new(AppConfig {
             host_port: "127.0.0.1:0".into(),
+            inference_engine: crate::config::InferenceEngineMode::Sidecar,
             gateway_api_key: api_key.into(),
             cache_mode: CacheMode::Exact,
             embedding_model: "test".into(),
@@ -116,7 +119,10 @@ mod tests {
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
+            text_embedder: shared_test_embedder(),
             config,
+            #[cfg(feature = "embedded-inference")]
+            embedded_classifier: None,
         })
     }
 

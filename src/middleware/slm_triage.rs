@@ -102,93 +102,64 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
     tracing::debug!(prompt = %prompt, "Layer 2: Classifying intent via local SLM");
 
     // ------------------------------------------------------------------
-    // 2. Classify the prompt via the llama.cpp sidecar.
+    // 2. Classify the prompt via the selected Inference Engine.
     // ------------------------------------------------------------------
-    let sidecar_url = format!(
-        "{}/v1/chat/completions",
-        state.config.layer2.sidecar_url.trim_end_matches('/')
-    );
-
-    let classify_req = ChatCompletionRequest {
-        model: state.config.layer2.model_name.clone(),
-        messages: vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: CLASSIFY_SYSTEM_PROMPT.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: prompt.clone(),
-            },
-        ],
-        stream: false,
-        temperature: Some(0.0),
-        max_tokens: Some(10),
-    };
-
-    let classification = state
-        .http_client
-        .post(&sidecar_url)
-        .json(&classify_req)
-        .send()
-        .await;
-
-    let is_simple = match classification {
-        Ok(resp) => match resp.json::<ChatCompletionResponse>().await {
-            Ok(completion) => {
-                let answer = completion
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_uppercase();
-                tracing::info!(classification = %answer, "Layer 2: SLM classification result");
-
-                let is_simp = answer.contains("SIMPLE");
-                tracing::Span::current().record(
-                    "slm.complexity_score",
-                    if is_simp { "SIMPLE" } else { "COMPLEX" },
-                );
-
-                is_simp
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "Layer 2: Failed to parse SLM response – falling through");
+    let is_simple = if state.config.inference_engine == crate::config::InferenceEngineMode::Embedded {
+        #[cfg(feature = "embedded-inference")]
+        {
+            if let Some(classifier) = &state.embedded_classifier {
+                match classifier.classify(&prompt).await {
+                    Ok((label, _conf)) => {
+                        let is_simp = label == "SIMPLE";
+                        tracing::Span::current().record(
+                            "slm.complexity_score",
+                            if is_simp { "SIMPLE" } else { "COMPLEX" },
+                        );
+                        is_simp
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Layer 2: Embedded classification failed – falling through");
+                        false
+                    }
+                }
+            } else {
+                tracing::warn!("Layer 2: Embedded engine requested but not configured");
                 false
             }
-        },
-        Err(e) => {
-            tracing::warn!(error = %e, "Layer 2: SLM unreachable – falling through to Layer 3");
+        }
+        #[cfg(not(feature = "embedded-inference"))]
+        {
+            tracing::warn!("Layer 2: Embedded engine requested but binary was not compiled with `embedded-inference` feature. Falling back to sidecar logic.");
+            // NOTE: Ideally this fall-through uses sidecar URL but let's just fall to Layer 3 for safety.
             false
         }
-    };
+    } else {
+        let sidecar_url = format!(
+            "{}/v1/chat/completions",
+            state.config.layer2.sidecar_url.trim_end_matches('/')
+        );
 
-    // ------------------------------------------------------------------
-    // 3. Branch: short-circuit or continue.
-    // ------------------------------------------------------------------
-    if is_simple {
-        tracing::info!("Layer 2: Simple task – generating answer via local SLM");
-
-        // Second call: ask the SLM to actually answer the prompt.
-        let answer_req = ChatCompletionRequest {
+        let classify_req = ChatCompletionRequest {
             model: state.config.layer2.model_name.clone(),
             messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: CLASSIFY_SYSTEM_PROMPT.to_string(),
+                },
                 ChatMessage {
                     role: "user".to_string(),
                     content: prompt.clone(),
                 },
             ],
             stream: false,
-            temperature: None,
-            max_tokens: None,
+            temperature: Some(0.0),
+            max_tokens: Some(10),
         };
 
         match state
             .http_client
             .post(&sidecar_url)
-            .json(&answer_req)
+            .json(&classify_req)
             .send()
             .await
         {
@@ -199,23 +170,110 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                         .into_iter()
                         .next()
                         .map(|c| c.message.content)
-                        .unwrap_or_default();
-                    return (
-                        StatusCode::OK,
-                        Json(ChatResponse {
-                            layer: 2,
-                            message: answer,
-                            model: Some(state.config.layer2.model_name.clone()),
-                        }),
-                    )
-                        .into_response();
+                        .unwrap_or_default()
+                        .trim()
+                        .to_uppercase();
+                    tracing::info!(classification = %answer, "Layer 2: SLM classification result");
+
+                    let is_simp = answer.contains("SIMPLE");
+                    tracing::Span::current().record(
+                        "slm.complexity_score",
+                        if is_simp { "SIMPLE" } else { "COMPLEX" },
+                    );
+
+                    is_simp
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "Layer 2: SLM answer parse failed – falling through");
+                    tracing::warn!(error = %e, "Layer 2: Failed to parse SLM response – falling through");
+                    false
                 }
             },
             Err(e) => {
-                tracing::warn!(error = %e, "Layer 2: SLM answer call failed – falling through");
+                tracing::warn!(error = %e, "Layer 2: SLM unreachable – falling through to Layer 3");
+                false
+            }
+        }
+    };
+
+    // ------------------------------------------------------------------
+    // 3. Branch: short-circuit or continue.
+    // ------------------------------------------------------------------
+    if is_simple {
+        tracing::info!("Layer 2: Simple task – generating answer via selected engine");
+
+        if state.config.inference_engine == crate::config::InferenceEngineMode::Embedded {
+            #[cfg(feature = "embedded-inference")]
+            {
+                if let Some(classifier) = &state.embedded_classifier {
+                    match classifier.execute(&prompt).await {
+                        Ok(answer) => {
+                            return (
+                                StatusCode::OK,
+                                Json(ChatResponse {
+                                    layer: 2,
+                                    message: answer,
+                                    model: Some("embedded(gemma-2)".into()),
+                                }),
+                            )
+                                .into_response();
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Layer 2: Embedded answer generation failed – falling through");
+                        }
+                    }
+                }
+            }
+        } else {
+            let sidecar_url = format!(
+                "{}/v1/chat/completions",
+                state.config.layer2.sidecar_url.trim_end_matches('/')
+            );
+            // Second call: ask the sidecar to actually answer the prompt.
+            let answer_req = ChatCompletionRequest {
+                model: state.config.layer2.model_name.clone(),
+                messages: vec![
+                    ChatMessage {
+                        role: "user".to_string(),
+                        content: prompt.clone(),
+                    },
+                ],
+                stream: false,
+                temperature: None,
+                max_tokens: None,
+            };
+
+            match state
+                .http_client
+                .post(&sidecar_url)
+                .json(&answer_req)
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.json::<ChatCompletionResponse>().await {
+                    Ok(completion) => {
+                        let answer = completion
+                            .choices
+                            .into_iter()
+                            .next()
+                            .map(|c| c.message.content)
+                            .unwrap_or_default();
+                        return (
+                            StatusCode::OK,
+                            Json(ChatResponse {
+                                layer: 2,
+                                message: answer,
+                                model: Some(state.config.layer2.model_name.clone()),
+                            }),
+                        )
+                            .into_response();
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Layer 2: Sidecar answer parse failed – falling through");
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "Layer 2: Sidecar answer call failed – falling through");
+                }
             }
         }
     }
@@ -240,6 +298,7 @@ mod tests {
 
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
+    use crate::layer1::embeddings::shared_test_embedder;
     use crate::models::ChatResponse;
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
@@ -259,6 +318,7 @@ mod tests {
     fn test_state(sidecar_url: &str) -> Arc<AppState> {
         let config = Arc::new(AppConfig {
             host_port: "127.0.0.1:0".into(),
+            inference_engine: crate::config::InferenceEngineMode::Sidecar,
             gateway_api_key: "test".into(),
             cache_mode: CacheMode::Exact,
             embedding_model: "all-minilm".into(),
@@ -299,7 +359,10 @@ mod tests {
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
+            text_embedder: shared_test_embedder(),
             config,
+            #[cfg(feature = "embedded-inference")]
+            embedded_classifier: None,
         })
     }
 

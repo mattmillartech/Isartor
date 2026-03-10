@@ -23,6 +23,7 @@ flowchart TB
     end
 
     subgraph Backends
+        FE["fastembed (ONNX Runtime)\nBAAI/bge-small-en-v1.5\nIn-process sentence embeddings"]
         EC["Embedded Classifier\n(candle · Gemma-2-2B-IT GGUF)\nIn-process, zero network hop"]
         SLM["llama.cpp Sidecar\n(external HTTP, optional)"]
         LLM["External LLM API\n(OpenAI · Azure · Anthropic · xAI)"]
@@ -32,6 +33,7 @@ flowchart TB
     C1 & C2 & C3 -->|"HTTPS"| L0
     L0 -.->|"401 Unauthorized"| C1 & C2 & C3
     L1 -.->|"Cache Hit"| C1 & C2 & C3
+    L1 ---|"Embed (in-process)"| FE
     L1 ---|"Lookup"| VS
     L2 -->|"In-process"| EC
     L2 -.->|"HTTP (fallback)"| SLM
@@ -49,6 +51,7 @@ sequenceDiagram
     participant Client
     participant L0 as Layer 0<br/>Auth
     participant L1 as Layer 1<br/>Cache
+    participant FE as fastembed<br/>(ONNX, in-process)
     participant L2 as Layer 2<br/>SLM Triage
     participant L3 as Layer 3<br/>LLM Fallback
     participant EC as Embedded Classifier<br/>(candle)
@@ -60,6 +63,8 @@ sequenceDiagram
         L0-->>Client: 401 Unauthorized ⛔
     else Valid key
         L0->>L1: forward request
+        L1->>FE: embed(prompt) via spawn_blocking
+        FE-->>L1: 384-dim vector
         alt Cache hit
             L1-->>Client: Cached response ⚡
         else Cache miss
@@ -93,6 +98,9 @@ graph LR
         main["main.rs\nBootstrap & Router"]
         config["config.rs\nAppConfig"]
         handler["handler.rs\nLayer 3 Handler"]
+        subgraph layer1
+            emb_l1["embeddings.rs\nTextEmbedder\n(fastembed/ONNX)"]
+        end
         subgraph middleware
             mod["mod.rs"]
             auth["auth.rs\nLayer 0"]
@@ -122,7 +130,9 @@ graph LR
     main --> handler
     main --> mod
     main --> li
+    main --> emb_l1
     mod --> auth & cache & slm
+    cache -.-> emb_l1
     auth -.-> config
     slm -.-> config
     orch --> traits
@@ -238,7 +248,7 @@ The parser falls back to keyword detection and defaults to `COMPLEX` (safest rou
 | `ISARTOR_GATEWAY_API_KEY` | `gateway_api_key` | `changeme` | Layer 0 |
 | `ISARTOR_LAYER2__SIDECAR_URL` | `layer2.sidecar_url` | `http://127.0.0.1:8081` | Layer 2 (sidecar mode) |
 | `ISARTOR_LAYER2__MODEL_NAME` | `layer2.model_name` | `phi-3-mini` | Layer 2 (sidecar mode) |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `embedding_sidecar.sidecar_url` | `http://127.0.0.1:8082` | Layer 1 |
+| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `embedding_sidecar.sidecar_url` | `http://127.0.0.1:8082` | v2 Pipeline (legacy; v1 uses in-process fastembed) |
 | `ISARTOR_EXTERNAL_LLM_API_KEY` | `external_llm_api_key` | *(empty)* | Layer 3 |
 
 ### Embedded Classifier Configuration
@@ -272,6 +282,7 @@ flowchart LR
 
     subgraph Models["Model Cache"]
         HF["~/.cache/huggingface/\nGemma-2-2B-IT GGUF\n~1.5 GB"]
+        FEC[".fastembed_cache/\nBAAI/bge-small-en-v1.5\n~33 MB ONNX"]
     end
 
     IMG -.->|"auto-download\non first start"| Models
@@ -282,9 +293,10 @@ flowchart LR
 | Component | Approximate Size |
 |---|---|
 | Isartor binary | ~5 MB |
+| fastembed ONNX model (BAAI/bge-small-en-v1.5) | ~33 MB |
 | Gemma-2-2B-IT Q4_K_M | ~1.5 GB |
 | Tokenizer | ~3 MB |
 | Runtime overhead | ~50 MB |
 | **Total** | **~1.6 GB** |
 
-For VPS/edge deployments, a 2 GB RAM instance is sufficient. The GGUF model is memory-mapped where possible, so actual RSS may be lower than the file size.
+For VPS/edge deployments, a 2 GB RAM instance is sufficient. The GGUF model is memory-mapped where possible, so actual RSS may be lower than the file size. The fastembed ONNX model is downloaded once on first startup and cached in `.fastembed_cache/`.

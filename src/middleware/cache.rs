@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use tracing::{info_span, Instrument};
 
 use crate::config::CacheMode;
-use crate::models::{ChatResponse, OllamaEmbedRequest, OllamaEmbedResponse};
+use crate::models::ChatResponse;
 use crate::state::AppState;
 
 /// Layer 1 — Cache middleware with configurable strategy.
@@ -90,28 +90,22 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
     // ------------------------------------------------------------------
     // 3. Semantic lookup (when mode is Semantic or Both).
+    //    Uses the in-process fastembed TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
-    let embedding = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
-        let embed_url = state
-            .config
-            .local_slm_url
-            .replace("/api/generate", "/api/embed");
+    let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
+        let embedder = state.text_embedder.clone();
+        let prompt_clone = prompt.clone();
 
-        let embed_req = OllamaEmbedRequest {
-            model: state.config.embedding_model.clone(),
-            input: prompt.clone(),
-        };
-
-        match state.http_client.post(&embed_url).json(&embed_req).send().await {
-            Ok(resp) => match resp.json::<OllamaEmbedResponse>().await {
-                Ok(embed_resp) => embed_resp.embeddings.into_iter().next().filter(|v| !v.is_empty()),
-                Err(e) => {
-                    tracing::warn!(error = %e, "Layer 1: Failed to parse embedding response");
-                    None
-                }
-            },
+        // fastembed (ONNX Runtime) is CPU-bound; run on the blocking pool
+        // so we don't starve the Tokio async workers.
+        match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await {
+            Ok(Ok(emb)) => Some(emb),
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, "Layer 1: In-process embedding failed – skipping semantic cache");
+                None
+            }
             Err(e) => {
-                tracing::warn!(error = %e, "Layer 1: Embedding service unreachable – skipping semantic cache");
+                tracing::warn!(error = %e, "Layer 1: Embedding task panicked – skipping semantic cache");
                 None
             }
         }
@@ -189,6 +183,7 @@ mod tests {
 
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
+    use crate::layer1::embeddings::shared_test_embedder;
     use crate::models::ChatResponse;
     use crate::state::{AppLlmAgent, ExactCache};
     use crate::vector_cache::VectorCache;
@@ -208,6 +203,7 @@ mod tests {
     fn test_config(mode: CacheMode) -> Arc<AppConfig> {
         Arc::new(AppConfig {
             host_port: "127.0.0.1:0".into(),
+            inference_engine: crate::config::InferenceEngineMode::Sidecar,
             gateway_api_key: "test".into(),
             cache_mode: mode,
             embedding_model: "all-minilm".into(),
@@ -251,7 +247,10 @@ mod tests {
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
+            text_embedder: shared_test_embedder(),
             config,
+            #[cfg(feature = "embedded-inference")]
+            embedded_classifier: None,
         })
     }
 

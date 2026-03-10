@@ -28,81 +28,6 @@
 services:
 
   # ═══════════════════════════════════════════════════════════════════
-  # 1. LOCAL AI SIDECARS — llama.cpp (Lightweight Sidecar Strategy)
-  # ═══════════════════════════════════════════════════════════════════
-
-  # ── Generation Sidecar — Phi-3-mini-4k-instruct (Q4_K_M) ─────────
-  # Handles intent classification, simple task execution, and reranking.
-  # Exposes an OpenAI-compatible API at /v1/chat/completions.
-  slm-generation:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    container_name: isartor-slm-generation
-    ports:
-      - "8081:8081"
-    command:
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8081"
-      - "--hf-repo"
-      - "microsoft/Phi-3-mini-4k-instruct-gguf"
-      - "--hf-file"
-      - "Phi-3-mini-4k-instruct-q4.gguf"
-      - "--ctx-size"
-      - "4096"
-      - "--n-gpu-layers"
-      - "99"
-    volumes:
-      - slm_models:/root/.cache
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 30s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-
-  # ── Embedding Sidecar — all-MiniLM-L6-v2 (GGUF) ─────────────────
-  # Dedicated embedding model running with --embedding flag.
-  # Exposes an OpenAI-compatible API at /v1/embeddings.
-  slm-embedding:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    container_name: isartor-slm-embedding
-    ports:
-      - "8082:8082"
-    command:
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8082"
-      - "--hf-repo"
-      - "leliuga/all-MiniLM-L6-v2-GGUF"
-      - "--hf-file"
-      - "all-MiniLM-L6-v2.Q8_0.gguf"
-      - "--ctx-size"
-      - "512"
-      - "--embedding"
-      - "--pooling"
-      - "mean"
-    volumes:
-      - slm_models:/root/.cache
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 15s
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-
-  # ═══════════════════════════════════════════════════════════════════
   # 2. ISARTOR GATEWAY
   # ═══════════════════════════════════════════════════════════════════
 
@@ -112,16 +37,13 @@ services:
       dockerfile: docker/Dockerfile
     container_name: isartor-gateway
     depends_on:
-      slm-generation:
-        condition: service_healthy
-      slm-embedding:
-        condition: service_healthy
       otel-collector:
         condition: service_started
     ports:
-      - "8080:8080"
+      - "8000:8080"
     environment:
       # ── General ──────────────────────────────────────────────────
+      ISARTOR_INFERENCE_ENGINE: "embedded"
       ISARTOR_HOST_PORT: "0.0.0.0:8080"
       ISARTOR_GATEWAY_API_KEY: "changeme"
       # ── Layer 1 — Semantic Cache ─────────────────────────────────
@@ -131,13 +53,13 @@ services:
       ISARTOR_CACHE_TTL_SECS: "300"
       ISARTOR_CACHE_MAX_CAPACITY: "10000"
       # ── Layer 2 — Generation Sidecar (llama.cpp) ─────────────────
-      ISARTOR_LAYER2__SIDECAR_URL: "http://slm-generation:8081"
-      ISARTOR_LAYER2__MODEL_NAME: "phi-3-mini"
-      ISARTOR_LAYER2__TIMEOUT_SECONDS: "30"
+      ISARTOR__LAYER2__SIDECAR_URL: "http://slm-generation:8081"
+      ISARTOR__LAYER2__MODEL_NAME: "phi-3-mini"
+      ISARTOR__LAYER2__TIMEOUT_SECONDS: "30"
       # ── Embedding Sidecar (llama.cpp --embedding) ────────────────
-      ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL: "http://slm-embedding:8082"
-      ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME: "all-minilm"
-      ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS: "10"
+      ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL: "http://slm-embedding:8082"
+      ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME: "all-minilm"
+      ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS: "10"
       # ── Legacy Layer 2 (v1 middleware — points to generation sidecar)
       ISARTOR_LOCAL_SLM_URL: "http://slm-generation:8081/v1/chat/completions"
       ISARTOR_LOCAL_SLM_MODEL: "phi-3-mini"
@@ -172,7 +94,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 4G
+    volumes:
+      - hf_models:/root/.cache/huggingface
 
   # ═══════════════════════════════════════════════════════════════════
   # 3. OBSERVABILITY STACK (lightweight images)
@@ -249,6 +173,8 @@ services:
       GF_DATASOURCES_DEFAULT_PROMETHEUS_URL: "http://prometheus:9090"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     ports:
       - "3000:3000"
     depends_on:
@@ -269,6 +195,8 @@ services:
 volumes:
   slm_models:
     name: isartor-slm-models
+  hf_models:
+    name: isartor-hf-models
   prometheus_data:
     name: isartor-prometheus-data
   grafana_data:

@@ -90,7 +90,7 @@ Isartor is a sequential processing pipeline built on [Axum](https://github.com/t
 | Layer | Purpose | Backend |
 | --- | --- | --- |
 | **0 — Defense** | API key auth, adaptive concurrency limiter (AIMD) | `middleware/auth.rs` |
-| **1 — Cache** | Embed prompt → cosine similarity → cache hit/miss | Embedding sidecar + in-memory vector store |
+| **1 — Cache** | Embed prompt → cosine similarity → cache hit/miss | In-process fastembed (ONNX) + in-memory vector store |
 | **2 — Triage** | Classify intent, execute simple tasks locally | Embedded candle classifier *or* llama.cpp sidecar |
 | **2.5 — Optimise** | Retrieve + rerank docs to top-K context | Reranker (sidecar or embedded) |
 | **3 — Fallback** | Route to cloud LLM with optimised context | OpenAI / Azure / Anthropic / xAI via rig-core |
@@ -101,7 +101,8 @@ Isartor is a sequential processing pipeline built on [Axum](https://github.com/t
 
 - **Rust-native performance** — Tokio + Axum async runtime; `opt-level = "z"` + LTO produces a ~5 MB static binary.
 - **Multi-layer short-circuiting** — Each pipeline layer can resolve a request independently.
-- **Embedded ML inference** — Gemma-2-2B-IT GGUF loaded in-process via [candle](https://github.com/huggingface/candle). Auto-downloads from Hugging Face on first start.
+- **Embedded ML inference** — Gemma-2-2B-IT GGUF loaded in-process via [candle](https://github.com/huggingface/candle) for Layer 2 classification. Auto-downloads from Hugging Face on first start.
+- **In-process sentence embeddings** — [fastembed](https://crates.io/crates/fastembed) (ONNX Runtime, BAAI/bge-small-en-v1.5) generates 384-dim embeddings for the semantic cache at Layer 1 — no sidecar required.
 - **Three deployment tiers** — From a single binary on a VPS to auto-scaling GPU pools on Kubernetes.
 - **Adaptive concurrency control** — AIMD-style limiter with P95 latency targets.
 - **Semantic + exact caching** — Dual-mode cache with TTL expiry and capacity eviction.
@@ -126,9 +127,9 @@ Isartor is designed to run at any scale. Because the gateway embeds ML models fo
   │ (single  │            │  │  Isartor   │  │       └────────┬──────────┘
   │  binary) │            │  └─────┬──────┘  │                │
   │          │            │        │ HTTP     │                │ internal LB
-  │ candle   │            │  ┌─────▼──────┐  │       ┌────────▼──────────┐
-  │ embedded │            │  │ llama.cpp  │  │       │  Inference Pool   │
-  │          │            │  │ sidecar    │  │       │  (vLLM / TGI)     │
+  │ fastembed│            │  ┌─────▼──────┐  │       ┌────────▼──────────┐
+  │ + candle │            │  │ llama.cpp  │  │       │  Inference Pool   │
+  │ embedded │            │  │ sidecar    │  │       │  (vLLM / TGI)     │
   └──────────┘            │  └────────────┘  │       │  GPU auto-scale   │
                           └──────────────────┘       └───────────────────┘
   Target:                 Target:                    Target:
@@ -139,9 +140,9 @@ Isartor is designed to run at any scale. Because the gateway embeds ML models fo
 
 | Tier | Strategy | Inference | Target | Guide |
 | --- | --- | --- | --- | --- |
-| **Level 1 — Minimal** | Monolithic static binary | In-process candle (Gemma-2-2B GGUF on CPU) | VPS, edge, `docker run`, bare metal | [docs/deploy-level1-minimal.md](docs/deploy-level1-minimal.md) |
-| **Level 2 — Sidecar** | Split architecture | llama.cpp / TGI sidecar on same host via HTTP | Docker Compose, single host + GPU | [docs/deploy-level2-sidecar.md](docs/deploy-level2-sidecar.md) |
-| **Level 3 — Enterprise** | Fully decoupled microservices | Auto-scaling GPU inference pools (vLLM, TGI) | Kubernetes, Helm, HPA | [docs/deploy-level3-enterprise.md](docs/deploy-level3-enterprise.md) |
+| **Level 1 — Minimal** | Monolithic static binary | In-process fastembed (ONNX, BAAI/bge-small-en-v1.5) for Layer 1 embeddings; candle (Gemma-2-2B GGUF) for Layer 2 classification | VPS, edge, `docker run`, bare metal | [docs/deploy-level1-minimal.md](docs/deploy-level1-minimal.md) |
+| **Level 2 — Sidecar** | Split architecture | llama.cpp / TGI sidecar for Layer 2 generation; Layer 1 embeddings remain in-process via fastembed | Docker Compose, single host + GPU | [docs/deploy-level2-sidecar.md](docs/deploy-level2-sidecar.md) |
+| **Level 3 — Enterprise** | Fully decoupled microservices | Auto-scaling GPU inference pools (vLLM, TGI); optional external embedding pool for v2 pipeline | Kubernetes, Helm, HPA | [docs/deploy-level3-enterprise.md](docs/deploy-level3-enterprise.md) |
 
 > **All three tiers share the same binary and configuration surface.** The deployment tier is determined by environment variables and infrastructure, not code changes.
 
@@ -179,7 +180,7 @@ isartor
 
 ```bash
 git clone https://github.com/isartor-ai/isartor.git && cd isartor/docker
-docker compose -f docker-compose.full.yml up --build
+docker compose -f docker-compose.sidecar.yml up --build
 ```
 
 Once the containers are healthy:
@@ -191,7 +192,7 @@ Once the containers are healthy:
 | **Grafana** | http://localhost:3000 | Metrics dashboards |
 | **Prometheus** | http://localhost:9090 | Metrics storage |
 | **SLM Generation** | http://localhost:8081 | llama.cpp — Phi-3-mini |
-| **SLM Embedding** | http://localhost:8082 | llama.cpp — all-MiniLM-L6-v2 |
+| **SLM Embedding** | http://localhost:8082 | llama.cpp — all-MiniLM-L6-v2 (v2 pipeline only; v1 uses in-process fastembed) |
 
 > **Full Level 2 guide** (GPU passthrough, sidecar configuration, scaling): [docs/deploy-level2-sidecar.md](docs/deploy-level2-sidecar.md)
 
@@ -277,6 +278,8 @@ src/
 ├── models.rs                        # Request / response types
 ├── telemetry.rs                     # OpenTelemetry initialisation
 ├── vector_cache.rs                  # HNSW-backed vector cache
+├── layer1/
+│   └── embeddings.rs                # In-process sentence embedder (fastembed/ONNX)
 ├── middleware/
 │   ├── auth.rs                      # Layer 0 — API key authentication
 │   ├── cache.rs                     # Layer 1 — Semantic + exact cache
@@ -309,7 +312,7 @@ docker/
 ├── Dockerfile                       # Multi-stage static musl build
 ├── Dockerfile.minimal               # Level 1: distroless single-binary image
 ├── Dockerfile.sidecar               # Level 2: debian-slim gateway image
-├── docker-compose.full.yml          # Full stack (Level 2 + observability)
+├── docker-compose.sidecar.yml          # Full stack (Level 2 + observability)
 ├── docker-compose.sidecar.yml       # Level 2: gateway + inference sidecar
 ├── docker-compose.yml               # Gateway + sidecars (OpenAI)
 ├── docker-compose.azure.yml         # Gateway + sidecars (Azure)
@@ -329,7 +332,7 @@ docker/
 | --- | --- |
 | [README.md](README.md) | This file — project overview and quick start |
 | [architecture.md](architecture.md) | Detailed architecture: Mermaid diagrams, module map, embedded classifier internals |
-| [docs/deploy-level1-minimal.md](docs/deploy-level1-minimal.md) | **Level 1** — Edge/VPS: static binary, embedded candle, systemd, `docker run` |
+| [docs/deploy-level1-minimal.md](docs/deploy-level1-minimal.md) | **Level 1** — Edge/VPS: static binary, fastembed + candle embedded, systemd, `docker run` |
 | [docs/deploy-level2-sidecar.md](docs/deploy-level2-sidecar.md) | **Level 2** — Mid-tier: Docker Compose, llama.cpp/TGI sidecar, GPU passthrough |
 | [docs/deploy-level3-enterprise.md](docs/deploy-level3-enterprise.md) | **Level 3** — Enterprise: Kubernetes, Helm, HPA, inference pools, service mesh |
 | [docs/configuration.md](docs/configuration.md) | Full configuration reference: all env vars, TOML examples, per-tier defaults |

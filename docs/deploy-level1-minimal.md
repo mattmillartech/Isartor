@@ -1,8 +1,8 @@
 # 📄 Level 1 — Minimal Deployment (Edge / VPS / Bare Metal)
 
-> **Single static binary, embedded candle inference, zero external dependencies.**
+> **Single static binary, embedded candle inference + in-process fastembed embeddings, zero external dependencies.**
 
-This guide covers deploying Isartor as a standalone process — no sidecars, no Docker Compose, no orchestrator. The gateway binary embeds a Gemma-2-2B-IT GGUF model via [candle](https://github.com/huggingface/candle) and handles classification + simple task execution entirely in-process.
+This guide covers deploying Isartor as a standalone process — no sidecars, no Docker Compose, no orchestrator. The gateway binary embeds a Gemma-2-2B-IT GGUF model via [candle](https://github.com/huggingface/candle) for Layer 2 classification and uses [fastembed](https://crates.io/crates/fastembed) (ONNX Runtime, BAAI/bge-small-en-v1.5) for Layer 1 semantic cache embeddings — all entirely in-process.
 
 ---
 
@@ -12,9 +12,9 @@ This guide covers deploying Isartor as a standalone process — no sidecars, no 
 | --- | --- |
 | €5–€20/month VPS (Hetzner, DigitalOcean, Linode) | GPU inference for generation quality |
 | ARM edge devices (Raspberry Pi 5, Jetson Nano) | More than ~50 concurrent users |
-| Air-gapped / offline environments | Need embedding sidecar for semantic cache |
-| Development & local experimentation | Production observability stack required |
-| CI/CD test runners | Multi-node high-availability |
+| Air-gapped / offline environments | Production observability stack required |
+| Development & local experimentation | Multi-node high-availability |
+| CI/CD test runners | |
 
 ---
 
@@ -28,7 +28,7 @@ This guide covers deploying Isartor as a standalone process — no sidecars, no 
 | **Rust** (build from source) | 1.75+ | Latest stable |
 | **OS** | Linux (x86_64 / aarch64), macOS | Ubuntu 22.04 LTS |
 
-> **Memory budget:** Gemma-2-2B Q4_K_M ≈ 1.5 GB, tokenizer ≈ 4 MB, gateway runtime ≈ 50 MB. Total: ~1.6 GB resident.
+> **Memory budget:** Gemma-2-2B Q4_K_M ≈ 1.5 GB, fastembed ONNX model ≈ 33 MB, tokenizer ≈ 4 MB, gateway runtime ≈ 50 MB. Total: ~1.6 GB resident.
 
 ---
 
@@ -76,10 +76,9 @@ export ISARTOR_HOST_PORT="0.0.0.0:8080"
 export ISARTOR_LLM_PROVIDER="openai"          # openai | azure | anthropic | xai
 export ISARTOR_EXTERNAL_LLM_MODEL="gpt-4o-mini"
 
-# Cache mode — in Level 1, "exact" is recommended since there's no
-# embedding sidecar. Use "both" or "semantic" only if you bring your
-# own embedding endpoint.
-export ISARTOR_CACHE_MODE="exact"
+# Cache mode — "both" enables exact + semantic cache. Semantic embeddings
+# are generated in-process via fastembed (ONNX) — no sidecar needed.
+export ISARTOR_CACHE_MODE="both"
 ```
 
 ### 3. Start the Gateway
@@ -92,6 +91,8 @@ On first start, the embedded classifier will **auto-download** the Gemma-2-2B-IT
 
 ```
 INFO  isartor > Listening on 0.0.0.0:8080
+INFO  isartor::layer1::embeddings > Initialising fastembed TextEmbedder (BAAI/bge-small-en-v1.5)...
+INFO  isartor::layer1::embeddings > TextEmbedder ready (~33 MB ONNX model loaded)
 INFO  isartor::services::local_inference > Downloading model from mradermacher/gemma-2-2b-it-GGUF...
 INFO  isartor::services::local_inference > Model loaded (1.5 GB), ready for inference
 ```
@@ -131,7 +132,7 @@ docker run -d \
   -p 8080:8080 \
   -e ISARTOR_GATEWAY_API_KEY="my-secret-key" \
   -e ISARTOR_EXTERNAL_LLM_API_KEY="sk-..." \
-  -e ISARTOR_CACHE_MODE="exact" \
+  -e ISARTOR_CACHE_MODE="both" \
   -v isartor-models:/root/.cache/huggingface \
   isartor:latest
 ```
@@ -173,7 +174,7 @@ ISARTOR_GATEWAY_API_KEY=your-production-key
 ISARTOR_EXTERNAL_LLM_API_KEY=sk-...
 ISARTOR_LLM_PROVIDER=openai
 ISARTOR_EXTERNAL_LLM_MODEL=gpt-4o-mini
-ISARTOR_CACHE_MODE=exact
+ISARTOR_CACHE_MODE=both
 RUST_LOG=isartor=info
 EOF
 sudo chmod 600 /etc/isartor/env
@@ -270,7 +271,7 @@ These are the most relevant `ISARTOR_*` variables for Level 1 deployments. For t
 | --- | --- | --- |
 | `ISARTOR_HOST_PORT` | `0.0.0.0:8080` | Bind address |
 | `ISARTOR_GATEWAY_API_KEY` | `changeme` | **Change in production** |
-| `ISARTOR_CACHE_MODE` | `both` | Use `exact` (no embedding sidecar available) |
+| `ISARTOR_CACHE_MODE` | `both` | `both` recommended — fastembed provides in-process semantic embeddings |
 | `ISARTOR_CACHE_TTL_SECS` | `300` | Cache TTL in seconds |
 | `ISARTOR_CACHE_MAX_CAPACITY` | `10000` | Max entries per cache |
 | `ISARTOR_LLM_PROVIDER` | `openai` | `openai` · `azure` · `anthropic` · `xai` |
@@ -295,7 +296,7 @@ These are the most relevant `ISARTOR_*` variables for Level 1 deployments. For t
 
 | Metric | Typical Value (4-core x86_64) |
 | --- | --- |
-| Cold start (model download) | 30–120 s (depends on bandwidth) |
+| Cold start (model download) | 30–120 s (depends on bandwidth; ~1.5 GB Gemma + ~33 MB fastembed ONNX) |
 | Warm start (cached model) | 3–8 s |
 | Classification latency | 50–200 ms |
 | Simple task execution | 200–2000 ms |
@@ -309,10 +310,9 @@ These are the most relevant `ISARTOR_*` variables for Level 1 deployments. For t
 
 When your traffic outgrows Level 1, the migration path is straightforward:
 
-1. **Switch cache mode** — `ISARTOR_CACHE_MODE=both` (semantic cache now available via sidecar).
-2. **Add the embedding sidecar** — `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082`.
-3. **Add the generation sidecar** — `ISARTOR_LAYER2__SIDECAR_URL=http://127.0.0.1:8081` (replaces embedded candle with the more powerful Phi-3-mini on GPU).
-4. **Deploy via Docker Compose** — See [📄 `docs/deploy-level2-sidecar.md`](deploy-level2-sidecar.md).
+1. **Add the generation sidecar** — `ISARTOR_LAYER2__SIDECAR_URL=http://127.0.0.1:8081` (replaces embedded candle with the more powerful Phi-3-mini on GPU).
+2. **Optionally add an embedding sidecar for v2 pipeline** — `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082` (only needed if using the v2 algorithmic pipeline; v1 semantic cache already uses in-process fastembed).
+3. **Deploy via Docker Compose** — See [📄 `docs/deploy-level2-sidecar.md`](deploy-level2-sidecar.md).
 
 No code changes required — only environment variables and infrastructure.
 

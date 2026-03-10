@@ -5,3 +5,5 @@ Cargo.lock
 /.idea
 /.vscode
 *.log
+.fastembed_cache/
+test_fastembed.rs

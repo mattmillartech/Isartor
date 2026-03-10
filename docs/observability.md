@@ -101,11 +101,11 @@ If you want traces without a full collector, you can export to a file or stdout 
 
 ### Level 2 — Docker Compose (Full Stack)
 
-The `docker-compose.full.yml` includes the complete observability stack:
+The `docker-compose.sidecar.yml` includes the complete observability stack:
 
 ```bash
 cd docker
-docker compose -f docker-compose.full.yml up --build
+docker compose -f docker-compose.sidecar.yml up --build
 ```
 
 Services included:

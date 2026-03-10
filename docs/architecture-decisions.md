@@ -56,7 +56,7 @@ Use **Axum 0.8** on **Tokio 1.x** for the async HTTP server. Build with `--targe
 
 ---
 
-## ADR-003: Embedded Candle Classifier (Level 1)
+## ADR-003: Embedded Candle Classifier (Layer 2)
 
 **Date:** 2024 · **Status:** Accepted
 
@@ -120,7 +120,7 @@ The original design used [Ollama](https://ollama.com/) (~1.5 GB image) as the lo
 
 ### Decision
 
-Replace Ollama with **llama.cpp server** (`ghcr.io/ggml-org/llama.cpp:server`, ~30 MB) as the default sidecar in `docker-compose.full.yml`. Two instances run side by side:
+Replace Ollama with **llama.cpp server** (`ghcr.io/ggml-org/llama.cpp:server`, ~30 MB) as the default sidecar in `docker-compose.sidecar.yml`. Two instances run side by side:
 
 - **slm-generation** (port 8081) — Phi-3-mini for classification and generation
 - **slm-embedding** (port 8082) — all-MiniLM-L6-v2 with `--embedding` flag
@@ -133,6 +133,7 @@ Replace Ollama with **llama.cpp server** (`ghcr.io/ggml-org/llama.cpp:server`, ~
 - **Negative:** Ollama's model management UX (pull, list, delete) is lost.
 - **Negative:** Each model needs its own llama.cpp instance (no multi-model serving).
 - **Migration:** Ollama-based Compose files (`docker-compose.yml`, `docker-compose.azure.yml`) are retained for backward compatibility.
+- **Update (ADR-011):** The **slm-embedding** sidecar (port 8082) is now **optional** for the v1 middleware pipeline. Layer 1 semantic cache embeddings are generated in-process via fastembed (ONNX Runtime). The embedding sidecar is only required for the v2 algorithmic pipeline (`/api/v2/chat`).
 
 ---
 
@@ -248,6 +249,48 @@ Use **OpenTelemetry** (OTLP gRPC) as the sole telemetry interface. Traces and me
 - **Positive:** When `ISARTOR_ENABLE_MONITORING=false`, no OTel SDK is initialised — zero overhead.
 - **Negative:** Requires an OTel Collector as middleware (adds one more service in Level 2/3).
 - **Negative:** Auto-instrumentation is less mature in Rust than in Java/Python.
+
+---
+
+## ADR-011: fastembed for In-Process Sentence Embeddings
+
+| | |
+| --- | --- |
+| **Status** | Accepted |
+| **Date** | 2025-06 |
+| **Deciders** | Core team |
+| **Relates to** | ADR-003 (Embedded Candle), ADR-005 (llama.cpp sidecar) |
+
+### Context
+
+Layer 1 (semantic cache) must generate sentence embeddings for every incoming prompt to compute cosine similarity against the vector cache. Previously, this was done via an HTTP call to a llama.cpp sidecar running all-MiniLM-L6-v2, adding ~2–5 ms of network latency per request on the hot path — plus the operational complexity of managing a separate container.
+
+### Decision
+
+Use **fastembed** (`fastembed = "5.12.0"`) to run **BAAI/bge-small-en-v1.5** in-process via ONNX Runtime. The embedding model (~33 MB) is downloaded once on first startup and cached in `.fastembed_cache/`. Inference is invoked through `tokio::task::spawn_blocking` since ONNX execution is CPU-bound.
+
+- **Model:** BAAI/bge-small-en-v1.5 — 384-dimensional embeddings, optimised for sentence similarity.
+- **Runtime:** ONNX Runtime (bundled via fastembed) — no Python dependency, no sidecar.
+- **Thread safety:** The inner `TextEmbedding` is wrapped in `std::sync::Mutex` because `embed()` takes `&mut self`. This is acceptable because inference is always called from `spawn_blocking`, never holding the lock across `.await` points.
+- **Architecture:** `TextEmbedder` is initialised once at startup, stored as `Arc<TextEmbedder>` in `AppState`, and injected into the cache middleware.
+
+### Alternatives Considered
+
+| Alternative | Why rejected |
+| --- | --- |
+| llama.cpp sidecar (all-MiniLM-L6-v2) | Network round-trip on hot path, extra container to manage |
+| candle for embeddings | candle excels at transformer generation but lacks a turnkey sentence-embedding API; fastembed wraps ONNX Runtime with a purpose-built embedding interface |
+| sentence-transformers (Python) | Crosses FFI boundary, adds Python runtime dependency |
+| ort (raw ONNX Runtime bindings) | Lower-level; fastembed provides model download, tokenisation, and batching out of the box |
+
+### Consequences
+
+- **Positive:** Eliminates ~2–5 ms network latency per embedding call on the cache hot path.
+- **Positive:** Zero sidecar dependency for Level 1 — the minimal Dockerfile runs self-contained.
+- **Positive:** Model is pinned to a specific version; reproducible builds.
+- **Negative:** Binary size increases by ~5 MB (ONNX Runtime shared library).
+- **Negative:** First startup downloads the model (~33 MB) if not pre-cached.
+- **Negative:** `Mutex` serialises concurrent embedding calls within a single process (acceptable at current scale; can be replaced with a pool of models if needed).
 
 ---
 

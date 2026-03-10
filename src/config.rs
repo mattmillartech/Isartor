@@ -1,6 +1,20 @@
 #![allow(dead_code)]
 use serde::Deserialize;
 
+/// Inference Engine mode
+///
+/// Set via `ISARTOR_INFERENCE_ENGINE` env var.
+///
+/// * `"sidecar"`  - Uses external API calls (e.g. to llama.cpp sidecar) for inference. (Default)
+/// * `"embedded"` - Uses embedded Candle engine for inference in-process. Requires `embedded-inference` feature.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum InferenceEngineMode {
+    #[default]
+    Sidecar,
+    Embedded,
+}
+
 /// Cache operating mode.
 ///
 /// Set via `ISARTOR_CACHE_MODE` env var.
@@ -69,6 +83,9 @@ pub struct EmbeddingSidecarSettings {
 pub struct AppConfig {
     /// Socket address the server will bind to (e.g. "0.0.0.0:8080").
     pub host_port: String,
+
+    /// Inference engine mode (`sidecar` or `embedded`). Default is `sidecar`.
+    pub inference_engine: InferenceEngineMode,
 
     /// API key that clients must present in the `X-API-Key` header (Layer 0).
     pub gateway_api_key: String,
@@ -166,6 +183,7 @@ impl AppConfig {
         let cfg = config::Config::builder()
             // Defaults -------------------------------------------------
             .set_default("host_port", "0.0.0.0:8080")?
+            .set_default("inference_engine", "sidecar")?
             .set_default("gateway_api_key", "changeme")?
             // Layer 1
             .set_default("cache_mode", "both")?
@@ -288,6 +306,7 @@ mod tests {
                 let config = AppConfig::load().expect("default load must succeed");
 
                 assert_eq!(config.host_port, "0.0.0.0:8080");
+                assert_eq!(config.inference_engine, InferenceEngineMode::Sidecar);
                 assert_eq!(config.gateway_api_key, "changeme");
                 assert_eq!(config.cache_mode, CacheMode::Both);
                 assert_eq!(config.embedding_model, "all-minilm");
@@ -382,6 +401,8 @@ mod tests {
             .unwrap()
             .set_default("pipeline_target_latency_ms", 500_i64)
             .unwrap()
+            .set_default("inference_engine", "sidecar")
+            .unwrap()
             // Simulate env overrides by setting values directly.
             .set_override("host_port", "127.0.0.1:9090")
             .unwrap()
@@ -399,6 +420,7 @@ mod tests {
         let config: AppConfig = cfg.try_deserialize().unwrap();
 
         assert_eq!(config.host_port, "127.0.0.1:9090");
+        assert_eq!(config.inference_engine, InferenceEngineMode::Sidecar);
         assert_eq!(config.gateway_api_key, "my-secret-key");
         assert_eq!(config.cache_mode, CacheMode::Exact);
         assert_eq!(config.cache_ttl_secs, 600);
@@ -469,6 +491,8 @@ mod tests {
             .set_default("pipeline_min_concurrency", 4_i64)
             .unwrap()
             .set_default("pipeline_target_latency_ms", 500_i64)
+            .unwrap()
+            .set_override("inference_engine", "sidecar")
             .unwrap()
             // Nested struct overrides.
             .set_override("layer2.sidecar_url", "http://custom:9999")

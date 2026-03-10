@@ -1,41 +1,49 @@
 # =============================================================================
-# docker-compose.sidecar.yml — Level 2 "Mid-Tier" Stack
+# Isartor — One-Click Full Stack
 #
-# Two services: the Isartor gateway + a llama.cpp inference sidecar.
-# No observability stack — add docker-compose.observability.yml as an
-# override if you want Jaeger / Prometheus / Grafana.
+# Everything you need in a single command: gateway, local AI sidecars,
+# semantic cache, distributed tracing, metrics, and dashboards.
 #
-# Usage (from repo root):
-#   docker compose -f docker/docker-compose.sidecar.yml up --build
+# Architecture:
+#   Two lightweight llama.cpp sidecars (~30 MB each) replace Ollama (~1.5 GB):
+#     • slm-generation (port 8081) — Phi-3-mini for triage / generation
+#     • slm-embedding  (port 8082) — all-MiniLM-L6-v2 for embeddings
 #
-# With observability:
-#   docker compose -f docker/docker-compose.sidecar.yml \
-#                  -f docker/docker-compose.observability.yml up --build
+# Usage:
+#   cd docker
+#   docker compose -f docker-compose.full.yml up --build
 #
 # Endpoints:
-#   Gateway:           http://localhost:3000/api/chat
-#   Health check:      http://localhost:3000/healthz
-#   Sidecar (direct):  http://localhost:8081/health
+#   Gateway (v1):  http://localhost:8080/api/chat
+#   Gateway (v2):  http://localhost:8080/api/v2/chat
+#   Health check:  http://localhost:8080/healthz
+#   Jaeger UI:     http://localhost:16686
+#   Grafana:       http://localhost:3000
+#   Prometheus:    http://localhost:9090
 #
 # Tear down:
-#   docker compose -f docker/docker-compose.sidecar.yml down -v
+#   docker compose -f docker-compose.full.yml down -v
 # =============================================================================
 
 services:
 
   # ═══════════════════════════════════════════════════════════════════
-  # 1. INFERENCE SIDECAR — llama.cpp server (Phi-3-mini Q4)
+  # 1. LOCAL AI SIDECARS — llama.cpp (Lightweight Sidecar Strategy)
   # ═══════════════════════════════════════════════════════════════════
-  inference-sidecar:
+
+  # ── Generation Sidecar — Phi-3-mini-4k-instruct (Q4_K_M) ─────────
+  # Handles intent classification, simple task execution, and reranking.
+  # Exposes an OpenAI-compatible API at /v1/chat/completions.
+  slm-generation:
     image: ghcr.io/ggml-org/llama.cpp:server
-    container_name: isartor-inference-sidecar
+    container_name: isartor-slm-generation
     ports:
-      - "8081:8080"
+      - "8081:8081"
     command:
       - "--host"
       - "0.0.0.0"
       - "--port"
-      - "8080"
+      - "8081"
       - "--hf-repo"
       - "microsoft/Phi-3-mini-4k-instruct-gguf"
       - "--hf-file"
@@ -45,13 +53,9 @@ services:
       - "--n-gpu-layers"
       - "99"
     volumes:
-      # Persist downloaded model weights across restarts.
-      - model_cache:/root/.cache
-      # Mount a local directory if you prefer to supply your own GGUF files:
-      #   ./models/  on the host (repo root)  →  /models  inside the container
-      - ../models:/models:ro
+      - slm_models:/root/.cache
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -62,49 +66,107 @@ services:
         limits:
           memory: 4G
 
+  # ── Embedding Sidecar — all-MiniLM-L6-v2 (GGUF) ─────────────────
+  # Dedicated embedding model running with --embedding flag.
+  # Exposes an OpenAI-compatible API at /v1/embeddings.
+  slm-embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: isartor-slm-embedding
+    ports:
+      - "8082:8082"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8082"
+      - "--hf-repo"
+      - "leliuga/all-MiniLM-L6-v2-GGUF"
+      - "--hf-file"
+      - "all-MiniLM-L6-v2.Q8_0.gguf"
+      - "--ctx-size"
+      - "512"
+      - "--embedding"
+      - "--pooling"
+      - "mean"
+    volumes:
+      - slm_models:/root/.cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
   # ═══════════════════════════════════════════════════════════════════
   # 2. ISARTOR GATEWAY
   # ═══════════════════════════════════════════════════════════════════
+
   gateway:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.sidecar
+      dockerfile: docker/Dockerfile
+      args:
+        CARGO_OPTS: "--no-default-features"
     container_name: isartor-gateway
     depends_on:
-      inference-sidecar:
+      slm-generation:
         condition: service_healthy
+      slm-embedding:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
     ports:
-      - "3000:8080"
-    env_file:
-      - path: .env.sidecar
-        required: false
+      - "8000:8080"
     environment:
       # ── General ──────────────────────────────────────────────────
-      ISARTOR_HOST_PORT: "0.0.0.0:8080"
-      ISARTOR_GATEWAY_API_KEY: "${ISARTOR_GATEWAY_API_KEY:-changeme}"
-
-      # ── Layer 1 — Cache ─────────────────────────────────────────
-      ISARTOR_CACHE_MODE: "both"
-      ISARTOR_SIMILARITY_THRESHOLD: "0.85"
-      ISARTOR_CACHE_TTL_SECS: "300"
-      ISARTOR_CACHE_MAX_CAPACITY: "10000"
-
-      # ── Layer 2 — Generation sidecar ────────────────────────────
-      # Docker Compose DNS resolves "inference-sidecar" to the
-      # container IP.  The gateway talks to the sidecar's internal
-      # port 8080 (mapped to host 8081 for direct debugging).
-      ISARTOR_LAYER2__SIDECAR_URL: "http://inference-sidecar:8080"
-      ISARTOR_LAYER2__MODEL_NAME: "phi-3-mini"
-      ISARTOR_LAYER2__TIMEOUT_SECONDS: "30"
-
-      # Legacy v1 middleware (same sidecar, OpenAI-compat path)
-      ISARTOR_LOCAL_SLM_URL: "http://inference-sidecar:8080/v1/chat/completions"
-      ISARTOR_LOCAL_SLM_MODEL: "phi-3-mini"
-
-      # ── Layer 3 — External LLM (pass-through from .env) ────────
-      ISARTOR_LLM_PROVIDER: "${ISARTOR_LLM_PROVIDER:-openai}"
-      ISARTOR_EXTERNAL_LLM_MODEL: "${ISARTOR_EXTERNAL_LLM_MODEL:-gpt-4o-mini}"
-      ISARTOR_EXTERNAL_LLM_API_KEY: "${ISARTOR_EXTERNAL_LLM_API_KEY:-}"
+      ISARTOR__INFERENCE_ENGINE: "sidecar"
+      ISARTOR__HOST_PORT: "0.0.0.0:8080"
+      ISARTOR__GATEWAY_API_KEY: "changeme"
+      # ── Layer 1 — Semantic Cache ─────────────────────────────────
+      ISARTOR__CACHE_MODE: "both"
+      ISARTOR__EMBEDDING_MODEL: "all-minilm"
+      ISARTOR__SIMILARITY_THRESHOLD: "0.85"
+      ISARTOR__CACHE_TTL_SECS: "300"
+      ISARTOR__CACHE_MAX_CAPACITY: "10000"
+      # ── Layer 2 — Generation Sidecar (llama.cpp) ─────────────────
+      ISARTOR__LAYER2__SIDECAR_URL: "http://slm-generation:8081"
+      ISARTOR__LAYER2__MODEL_NAME: "phi-3-mini"
+      ISARTOR__LAYER2__TIMEOUT_SECONDS: "30"
+      # ── Embedding Sidecar (llama.cpp --embedding) ────────────────
+      ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL: "http://slm-embedding:8082"
+      ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME: "all-minilm"
+      ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS: "10"
+      # ── Legacy Layer 2 (v1 middleware — points to generation sidecar)
+      ISARTOR__LOCAL_SLM_URL: "http://slm-generation:8081/v1/chat/completions"
+      ISARTOR__LOCAL_SLM_MODEL: "phi-3-mini"
+      # ── Layer 3 — External LLM (override via .env.full) ─────────
+      ISARTOR__LLM_PROVIDER: "${ISARTOR__LLM_PROVIDER:-openai}"
+      ISARTOR__EXTERNAL_LLM_MODEL: "${ISARTOR__EXTERNAL_LLM_MODEL:-gpt-4o-mini}"
+      ISARTOR__EXTERNAL_LLM_API_KEY: "${ISARTOR__EXTERNAL_LLM_API_KEY:-}"
+      ISARTOR__EXTERNAL_LLM_URL: "${ISARTOR__EXTERNAL_LLM_URL:-https://api.openai.com/v1/chat/completions}"
+      # ── Azure (pass-through, only used when provider=azure) ──────
+      ISARTOR__AZURE_DEPLOYMENT_ID: "${ISARTOR__AZURE_DEPLOYMENT_ID:-}"
+      ISARTOR__AZURE_API_VERSION: "${ISARTOR__AZURE_API_VERSION:-2024-08-01-preview}"
+      # ── Observability ────────────────────────────────────────────
+      ISARTOR__ENABLE_MONITORING: "true"
+      ISARTOR__OTEL_EXPORTER_ENDPOINT: "http://otel-collector:4317"
+      # ── Pipeline v2 Tuning ──────────────────────────────────────
+      ISARTOR__PIPELINE_EMBEDDING_DIM: "384"
+      ISARTOR__PIPELINE_SIMILARITY_THRESHOLD: "0.92"
+      ISARTOR__PIPELINE_RERANK_TOP_K: "5"
+      ISARTOR__PIPELINE_MAX_CONCURRENCY: "256"
+      ISARTOR__PIPELINE_MIN_CONCURRENCY: "4"
+      ISARTOR__PIPELINE_TARGET_LATENCY_MS: "500"
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.full
+        required: false
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
       interval: 10s
@@ -117,5 +179,104 @@ services:
         limits:
           memory: 256M
 
+  # ═══════════════════════════════════════════════════════════════════
+  # 3. OBSERVABILITY STACK (lightweight images)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # ── OpenTelemetry Collector ──────────────────────────────────────
+  # Receives traces + metrics via OTLP gRPC from the gateway,
+  # forwards traces to Jaeger and metrics to Prometheus.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: isartor-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+    depends_on:
+      jaeger:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ── Jaeger — Distributed Tracing UI ──────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: isartor-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Prometheus — Metrics Storage ─────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: isartor-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--storage.tsdb.retention.size=512MB"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ── Grafana — Dashboards ─────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: isartor-grafana
+    environment:
+      # Zero-config anonymous access for local development
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Auto-provision data sources
+      GF_DATASOURCES_DEFAULT_PROMETHEUS_URL: "http://prometheus:9090"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+# ═════════════════════════════════════════════════════════════════════
+# VOLUMES
+# ═════════════════════════════════════════════════════════════════════
+
 volumes:
-  model_cache:
+  slm_models:
+    name: isartor-slm-models
+  prometheus_data:
+    name: isartor-prometheus-data
+  grafana_data:
+    name: isartor-grafana-data

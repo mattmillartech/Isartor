@@ -45,7 +45,7 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
      ┌────────▼───────┐  ┌────────▼───────┐   ┌────────▼───────┐
      │ Inference Pool  │  │ Embedding Pool  │   │ Cloud LLM      │
      │ (vLLM / TGI)   │  │ (TEI / llama)   │   │ (OpenAI / etc) │
-     │                 │  │                 │   │ (Layer 3 only)  │
+     │                 │  │ v2 pipeline only │   │ (Layer 3 only)  │
      │ GPU Nodes       │  │ CPU/GPU Nodes   │   └────────────────┘
      │ HPA on GPU util │  │ HPA on RPS      │
      └─────────────────┘  └─────────────────┘
@@ -57,7 +57,7 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
 | --- | --- | --- | --- |
 | **Gateway** | 2–20 | CPU utilisation / request rate | CPU nodes |
 | **Inference Pool** (vLLM) | 1–N | GPU utilisation / queue depth | GPU nodes |
-| **Embedding Pool** (TEI) | 1–N | Requests per second | CPU or GPU nodes |
+| **Embedding Pool** (TEI) | 1–N | Requests per second | CPU or GPU nodes (v2 pipeline only; v1 uses in-process fastembed) |
 | **OTel Collector** | 1 (DaemonSet or Deployment) | — | CPU nodes |
 | **Ingress Controller** | 1–2 | — | CPU nodes |
 
@@ -157,7 +157,7 @@ spec:
               value: "phi-3-mini"
             - name: ISARTOR_LAYER2__TIMEOUT_SECONDS
               value: "30"
-            # Embedding pool (internal service)
+            # Embedding pool (v2 pipeline only — v1 uses in-process fastembed)
             - name: ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL
               value: "http://isartor-embedding:8082"
             - name: ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME
@@ -348,7 +348,9 @@ containers:
 
 ---
 
-## Step 5: Embedding Pool (TEI)
+## Step 5: Embedding Pool (TEI) — v2 Pipeline Only
+
+> **Note:** The v1 middleware pipeline (`/api/chat`) generates Layer 1 embeddings in-process via fastembed. This external embedding pool is only needed if you use the v2 algorithmic pipeline (`/api/v2/chat`).
 
 [Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference) provides optimised embedding generation.
 
@@ -617,7 +619,7 @@ If Kubernetes overhead doesn't justify the scale:
 
 1. Export your env vars from the Kubernetes ConfigMap/Secret.
 2. Map them into `docker/.env.full`.
-3. Run `docker compose -f docker-compose.full.yml up --build`.
+3. Run `docker compose -f docker-compose.sidecar.yml up --build`.
 
 No code changes — the binary is identical across all three tiers.
 

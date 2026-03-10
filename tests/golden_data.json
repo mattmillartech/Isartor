@@ -1,0 +1,18 @@
+[
+    {
+        "prompt": "Hi there",
+        "expected_label": "SIMPLE"
+    },
+    {
+        "prompt": "Can you summarize this long article for me?",
+        "expected_label": "COMPLEX"
+    },
+    {
+        "prompt": "What is the capital of France?",
+        "expected_label": "SIMPLE"
+    },
+    {
+        "prompt": "Write a python script to parse a CSV and upload it to an S3 bucket",
+        "expected_label": "COMPLEX"
+    }
+]

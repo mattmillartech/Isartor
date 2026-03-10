@@ -4,10 +4,12 @@ mod handler;
 mod middleware;
 mod models;
 mod pipeline;
+#[cfg(feature = "embedded-inference")]
 mod services;
 mod state;
 mod telemetry;
 mod vector_cache;
+mod layer1;
 
 use std::sync::Arc;
 
@@ -51,7 +53,14 @@ async fn main() -> anyhow::Result<()> {
         "LLM provider configured"
     );
 
-    let app_state = Arc::new(AppState::new(config.clone()));
+    // Initialize the in-process sentence embedder for Layer 1 semantic cache.
+    // This blocks during startup (~1s) to load the ONNX model into RAM (~33 MB).
+    let text_embedder = Arc::new(
+        layer1::embeddings::TextEmbedder::new()
+            .expect("Failed to initialize fastembed TextEmbedder (bge-small-en-v1.5)")
+    );
+
+    let app_state = Arc::new(AppState::new(config.clone(), text_embedder));
 
     // ------------------------------------------------------------------
     // 3a. Build the Algorithmic Pipeline (v2) components.
@@ -121,6 +130,8 @@ async fn main() -> anyhow::Result<()> {
     let limiter_for_route = concurrency_limiter.clone();
     let suite_for_route = algorithm_suite.clone();
     let pcfg_for_route = pipeline_cfg.clone();
+    // ------------------------------------------------------------------
+    // 3b. Build the Axum router with the middleware "funnel".
 
     let app = Router::new()
         // Routes

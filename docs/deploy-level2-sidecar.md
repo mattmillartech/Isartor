@@ -1,8 +1,8 @@
 # 📄 Level 2 — Sidecar Deployment (Docker Compose)
 
-> **Split architecture: Isartor gateway + llama.cpp sidecars on a single host.**
+> **Split architecture: Isartor gateway + llama.cpp generation sidecar on a single host.**
 
-This guide covers deploying Isartor with dedicated AI sidecars for generation and embedding. The gateway delegates inference to lightweight llama.cpp containers via HTTP, while the overall stack runs on a single machine via Docker Compose.
+This guide covers deploying Isartor with a dedicated AI sidecar for generation. The gateway delegates Layer 2 inference to a lightweight llama.cpp container via HTTP, while Layer 1 semantic cache embeddings run **in-process** via fastembed (no embedding sidecar required). The overall stack runs on a single machine via Docker Compose.
 
 ---
 
@@ -11,7 +11,7 @@ This guide covers deploying Isartor with dedicated AI sidecars for generation an
 | ✅ Good Fit | ❌ Consider Level 1 or Level 3 |
 | --- | --- |
 | Single host with GPU (NVIDIA, AMD) | No GPU available → Level 1 embedded candle |
-| Need semantic cache (embedding sidecar) | Multi-node scaling → Level 3 Kubernetes |
+| Want GPU-accelerated Layer 2 generation | Multi-node scaling → Level 3 Kubernetes |
 | Want full observability stack (Jaeger, Grafana) | Budget VPS (< 4 GB RAM) → Level 1 |
 | Development with production-like topology | Auto-scaling inference pools → Level 3 |
 | 10–100 concurrent users | > 100 concurrent users → Level 3 |
@@ -41,19 +41,26 @@ This guide covers deploying Isartor with dedicated AI sidecars for generation an
 │  ┌─────────────┐    ┌───────────────────┐    ┌──────────────┐  │
 │  │   Client     │───▶│  Isartor Gateway  │    │  Jaeger UI   │  │
 │  │             │    │  :8080             │    │  :16686      │  │
-│  └─────────────┘    └──┬──────────┬─────┘    └──────────────┘  │
-│                        │          │                              │
-│              HTTP :8081│          │HTTP :8082                    │
-│                        ▼          ▼                              │
-│               ┌────────────┐  ┌────────────┐  ┌──────────────┐ │
-│               │ slm-gen    │  │ slm-embed  │  │  Grafana     │ │
-│               │ Phi-3-mini │  │ MiniLM-L6  │  │  :3000       │ │
-│               │ (llama.cpp)│  │ (llama.cpp)│  └──────────────┘ │
-│               └────────────┘  └────────────┘                    │
+│  └─────────────┘    │  (fastembed L1     │    └──────────────┘  │
+│                     │   embeddings       │                      │
+│                     │   built-in)        │                      │
+│                     └──┬────────────────┘                       │
+│                        │                                        │
+│              HTTP :8081│                                        │
+│                        ▼                                        │
+│               ┌────────────┐                  ┌──────────────┐ │
+│               │ slm-gen    │                  │  Grafana     │ │
+│               │ Phi-3-mini │                  │  :3000       │ │
+│               │ (llama.cpp)│                  └──────────────┘ │
+│               └────────────┘                                    │
 │                                               ┌──────────────┐ │
 │               ┌─────────────────────────┐     │  Prometheus  │ │
 │               │    OTel Collector :4317  │────▶│  :9090       │ │
 │               └─────────────────────────┘     └──────────────┘ │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ Optional: slm-embed :8082 (llama.cpp, v2 pipeline only) │  │
+│  └──────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -61,9 +68,9 @@ This guide covers deploying Isartor with dedicated AI sidecars for generation an
 
 | Service | Image | Port | Purpose | Memory Limit |
 | --- | --- | --- | --- | --- |
-| **gateway** | `isartor:latest` (built) | 8080 | AI orchestration gateway | 256 MB |
+| **gateway** | `isartor:latest` (built) | 8080 | AI orchestration gateway (includes fastembed for Layer 1 embeddings) | 256 MB |
 | **slm-generation** | `ghcr.io/ggml-org/llama.cpp:server` | 8081 | Phi-3-mini-4k (Q4_K_M) — intent classification + generation | 4 GB |
-| **slm-embedding** | `ghcr.io/ggml-org/llama.cpp:server` | 8082 | all-MiniLM-L6-v2 (Q8_0) — embedding vectors | 512 MB |
+| **slm-embedding** *(optional)* | `ghcr.io/ggml-org/llama.cpp:server` | 8082 | all-MiniLM-L6-v2 (Q8_0) — v2 pipeline embeddings only (v1 uses in-process fastembed) | 512 MB |
 | **otel-collector** | `otel/opentelemetry-collector-contrib:0.96.0` | 4317 | OTLP gRPC receiver | 128 MB |
 | **jaeger** | `jaegertracing/all-in-one:1.55` | 16686 | Distributed tracing UI | 256 MB |
 | **prometheus** | `prom/prometheus:v2.51.0` | 9090 | Metrics storage (7d retention) | 256 MB |
@@ -99,7 +106,7 @@ ISARTOR_EXTERNAL_LLM_API_KEY=sk-...
 ### 3. Start the Full Stack
 
 ```bash
-docker compose -f docker-compose.full.yml up --build
+docker compose -f docker-compose.sidecar.yml up --build
 ```
 
 First launch downloads model files (~1.5 GB for Phi-3 + ~50 MB for MiniLM). Subsequent starts use the cached `isartor-slm-models` volume.
@@ -109,7 +116,7 @@ First launch downloads model files (~1.5 GB for Phi-3 + ~50 MB for MiniLM). Subs
 The gateway waits for both sidecars to become healthy before starting:
 
 ```bash
-docker compose -f docker-compose.full.yml ps
+docker compose -f docker-compose.sidecar.yml ps
 ```
 
 All services should show `healthy` or `running`.
@@ -164,7 +171,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    # The default --n-gpu-layers 99 in docker-compose.full.yml
+    # The default --n-gpu-layers 99 in docker-compose.sidecar.yml
     # already offloads all layers to GPU when available.
 
   slm-embedding:
@@ -181,7 +188,7 @@ services:
 
 ```bash
 docker compose \
-  -f docker-compose.full.yml \
+  -f docker-compose.sidecar.yml \
   -f docker-compose.gpu.override.yml \
   up --build
 ```
@@ -202,12 +209,12 @@ The `docker/` directory contains several Compose configurations for different us
 
 | File | Description | Provider |
 | --- | --- | --- |
-| `docker-compose.full.yml` | **Recommended.** Full stack with llama.cpp sidecars + observability | Any (configurable) |
+| `docker-compose.sidecar.yml` | **Recommended.** Full stack with llama.cpp sidecars + observability | Any (configurable) |
 | `docker-compose.yml` | Legacy stack with Ollama (heavier) | OpenAI |
 | `docker-compose.azure.yml` | Legacy stack with Ollama, pre-configured for Azure OpenAI | Azure |
 | `docker-compose.observability.yml` | Observability-focused stack (Ollama + OTel + Jaeger + Grafana) | Azure |
 
-> **We recommend `docker-compose.full.yml`** for all new deployments. The llama.cpp sidecars are ~30 MB each vs. Ollama's ~1.5 GB.
+> **We recommend `docker-compose.sidecar.yml`** for all new deployments. The llama.cpp sidecars are ~30 MB each vs. Ollama's ~1.5 GB.
 
 ---
 
@@ -222,15 +229,15 @@ These variables are relevant to the sidecar architecture. For the full reference
 | `ISARTOR_LAYER2__SIDECAR_URL` | `http://127.0.0.1:8081` | Generation sidecar URL (use Docker service name in Compose: `http://slm-generation:8081`) |
 | `ISARTOR_LAYER2__MODEL_NAME` | `phi-3-mini` | Model name for OpenAI-compatible requests |
 | `ISARTOR_LAYER2__TIMEOUT_SECONDS` | `30` | HTTP timeout for generation calls |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `http://127.0.0.1:8082` | Embedding sidecar URL (use `http://slm-embedding:8082` in Compose) |
-| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `all-minilm` | Embedding model name |
-| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `10` | HTTP timeout for embedding calls |
+| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `http://127.0.0.1:8082` | Embedding sidecar URL — **v2 pipeline only** (v1 uses in-process fastembed; use `http://slm-embedding:8082` in Compose) |
+| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `all-minilm` | Embedding model name — v2 pipeline only |
+| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `10` | HTTP timeout for embedding calls — v2 pipeline only |
 
-### Cache (Now with Semantic Support)
+### Cache
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ISARTOR_CACHE_MODE` | `both` | Use `both` — the embedding sidecar enables semantic cache |
+| `ISARTOR_CACHE_MODE` | `both` | Use `both` — in-process fastembed (v1) provides semantic embeddings at all tiers |
 | `ISARTOR_SIMILARITY_THRESHOLD` | `0.85` | Cosine similarity threshold for cache hits |
 | `ISARTOR_PIPELINE_SIMILARITY_THRESHOLD` | `0.92` | Similarity threshold for v2 pipeline cache |
 | `ISARTOR_PIPELINE_EMBEDDING_DIM` | `384` | Must match the embedding model dimension |
@@ -250,32 +257,32 @@ These variables are relevant to the sidecar architecture. For the full reference
 
 ```bash
 # All services
-docker compose -f docker-compose.full.yml logs -f
+docker compose -f docker-compose.sidecar.yml logs -f
 
 # Gateway only
-docker compose -f docker-compose.full.yml logs -f gateway
+docker compose -f docker-compose.sidecar.yml logs -f gateway
 
 # Sidecars
-docker compose -f docker-compose.full.yml logs -f slm-generation slm-embedding
+docker compose -f docker-compose.sidecar.yml logs -f slm-generation slm-embedding
 ```
 
 ### Restart a Service
 
 ```bash
-docker compose -f docker-compose.full.yml restart gateway
+docker compose -f docker-compose.sidecar.yml restart gateway
 ```
 
 ### Tear Down (Preserve Model Cache)
 
 ```bash
-docker compose -f docker-compose.full.yml down
+docker compose -f docker-compose.sidecar.yml down
 # Models persist in the 'isartor-slm-models' volume
 ```
 
 ### Tear Down (Clean Everything)
 
 ```bash
-docker compose -f docker-compose.full.yml down -v
+docker compose -f docker-compose.sidecar.yml down -v
 # Removes all volumes including model cache — next start re-downloads models
 ```
 
