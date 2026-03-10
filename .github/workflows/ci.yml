@@ -1,14 +1,13 @@
-name: CI
+name: Rust CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  # Ensure the ONNX Runtime build works in CI (needed for fastembed)
   ORT_SYS_BUILD_FROM_SOURCE: "1"
 
 jobs:
@@ -25,16 +24,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake
 
-      - name: Install Rust toolchain (stable)
+      - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Cache Cargo registry & build artifacts
+      - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all -- --check
 
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
