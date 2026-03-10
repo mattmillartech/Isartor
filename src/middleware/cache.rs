@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use tracing::{info_span, Instrument};
 
 use crate::config::CacheMode;
-use crate::models::ChatResponse;
+use crate::models::{ChatResponse, FinalLayer};
 use crate::state::AppState;
 
 /// Layer 1 — Cache middleware with configurable strategy.
@@ -71,17 +71,23 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // ------------------------------------------------------------------
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
         let key = hex::encode(Sha256::digest(prompt.as_bytes()));
+
+        let exact_span = info_span!("layer1a_exact_lookup", cache.key = %key);
+        let _exact_guard = exact_span.enter();
+
         tracing::debug!(cache_key = %key, mode = ?mode, "Layer 1: Exact-match lookup");
 
         if let Some(cached) = state.exact_cache.get(&key).await {
             tracing::info!(cache_key = %key, "Layer 1: Exact cache HIT");
             tracing::Span::current().record("gateway.cache.hit", true);
-            return (
+            let mut response = (
                 StatusCode::OK,
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
                 cached,
             )
                 .into_response();
+            response.extensions_mut().insert(FinalLayer::ExactCache);
+            return response;
         }
         Some(key)
     } else {
@@ -92,7 +98,9 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // 3. Semantic lookup (when mode is Semantic or Both).
     //    Uses the in-process fastembed TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
+    let semantic_span = info_span!("layer1b_semantic_process");
     let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
+        let _sem_guard = semantic_span.enter();
         let embedder = state.text_embedder.clone();
         let prompt_clone = prompt.clone();
 
@@ -115,16 +123,19 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
     // Search the vector cache if we obtained an embedding.
     if let Some(ref emb) = embedding {
+        let _sem_guard = semantic_span.enter();
         tracing::debug!(dims = emb.len(), "Layer 1: Semantic lookup");
         if let Some(cached) = state.vector_cache.search(emb).await {
             tracing::info!("Layer 1: Semantic cache HIT");
             tracing::Span::current().record("gateway.cache.hit", true);
-            return (
+            let mut response = (
                 StatusCode::OK,
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
                 cached,
             )
                 .into_response();
+            response.extensions_mut().insert(FinalLayer::SemanticCache);
+            return response;
         }
     }
 

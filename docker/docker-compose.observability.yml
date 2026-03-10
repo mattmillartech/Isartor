@@ -5,8 +5,9 @@
 #   docker-compose -f docker-compose.observability.yml up --build
 #
 # UI Endpoints:
-# - Grafana: http://localhost:3000 (Metrics Dashboards)
+# - Grafana: http://localhost:3000 (Metrics Dashboards + TraceQL)
 # - Jaeger: http://localhost:16686 (Distributed Tracing UI)
+# - Tempo: http://localhost:3200 (TraceQL API)
 # - Gateway: http://localhost:8080/api/chat
 
 services:
@@ -46,6 +47,7 @@ services:
       - "4317:4317" # OTLP gRPC receiver
     depends_on:
       - jaeger
+      - tempo
 
   # ── Observability: Jaeger (Tracing Backend) ─────────────────────
   jaeger:
@@ -54,6 +56,16 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686" # UI
+
+  # ── Observability: Tempo (TraceQL Backend) ──────────────────────
+  tempo:
+    image: grafana/tempo:2.4.1
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo.yaml
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"  # Tempo HTTP API
 
   # ── Observability: Prometheus (Metrics Backend) ─────────────────
   prometheus:
@@ -70,11 +82,16 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
     ports:
       - "3000:3000"
     depends_on:
       - prometheus
       - jaeger
+      - tempo
 
 volumes:
   ollama_data:
+  tempo_data:

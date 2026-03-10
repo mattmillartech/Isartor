@@ -12,7 +12,7 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use tracing::{info_span, Instrument};
 
-use crate::models::ChatResponse;
+use crate::models::{ChatResponse, FinalLayer};
 use crate::state::AppState;
 
 /// System prompt used to ask the local SLM to classify the user's intent.
@@ -104,7 +104,10 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
     // ------------------------------------------------------------------
     // 2. Classify the prompt via the selected Inference Engine.
     // ------------------------------------------------------------------
-    let is_simple = if state.config.inference_engine == crate::config::InferenceEngineMode::Embedded {
+    let inference_span = info_span!("layer2_slm_inference");
+    let is_simple = {
+        let _inf_guard = inference_span.enter();
+        if state.config.inference_engine == crate::config::InferenceEngineMode::Embedded {
         #[cfg(feature = "embedded-inference")]
         {
             if let Some(classifier) = &state.embedded_classifier {
@@ -193,7 +196,8 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                 false
             }
         }
-    };
+    }
+    }; // close inference_span block
 
     // ------------------------------------------------------------------
     // 3. Branch: short-circuit or continue.
@@ -207,7 +211,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                 if let Some(classifier) = &state.embedded_classifier {
                     match classifier.execute(&prompt).await {
                         Ok(answer) => {
-                            return (
+                            let mut response = (
                                 StatusCode::OK,
                                 Json(ChatResponse {
                                     layer: 2,
@@ -216,6 +220,8 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                                 }),
                             )
                                 .into_response();
+                            response.extensions_mut().insert(FinalLayer::Slm);
+                            return response;
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, "Layer 2: Embedded answer generation failed – falling through");
@@ -257,7 +263,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                             .next()
                             .map(|c| c.message.content)
                             .unwrap_or_default();
-                        return (
+                        let mut response = (
                             StatusCode::OK,
                             Json(ChatResponse {
                                 layer: 2,
@@ -266,6 +272,8 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                             }),
                         )
                             .into_response();
+                        response.extensions_mut().insert(FinalLayer::Slm);
+                        return response;
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "Layer 2: Sidecar answer parse failed – falling through");

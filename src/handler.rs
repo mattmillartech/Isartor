@@ -8,7 +8,7 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use tracing::{info_span, Instrument};
 
-use crate::models::ChatResponse;
+use crate::models::{ChatResponse, FinalLayer};
 use crate::state::AppState;
 
 /// Layer 3 — Fallback handler.
@@ -58,18 +58,22 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
     // 2. Dispatch to the configured rig-core Agent.
     // ------------------------------------------------------------------
     match state.llm_agent.chat(&prompt).await {
-        Ok(text) => (
-            StatusCode::OK,
-            Json(ChatResponse {
-                layer: 3,
-                message: text,
-                model: Some(state.config.external_llm_model.clone()),
-            }),
-        )
-            .into_response(),
+        Ok(text) => {
+            let mut response = (
+                StatusCode::OK,
+                Json(ChatResponse {
+                    layer: 3,
+                    message: text,
+                    model: Some(state.config.external_llm_model.clone()),
+                }),
+            )
+                .into_response();
+            response.extensions_mut().insert(FinalLayer::Cloud);
+            response
+        }
         Err(e) => {
             tracing::error!(error = %e, provider = provider_name, "Layer 3: LLM call failed");
-            (
+            let mut response = (
                 StatusCode::BAD_GATEWAY,
                 Json(ChatResponse {
                     layer: 3,
@@ -77,7 +81,9 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
                     model: None,
                 }),
             )
-                .into_response()
+                .into_response();
+            response.extensions_mut().insert(FinalLayer::Cloud);
+            response
         }
     }
     }

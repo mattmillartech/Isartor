@@ -11,15 +11,15 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use crate::config::AppConfig;
 
+/// Initialise structured logging, OpenTelemetry tracing (OTLP/gRPC),
+/// and metric collection.  When `enable_monitoring` is `false` only
+/// console logging is active.
 pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
     let resource = Resource::builder_empty()
         .with_attributes(vec![KeyValue::new(SERVICE_NAME, "isartor-gateway")])
         .build();
 
-    // Format for basic console tracing if monitoring is disabled.
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-    // Base console layer
     let fmt_layer = tracing_subscriber::fmt::layer().pretty();
 
     if !config.enable_monitoring {
@@ -31,10 +31,9 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Set up OpenTelemetry Exporter
     let endpoint = &config.otel_exporter_endpoint;
 
-    // 1. Tracing
+    // ── 1. Distributed Tracing (TracerProvider → OTLP gRPC) ──────
     let span_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
@@ -47,10 +46,9 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
 
     global::set_tracer_provider(tracer_provider.clone());
     let tracer = global::tracer("isartor-gateway");
-
     let tracer_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    // 2. Metrics (MeterProvider)
+    // ── 2. Metrics (MeterProvider → OTLP gRPC → Prometheus) ──────
     let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
@@ -65,7 +63,7 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
 
     global::set_meter_provider(meter_provider.clone());
 
-    // 3. Register standard tracing subscriber
+    // ── 3. tracing-subscriber: console + OTel layer ──────────────
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt_layer)
@@ -78,4 +76,14 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
     );
 
     Ok(())
+}
+
+/// Flush in-flight spans & metrics before process exit.
+pub fn shutdown_telemetry() {
+    // In OpenTelemetry 0.31+, shutdown is handled by dropping the
+    // TracerProvider. We replace the global provider with a no-op,
+    // which causes the original provider to drop and flush.
+    opentelemetry::global::set_tracer_provider(
+        opentelemetry::trace::noop::NoopTracerProvider::new(),
+    );
 }

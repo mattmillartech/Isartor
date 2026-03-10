@@ -4,17 +4,24 @@ use std::time::Instant;
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
-use opentelemetry::metrics::Counter;
+use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry::{global, KeyValue};
 use tracing::{info_span, Instrument};
 
+use crate::models::FinalLayer;
 use crate::state::AppState;
 
-/// Root monitoring middleware.
+/// Root monitoring middleware — **outermost** layer in the Axum stack.
 ///
-/// Starts the parent trace span for the request, yielding performance metrics.
-/// On completion, it records a standard `gateway_requests_total` metric
-/// with labels indicating the final layer that handled the query.
+/// Responsibilities:
+///   1. Start a parent trace span (`gateway_request`) that wraps the
+///      entire request lifetime.
+///   2. After the response returns, read the [`FinalLayer`] extension
+///      that child middlewares (cache / SLM / handler) inserted to
+///      determine *which* gateway layer handled the request.
+///   3. Record an `isartor_requests_total` counter **and** an
+///      `isartor_request_duration_seconds` histogram, both tagged with
+///      the granular `final_layer` label.
 pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl IntoResponse {
     let method = request.method().to_string();
     let path = request.uri().path().to_string();
@@ -23,7 +30,7 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
         "gateway_request",
         method = %method,
         path = %path,
-        gateway.final_handling_layer = tracing::field::Empty,
+        isartor.final_layer = tracing::field::Empty,
     );
 
     async {
@@ -34,60 +41,80 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
             .clone();
 
         let enable_monitoring = state.config.enable_monitoring;
-        let mut meter_counter: Option<Counter<u64>> = None;
+
+        // Lazily initialise OTel instruments only when monitoring is on.
+        let mut counter: Option<Counter<u64>> = None;
+        let mut histogram: Option<Histogram<f64>> = None;
 
         if enable_monitoring {
-            // Get or create the custom metric counter
             let meter = global::meter("isartor.gateway");
-            meter_counter = Some(
+            counter = Some(
                 meter
-                    .u64_counter("gateway_requests_total")
-                    .with_description("Total requests processed by the AI orchestration gateway")
+                    .u64_counter("isartor_requests_total")
+                    .with_description(
+                        "Total requests processed, labelled by the final handling layer",
+                    )
+                    .build(),
+            );
+            histogram = Some(
+                meter
+                    .f64_histogram("isartor_request_duration_seconds")
+                    .with_description("End-to-end request latency in seconds")
                     .build(),
             );
         }
 
-        let start_time = Instant::now();
+        let start = Instant::now();
 
-        // Pass the request down the pipeline
+        // ── Run the rest of the middleware / handler chain ────────
         let response = next.run(request).await;
 
-        let duration = start_time.elapsed();
+        let elapsed = start.elapsed();
 
-        // Attempt to extract the "final_handling_layer" attribute from the span
-        // to categorize cost. This must be set by the child layers.
-        // For metrics, we need to extract exactly what the child layers reported via extensions or headers.
+        // ── Determine final layer ────────────────────────────────
+        let final_layer = response
+            .extensions()
+            .get::<FinalLayer>()
+            .copied()
+            .unwrap_or_else(|| {
+                // Fallback heuristic when no extension was set.
+                if response.status().is_client_error() {
+                    FinalLayer::AuthBlocked
+                } else {
+                    // Check legacy ChatResponse.layer field
+                    response
+                        .extensions()
+                        .get::<crate::models::ChatResponse>()
+                        .map(|cr| match cr.layer {
+                            1 => FinalLayer::ExactCache, // generic "cache" fallback
+                            2 => FinalLayer::Slm,
+                            _ => FinalLayer::Cloud,
+                        })
+                        .unwrap_or(FinalLayer::Cloud)
+                }
+            });
 
-        let mut handled_by_layer = "unknown";
-        if let Some(extensions) = response.extensions().get::<crate::models::ChatResponse>() {
-            handled_by_layer = match extensions.layer {
-                0 => "auth_blocked",
-                1 => "cache",
-                2 => "slm",
-                3 => "llm",
-                _ => "unknown",
-            };
-        } else if response.status().is_client_error() {
-            handled_by_layer = "auth_blocked";
+        let layer_label = final_layer.as_str();
+
+        // ── Record trace attribute ───────────────────────────────
+        root_span.record("isartor.final_layer", layer_label);
+
+        // ── Record OTel metrics ──────────────────────────────────
+        let attrs = [
+            KeyValue::new("final_layer", layer_label),
+            KeyValue::new("status_code", response.status().as_u16().to_string()),
+        ];
+
+        if let Some(c) = counter {
+            c.add(1, &attrs);
         }
-
-        // Record trace span attribute
-        root_span.record("gateway.final_handling_layer", handled_by_layer);
-
-        // Record OTel Metrics Counter
-        if let Some(counter) = meter_counter {
-            counter.add(
-                1,
-                &[
-                    KeyValue::new("handled_by", handled_by_layer),
-                    KeyValue::new("status_code", response.status().as_u16().to_string()),
-                ],
-            );
+        if let Some(h) = histogram {
+            h.record(elapsed.as_secs_f64(), &attrs);
         }
 
         tracing::info!(
-            duration_ms = duration.as_millis(),
-            handled_by = handled_by_layer,
+            duration_ms = elapsed.as_millis(),
+            final_layer = layer_label,
             status = response.status().as_u16(),
             "Request finished"
         );

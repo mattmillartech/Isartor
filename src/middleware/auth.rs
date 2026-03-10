@@ -9,6 +9,7 @@ use axum::{
 };
 use serde_json::json;
 
+use crate::models::FinalLayer;
 use crate::state::AppState;
 
 /// Layer 0 — Authentication middleware.
@@ -35,14 +36,16 @@ pub async fn auth_middleware(request: Request, next: Next) -> Response {
         }
         _ => {
             tracing::warn!("Layer 0: Unauthorized – invalid or missing API key");
-            (
+            let mut response = (
                 StatusCode::UNAUTHORIZED,
                 Json(json!({
                     "error": "Unauthorized",
                     "message": "Missing or invalid X-API-Key header"
                 })),
             )
-                .into_response()
+                .into_response();
+            response.extensions_mut().insert(FinalLayer::AuthBlocked);
+            response
         }
     }
 }

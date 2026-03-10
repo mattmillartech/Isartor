@@ -2,6 +2,38 @@
 #![allow(clippy::trim_split_whitespace)]
 use serde::{Deserialize, Serialize};
 
+// ── Observability: Final-layer annotation ────────────────────────────
+
+/// Which gateway layer ultimately resolved the request.
+/// Inserted into `http::Extensions` by each middleware so the root
+/// monitoring span can record it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FinalLayer {
+    /// Layer 0 — request rejected by auth / rate-limiter.
+    AuthBlocked,
+    /// Layer 1a — exact (SHA-256) cache hit.
+    ExactCache,
+    /// Layer 1b — semantic (embedding + cosine) cache hit.
+    SemanticCache,
+    /// Layer 2 — local SLM answered the request.
+    Slm,
+    /// Layer 3 — external cloud LLM fallback.
+    Cloud,
+}
+
+impl FinalLayer {
+    /// Stable string label used in OTel metrics and span attributes.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::AuthBlocked => "L0_AuthBlocked",
+            Self::ExactCache => "L1a_ExactCache",
+            Self::SemanticCache => "L1b_SemanticCache",
+            Self::Slm => "L2_SLM",
+            Self::Cloud => "L3_Cloud",
+        }
+    }
+}
+
 // ── Client ↔ Gateway ─────────────────────────────────────────────────
 
 /// Incoming chat request from a client.
