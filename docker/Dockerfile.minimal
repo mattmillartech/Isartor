@@ -15,10 +15,15 @@
 FROM rust:1.85-bookworm AS builder
 
 # Install the musl target + toolchain for fully-static linking.
+# g++ is needed for C++ native-code crates (esaxx-rs, onig_sys, etc.).
 RUN rustup target add x86_64-unknown-linux-musl \
     && apt-get update \
-    && apt-get install -y --no-install-recommends musl-tools \
+    && apt-get install -y --no-install-recommends musl-tools cmake g++ \
     && rm -rf /var/lib/apt/lists/*
+
+# Tell cc-rs to use the host g++ for musl C++ builds.
+ENV CXX_x86_64_unknown_linux_musl=g++ \
+    CC_x86_64_unknown_linux_musl=musl-gcc
 
 # Force static CRT linking for the entire build.
 ENV RUSTFLAGS="-C target-feature=+crt-static"

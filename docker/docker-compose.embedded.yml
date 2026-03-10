@@ -39,7 +39,7 @@ services:
   gateway:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.embedded
     container_name: isartor-gateway
     depends_on:
       otel-collector:

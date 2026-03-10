@@ -2,6 +2,8 @@
 **/*.rs.bk
 Cargo.lock
 .env
+.env.*
+!.env.*.example
 /.idea
 /.vscode
 *.log

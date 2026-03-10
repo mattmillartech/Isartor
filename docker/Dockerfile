@@ -3,14 +3,21 @@ FROM rust:latest AS builder
 
 ARG TARGETARCH
 
-# Install musl tools and cmake
-RUN apt-get update && apt-get install -y musl-tools cmake \
+# Install musl tools, cmake, and C++ compiler for native-code crates
+# (esaxx-rs, onig_sys, etc.) that need g++ when cross-compiling to musl.
+RUN apt-get update && apt-get install -y musl-tools cmake g++ \
     && if [ "$TARGETARCH" = "arm64" ]; then \
          rustup target add aarch64-unknown-linux-musl; \
        else \
          rustup target add x86_64-unknown-linux-musl; \
        fi \
     && rm -rf /var/lib/apt/lists/*
+
+# Tell cc-rs to use the host g++ for musl C++ builds (same arch).
+ENV CXX_aarch64_unknown_linux_musl=g++ \
+    CXX_x86_64_unknown_linux_musl=g++ \
+    CC_aarch64_unknown_linux_musl=musl-gcc \
+    CC_x86_64_unknown_linux_musl=musl-gcc
 
 WORKDIR /build
 

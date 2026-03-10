@@ -1,0 +1,56 @@
+# ============================================================================
+# Dockerfile.embedded — Full-stack gateway with ONNX Runtime + fastembed
+#
+# Uses glibc (debian-slim) because ONNX Runtime does not ship pre-built
+# binaries for musl targets.  Includes embedded ML inference features.
+#
+# Build:
+#   docker build -f docker/Dockerfile.embedded -t isartor:embedded .
+#
+# Used by:
+#   docker/docker-compose.embedded.yml
+# ============================================================================
+
+# ── Stage 1: Builder ────────────────────────────────────────────────────────
+FROM rust:latest AS builder
+
+# cmake is needed by aws-lc-sys (rustls) and potentially by candle.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends cmake g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# ── Dependency caching layer ────────────────────────────────────────────────
+# Copy only the manifests so dependency compilation is cached independently.
+COPY Cargo.toml Cargo.lock* ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+    && cargo build --release \
+    && rm -rf src
+
+# ── Application build ──────────────────────────────────────────────────────
+COPY src/ src/
+RUN touch src/main.rs \
+    && cargo build --release
+
+# ── Stage 2: Slim runtime ──────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+# wget for health checks, ca-certificates for TLS to Hugging Face / Azure.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates wget \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/target/release/isartor /usr/local/bin/isartor
+
+LABEL org.opencontainers.image.title="isartor"
+LABEL org.opencontainers.image.description="Isartor AI Gateway — embedded inference (ONNX + fastembed)"
+
+ENV ISARTOR_HOST_PORT=0.0.0.0:8080
+EXPOSE 8080
+
+# Run as non-root.
+RUN groupadd -r isartor && useradd -r -g isartor isartor
+USER isartor
+
+ENTRYPOINT ["isartor"]
