@@ -11,26 +11,96 @@
 #
 # Usage:
 #   cd docker
-#   docker compose -f docker-compose.embedded.yml up --build
-#
-# Azure OpenAI quick-start:
-#   cp .env.azure.example .env.full    # fill in key / resource / deployment
-#   docker compose -f docker-compose.embedded.yml up --build
+#   docker compose -f docker-compose.full.yml up --build
 #
 # Endpoints:
-#   Gateway (v1):  http://localhost:8000/api/chat
-#   Gateway (v2):  http://localhost:8000/api/v2/chat
-#   Health check:  http://localhost:8000/healthz
+#   Gateway (v1):  http://localhost:8080/api/chat
+#   Gateway (v2):  http://localhost:8080/api/v2/chat
+#   Health check:  http://localhost:8080/healthz
 #   Jaeger UI:     http://localhost:16686
-#   Tempo API:     http://localhost:3200
 #   Grafana:       http://localhost:3000
 #   Prometheus:    http://localhost:9090
 #
 # Tear down:
-#   docker compose -f docker-compose.embedded.yml down -v
+#   docker compose -f docker-compose.full.yml down -v
 # =============================================================================
 
 services:
+
+  # ═══════════════════════════════════════════════════════════════════
+  # 1. LOCAL AI SIDECARS — llama.cpp (Lightweight Sidecar Strategy)
+  # ═══════════════════════════════════════════════════════════════════
+
+  # ── Generation Sidecar — Phi-3-mini-4k-instruct (Q4_K_M) ─────────
+  # Handles intent classification, simple task execution, and reranking.
+  # Exposes an OpenAI-compatible API at /v1/chat/completions.
+  slm-generation:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: isartor-slm-generation
+    ports:
+      - "8081:8081"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8081"
+      - "--hf-repo"
+      - "microsoft/Phi-3-mini-4k-instruct-gguf" # Gemma-2-2B-it (Q4_K_M) can be used as a drop-in replacement for Phi-3-mini-4k-instruct (Q4_K_M) with identical resource requirements and improved instruction-following.
+      - "--hf-file"
+      - "Phi-3-mini-4k-instruct-q4.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--n-gpu-layers"
+      - "99"
+    volumes:
+      - slm_models:/root/.cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # ── Embedding Sidecar — all-MiniLM-L6-v2 (GGUF) ─────────────────
+  # Dedicated embedding model running with --embedding flag.
+  # Exposes an OpenAI-compatible API at /v1/embeddings.
+  slm-embedding:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: isartor-slm-embedding
+    ports:
+      - "8082:8082"
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8082"
+      - "--hf-repo"
+      - "leliuga/all-MiniLM-L6-v2-GGUF"
+      - "--hf-file"
+      - "all-MiniLM-L6-v2.Q8_0.gguf"
+      - "--ctx-size"
+      - "512"
+      - "--embedding"
+      - "--pooling"
+      - "mean"
+    volumes:
+      - slm_models:/root/.cache
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # ═══════════════════════════════════════════════════════════════════
   # 2. ISARTOR GATEWAY
@@ -39,22 +109,19 @@ services:
   gateway:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.embedded
+      dockerfile: docker/Dockerfile
     container_name: isartor-gateway
     depends_on:
+      slm-generation:
+        condition: service_healthy
+      slm-embedding:
+        condition: service_healthy
       otel-collector:
         condition: service_started
     ports:
-      - "8000:8080"
+      - "8080:8080"
     environment:
-      # ── Important ────────────────────────────────────────────────
-      # The config crate uses separator("__"), so ALL env var keys
-      # must use double-underscore after the ISARTOR prefix:
-      #   ISARTOR__KEY            → top-level field
-      #   ISARTOR__NESTED__FIELD  → nested struct field
-      #
       # ── General ──────────────────────────────────────────────────
-      ISARTOR__INFERENCE_ENGINE: "embedded"
       ISARTOR__HOST_PORT: "0.0.0.0:8080"
       ISARTOR__GATEWAY_API_KEY: "changeme"
       # ── Layer 1 — Semantic Cache ─────────────────────────────────
@@ -73,14 +140,15 @@ services:
       ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS: "10"
       # ── Legacy Layer 2 (v1 middleware — points to generation sidecar)
       ISARTOR__LOCAL_SLM_URL: "http://slm-generation:8081/v1/chat/completions"
-      ISARTOR__LOCAL_SLM_MODEL: "qwen"
-      # ── Layer 3 — External LLM ──────────────────────────────────
-      # Provider, model, API key, URL, and Azure-specific settings are
-      # loaded from .env.full (see env_file below).  The Rust config
-      # crate supplies sensible defaults (openai / gpt-4o-mini) when
-      # the file is absent, so no ${VAR:-default} interpolation is
-      # needed here.  Keeping them out of the environment: block
-      # prevents compose-time expansion from shadowing the env_file.
+      ISARTOR__LOCAL_SLM_MODEL: "phi-3-mini"
+      # ── Layer 3 — External LLM (override via .env.full) ─────────
+      ISARTOR__LLM_PROVIDER: "${ISARTOR__LLM_PROVIDER:-openai}"
+      ISARTOR__EXTERNAL_LLM_MODEL: "${ISARTOR__EXTERNAL_LLM_MODEL:-gpt-4o-mini}"
+      ISARTOR__EXTERNAL_LLM_API_KEY: "${ISARTOR__EXTERNAL_LLM_API_KEY:-}"
+      ISARTOR__EXTERNAL_LLM_URL: "${ISARTOR__EXTERNAL_LLM_URL:-https://api.openai.com/v1/chat/completions}"
+      # ── Azure (pass-through, only used when provider=azure) ──────
+      ISARTOR__AZURE_DEPLOYMENT_ID: "${ISARTOR__AZURE_DEPLOYMENT_ID:-}"
+      ISARTOR__AZURE_API_VERSION: "${ISARTOR__AZURE_API_VERSION:-2024-08-01-preview}"
       # ── Observability ────────────────────────────────────────────
       ISARTOR__ENABLE_MONITORING: "true"
       ISARTOR__OTEL_EXPORTER_ENDPOINT: "http://otel-collector:4317"
@@ -104,9 +172,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
-    volumes:
-      - hf_models:/home/isartor/.cache/huggingface
+          memory: 256M
 
   # ═══════════════════════════════════════════════════════════════════
   # 3. OBSERVABILITY STACK (lightweight images)
@@ -114,7 +180,7 @@ services:
 
   # ── OpenTelemetry Collector ──────────────────────────────────────
   # Receives traces + metrics via OTLP gRPC from the gateway,
-  # forwards traces to Jaeger + Tempo and metrics to Prometheus.
+  # forwards traces to Jaeger and metrics to Prometheus.
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.96.0
     container_name: isartor-otel-collector
@@ -125,8 +191,6 @@ services:
       - "4317:4317"     # OTLP gRPC
     depends_on:
       jaeger:
-        condition: service_started
-      tempo:
         condition: service_started
     restart: unless-stopped
     deploy:
@@ -148,24 +212,6 @@ services:
         limits:
           memory: 256M
 
-  # ── Tempo — TraceQL Backend ──────────────────────────────────────
-  # Grafana Tempo stores traces and serves TraceQL queries for the
-  # Bar Gauge and Heatmap dashboard panels.
-  tempo:
-    image: grafana/tempo:2.4.1
-    container_name: isartor-tempo
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ./tempo-config.yaml:/etc/tempo.yaml:ro
-      - tempo_data:/var/tempo
-    ports:
-      - "3200:3200"     # Tempo HTTP API
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-
   # ── Prometheus — Metrics Storage ─────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -174,7 +220,6 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=7d"
       - "--storage.tsdb.retention.size=512MB"
-      - "--web.enable-remote-write-receiver"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -213,8 +258,6 @@ services:
         condition: service_started
       jaeger:
         condition: service_started
-      tempo:
-        condition: service_started
     restart: unless-stopped
     deploy:
       resources:
@@ -228,11 +271,7 @@ services:
 volumes:
   slm_models:
     name: isartor-slm-models
-  hf_models:
-    name: isartor-hf-models
   prometheus_data:
     name: isartor-prometheus-data
   grafana_data:
     name: isartor-grafana-data
-  tempo_data:
-    name: isartor-tempo-data

@@ -17,6 +17,16 @@ storage:
       path: /var/tempo/wal
 
 metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  processor:
+    service_graphs:
+      dimensions:
+        - final_layer
+    span_metrics:
+      dimensions:
+        - final_layer
   storage:
     path: /var/tempo/generator/wal
     remote_write:
@@ -24,3 +34,10 @@ metrics_generator:
         send_exemplars: true
   traces_storage:
     path: /var/tempo/generator/traces
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics

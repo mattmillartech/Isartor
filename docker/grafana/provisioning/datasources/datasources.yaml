@@ -16,5 +16,18 @@ datasources:
     url: http://tempo:3200
     editable: false
     jsonData:
+      search:
+        hide: true
       tracesToMetrics:
         datasourceUid: prometheus
+      serviceMap:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false

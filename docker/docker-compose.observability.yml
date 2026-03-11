@@ -21,10 +21,10 @@ services:
     env_file:
       - .env
     environment:
-      - ISARTOR_LLM_PROVIDER=azure
-      - ISARTOR_ENABLE_MONITORING=true
-      - ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
-      - ISARTOR_LOCAL_SLM_URL=http://ollama:11434/api/generate
+      - ISARTOR__LLM_PROVIDER=azure
+      - ISARTOR__ENABLE_MONITORING=true
+      - ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
+      - ISARTOR__LOCAL_SLM_URL=http://ollama:11434/api/generate
     depends_on:
       - ollama
       - otel-collector

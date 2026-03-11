@@ -140,7 +140,8 @@ async fn main() -> anyhow::Result<()> {
     // ------------------------------------------------------------------
     // 3b. Build the Axum router with the middleware "funnel".
 
-    let app = Router::new()
+    // Authenticated routes — go through the full middleware pipeline.
+    let authenticated = Router::new()
         // Routes
         .route("/api/chat", post(handler::chat_handler))
         // v2 pipeline route — the Algorithmic AI Gateway endpoint.
@@ -190,7 +191,6 @@ async fn main() -> anyhow::Result<()> {
                 }
             }),
         )
-        .route("/healthz", axum::routing::get(healthz))
         // Layer 2 – SLM triage (innermost middleware).
         .layer(axum_mw::from_fn(
             middleware::slm_triage::slm_triage_middleware,
@@ -213,6 +213,12 @@ async fn main() -> anyhow::Result<()> {
                 }
             },
         ));
+
+    // Unauthenticated routes — bypass the middleware pipeline entirely.
+    let public = Router::new()
+        .route("/healthz", axum::routing::get(healthz));
+
+    let app = public.merge(authenticated);
 
     // ------------------------------------------------------------------
     // 4. Start the server.

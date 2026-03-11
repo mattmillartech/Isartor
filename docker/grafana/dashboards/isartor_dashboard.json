@@ -1,8 +1,6 @@
 {
-  "annotations": {
-    "list": []
-  },
-  "description": "Isartor AI Gateway — Per-layer request distribution, latency breakdown, and duration heatmap.",
+  "annotations": { "list": [] },
+  "description": "Isartor AI Gateway — Per-layer request distribution, latency, throughput, and error tracking.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -12,9 +10,9 @@
     {
       "id": 1,
       "title": "Request Distribution by Final Layer",
-      "description": "Pie chart showing the proportion of requests handled by each gateway layer over the last hour.",
+      "description": "Donut chart showing the proportion of requests handled by each gateway layer over the selected time range.",
       "type": "piechart",
-      "gridPos": { "h": 12, "w": 8, "x": 0, "y": 0 },
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
@@ -22,26 +20,11 @@
           "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
         },
         "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "L0_AuthBlocked" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "L1a_ExactCache" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "L1b_SemanticCache" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "L2_SLM" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "L3_Cloud" },
-            "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }]
-          }
+          { "matcher": { "id": "byName", "options": "L0_AuthBlocked" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "L1a_ExactCache" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "L1b_SemanticCache" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "L2_SLM" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "L3_Cloud" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] }
         ]
       },
       "options": {
@@ -54,7 +37,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (final_layer) (increase(isartor_requests_total[1h]))",
+          "expr": "sum by (final_layer) (increase(isartor_requests_total[$__range]))",
           "legendFormat": "{{final_layer}}",
           "instant": true
         }
@@ -62,11 +45,11 @@
     },
     {
       "id": 2,
-      "title": "Layer Latency Breakdown (Avg Duration)",
-      "description": "Bar gauge showing average span duration for each gateway processing layer, sourced from Tempo via TraceQL.",
+      "title": "Avg Latency by Layer (p50 / p95 / p99)",
+      "description": "Percentile request latency per layer, computed from the isartor_request_duration_seconds histogram.",
       "type": "bargauge",
-      "gridPos": { "h": 12, "w": 8, "x": 8, "y": 0 },
-      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "h": 10, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-GrYlRd" },
@@ -74,8 +57,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 0.1 },
-              { "color": "red", "value": 0.5 }
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
             ]
           },
           "unit": "s",
@@ -88,52 +71,42 @@
         "minVizHeight": 10,
         "minVizWidth": 0,
         "orientation": "horizontal",
-        "reduceOptions": { "calcs": ["mean"], "fields": "", "values": false },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "showUnfilled": true,
         "valueMode": "color"
       },
       "targets": [
         {
-          "refId": "exact",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{ name = \"layer1a_exact_lookup\" } | avg(duration)",
-          "tableType": "spans"
+          "refId": "p50",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum by (final_layer, le) (rate(isartor_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{final_layer}} p50",
+          "instant": true
         },
         {
-          "refId": "semantic",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{ name = \"layer1b_semantic_process\" } | avg(duration)",
-          "tableType": "spans"
+          "refId": "p95",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (final_layer, le) (rate(isartor_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{final_layer}} p95",
+          "instant": true
         },
         {
-          "refId": "slm",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{ name = \"layer2_slm_inference\" } | avg(duration)",
-          "tableType": "spans"
-        },
-        {
-          "refId": "llm",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{ name = \"layer3_llm\" } | avg(duration)",
-          "tableType": "spans"
+          "refId": "p99",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, sum by (final_layer, le) (rate(isartor_request_duration_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{final_layer}} p99",
+          "instant": true
         }
       ]
     },
     {
       "id": 3,
-      "title": "Request Duration Heatmap by Final Layer",
-      "description": "Heatmap of end-to-end request latency (isartor_request_duration_seconds) broken down by the final handling layer.",
+      "title": "Request Duration Heatmap",
+      "description": "Heatmap of end-to-end request latency showing how durations are distributed over time.",
       "type": "heatmap",
-      "gridPos": { "h": 12, "w": 8, "x": 16, "y": 0 },
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": {
         "calculate": false,
         "cellGap": 1,
@@ -152,30 +125,251 @@
         "rowsFrame": { "layout": "auto" },
         "showValue": "never",
         "tooltip": { "show": true, "yHistogram": true },
-        "yAxis": {
-          "axisPlacement": "left",
-          "reverse": false,
-          "unit": "s"
-        }
+        "yAxis": { "axisPlacement": "left", "reverse": false, "unit": "s" }
       },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (le) (increase(isartor_request_duration_seconds_bucket{final_layer=~\".+\"}[5m]))",
+          "expr": "sum by (le) (increase(isartor_request_duration_seconds_bucket[1m]))",
           "legendFormat": "{{le}}",
           "format": "heatmap"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Request Rate by Layer (req/s)",
+      "description": "Time series showing request rate per layer over time.",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "mode": "none" }
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max", "sum"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (final_layer) (rate(isartor_requests_total[$__rate_interval]))",
+          "legendFormat": "{{final_layer}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Avg Latency Over Time by Layer",
+      "description": "Time series of average request duration per layer.",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": { "mode": "none" }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "min", "max"] },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (final_layer) (rate(isartor_request_duration_seconds_sum[$__rate_interval])) / sum by (final_layer) (rate(isartor_request_duration_seconds_count[$__rate_interval]))",
+          "legendFormat": "{{final_layer}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Total Requests",
+      "description": "Total requests processed.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(isartor_requests_total)",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cache Hit Rate %",
+      "description": "Percentage of requests served from cache (L1a exact + L1b semantic) out of all successful requests.",
+      "type": "gauge",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 50 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * (sum(isartor_requests_total{final_layer=~\"L1a_ExactCache|L1b_SemanticCache\"}) or vector(0)) / (sum(isartor_requests_total{final_layer!=\"L0_AuthBlocked\"}) > 0)",
+          "legendFormat": "cache_hit_rate",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "L2 SLM vs L3 Cloud Split",
+      "description": "Percentage of non-cached requests handled locally (L2 SLM) vs forwarded to cloud (L3).",
+      "type": "gauge",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 30 },
+              { "color": "green", "value": 60 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * (sum(isartor_requests_total{final_layer=\"L2_SLM\"}) or vector(0)) / ((sum(isartor_requests_total{final_layer=~\"L2_SLM|L3_Cloud\"}) or vector(0)) > 0)",
+          "legendFormat": "L2 local %",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Error Rate (non-2xx)",
+      "description": "Percentage of requests returning non-2xx status codes.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 * (sum(isartor_requests_total{status_code!~\"2..\"}) or vector(0)) / (sum(isartor_requests_total) > 0)",
+          "legendFormat": "error %",
+          "instant": true
         }
       ]
     }
   ],
   "schemaVersion": 39,
-  "tags": ["isartor", "observability", "otel"],
+  "tags": ["isartor", "observability", "otel", "ai-gateway"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
   "title": "Isartor AI Gateway — Observability",
   "uid": "isartor-otel-dashboard",
-  "version": 1
+  "version": 2
 }
