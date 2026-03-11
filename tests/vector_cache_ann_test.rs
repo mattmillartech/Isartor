@@ -11,10 +11,10 @@ async fn hnsw_ann_basic_search() {
     cache.insert(v2.clone(), "second".into()).await;
     cache.insert(v3.clone(), "third".into()).await;
 
-    // Query close to v3
+    // Query close to v1 (cosine(q,v1)≈0.9986 > cosine(q,v3)≈0.9983)
     let query = vec![0.95f32, 0.05, 0.0];
     let result = cache.search(&query).await;
-    assert_eq!(result, Some("third".into()));
+    assert_eq!(result, Some("first".into()));
 
     // Query close to v2
     let query2 = vec![0.0f32, 1.0, 0.0];

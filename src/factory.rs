@@ -140,6 +140,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a running Redis instance on localhost:6379"]
     async fn factory_builds_redis_cache_skeleton() {
         let mut config = minimal_config();
         config.cache_backend = CacheBackend::Redis;
@@ -159,8 +160,24 @@ mod tests {
 
     #[tokio::test]
     async fn factory_builds_vllm_router() {
+        use wiremock::{
+            matchers::{method, path},
+            Mock, MockServer, ResponseTemplate,
+        };
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": "COMPLEX" }
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
         let mut config = minimal_config();
         config.router_backend = RouterBackend::Vllm;
+        config.vllm_url = mock_server.uri();
         let client = reqwest::Client::new();
         let router = build_slm_router(&config, &client);
         let label = router.classify_intent("Hello").await.unwrap();

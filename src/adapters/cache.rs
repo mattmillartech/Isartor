@@ -170,6 +170,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires a running Redis instance on localhost:6379"]
     async fn redis_cache_skeleton_returns_none() {
         let cache = RedisExactCache::new("redis://localhost:6379");
         // Skeleton implementation always returns None.
