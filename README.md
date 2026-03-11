@@ -1,130 +1,97 @@
-### Approximate Nearest Neighbor (ANN) Search
+# Isartor
 
-Isartor uses an in-memory brute-force cosine similarity search over cached embeddings. This enables sub-millisecond semantic cache lookups at typical cache sizes.
-
-- Pure Rust implementation — zero C/C++ dependencies, seamless cross-compilation
-- Automatic index maintenance: insertions and evictions are handled transparently
-- Supports TTL and capacity limits for cache entries
-
-No additional setup is required—vector search is enabled by default in the semantic cache.
-
-# 🏛️ Isartor
+**An ultra-lightweight, pure-Rust AI Gateway designed to slash LLM costs and latency for enterprise and agentic workloads.**
 
 <p align="center">
-  <img src="docs/logo.png" alt="Isartor Logo" width="400">
+  <img src="docs/logo.png" alt="Isartor" width="400">
 </p>
 
-**The Edge-Native AI Orchestration Gateway.**
-
-[![CI Status](https://github.com/isartor-ai/Isartor/actions/workflows/ci.yml/badge.svg)](https://github.com/isartor-ai/Isartor/actions)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Discord](https://img.shields.io/badge/Discord-Community-7289DA?logo=discord)](https://discord.gg/placeholder)
+[![CI](https://github.com/isartor-ai/Isartor/actions/workflows/ci.yml/badge.svg)](https://github.com/isartor-ai/Isartor/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/isartor-ai/Isartor/releases)
 
 ---
 
-## The Elevator Pitch
+## The Problem
 
-Modern AI applications are drowning in API costs and network latency. Standard gateways act as dumb pipes, blindly forwarding every trivial "Hello" to heavyweight cloud models. **Isartor** fixes this at the edge. By embedding lightweight ML models (SLMs and sentence embedders) directly into a high-performance Rust binary, Isartor classifies and resolves simple requests in-process. This "Edge-Native Intelligence" approach slashes token burn by up to 80%, eliminates unnecessary network hops, and ensures sensitive data never leaves your infrastructure unless absolutely necessary.
+Autonomous agents and enterprise AI applications haemorrhage money on cloud LLM calls. Standard API gateways are dumb pipes — they forward every request to GPT-4 or Claude regardless of complexity. Agent loops repeat identical prompts. Trivial tasks consume the same tokens as hard reasoning problems. The result: runaway costs, unnecessary latency, and data leaving your perimeter when it doesn't need to.
 
-## Key Features
+## The Solution
 
-### Pluggable Trait Provider Architecture
+Isartor is a **financial shield** for your LLM spend. It sits between your application and the cloud, exposes an OpenAI-compatible API, and filters every request through a local 3-layer intelligence funnel. Simple and duplicate requests are resolved in-process — only genuinely complex reasoning reaches the cloud.
 
-- **Minimalist Single-Binary Mode:**
-  - Runs fully embedded SLMs (Gemma-2, Qwen2-1.5B) and pure-Rust candle semantic cache in-process.
-  - Zero C/C++ dependencies: in-memory LRU cache, no Redis, no vLLM, no sidecars.
-  - Ideal for edge devices, air-gapped environments, and rapid prototyping.
+It is a **100% pure-Rust**, statically compiled binary. No ONNX Runtime, no C++ toolchain, no `cmake`. One `cargo build` or `docker run` and you're live.
 
-- **Enterprise K8s Mode:**
-  - Switches to Redis for cache and vLLM/TGI for SLM routing via config (no code changes).
-  - Horizontally scalable: stateless gateway pods, shared Redis cache, GPU inference pool.
-  - Designed for multi-replica Kubernetes, managed observability, and high throughput.
+---
 
-- **Sub-Millisecond Semantic Cache:** In-process vector search for instant semantic matches.
-- **Multi-Layer Funnel:** Sequential pipeline (Auth → Cache → SLM Triage → Cloud) short-circuits early to minimize cost and latency.
-- **Observability-First:** OpenTelemetry, Jaeger, Tempo, Prometheus, Grafana.
+## Architecture — The 3-Layer Funnel
 
-## Architecture
+Every incoming request passes through a series of short-circuit layers. The earlier a request resolves, the less it costs.
 
-![Architecture Diagram](docs/images/architecture_diagram.png)
+```text
+Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM Router ──► L3 Cloud LLM
+               │ hit                │ hit                  │ simple          │
+               ▼                    ▼                      ▼                 ▼
+            Response             Response              Local Response    Cloud Response
+```
 
-Isartor uses a **Multi-Layer Funnel** approach to request orchestration. Every incoming prompt passes through a series of "short-circuit" layers:
+| Layer | What It Does | How It Works | Typical Latency |
+|:------|:-------------|:-------------|:----------------|
+| **L1a — Exact Match** | Catches duplicate requests (e.g. agent loops) | `ahash` + LRU cache with sub-millisecond lookup | < 1 ms |
+| **L1b — Semantic Cache** | Catches meaning-based duplicates ("What's the price?" ≈ "How much?") | Pure-Rust local embeddings via `candle` + `all-MiniLM-L6-v2`, brute-force cosine similarity | 1–5 ms |
+| **L2 — SLM Router** | Triages simple tasks locally without touching the cloud | Embedded Small Language Model (Qwen-1.5B via `candle` GGUF) classifies intent and resolves trivial prompts in-process | 50–200 ms |
+| **L3 — Cloud Fallback** | Forwards genuinely complex reasoning to a cloud provider | OpenAI, Anthropic, Azure OpenAI, xAI — configurable via environment variables | Network-bound |
 
-- **Layer 0:** Auth, rate limiting, concurrency control
-- **Layer 1:** Semantic + exact cache (in-process candle BertModel)
-- **Layer 2:** SLM Triage (intent classification, simple task execution)
-- **Layer 2.5:** Context Optimiser (retrieve + rerank to minimize token usage)
-- **Layer 3:** Cloud LLM fallback (OpenAI, Anthropic, etc.)
+Layers 1a and 1b alone can deflect **60–80% of agentic traffic** before any inference runs.
 
-Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and is instrumented as the `context_optimise` span in observability.
+---
+
+## Minimalist to Enterprise
+
+Isartor uses a **Pluggable Trait Provider** pattern (Hexagonal Architecture). The same compiled binary adapts from a developer laptop to a multi-replica Kubernetes cluster. Switch modes entirely through environment variables — no code changes, no recompilation.
+
+| Component | Minimalist (Single Binary) | Enterprise (K8s) |
+|:----------|:---------------------------|:------------------|
+| **L1a Cache** | In-memory LRU (`ahash` + `parking_lot`) | Redis cluster (shared across replicas) |
+| **L1b Embeddings** | In-process `candle` BertModel | External TEI sidecar (optional) |
+| **L2 SLM Router** | Embedded `candle` GGUF inference | Remote vLLM / TGI server (GPU pool) |
+| **L3 Cloud** | Direct to OpenAI / Anthropic | Direct to OpenAI / Anthropic |
+
+**Minimalist Mode** — zero external dependencies. Download the binary and run it.
+
+**Enterprise Mode** — set a few environment variables:
+
+```bash
+export ISARTOR__CACHE_BACKEND=redis
+export ISARTOR__REDIS_URL=redis://redis-cluster.svc:6379
+export ISARTOR__ROUTER_BACKEND=vllm
+export ISARTOR__VLLM_URL=http://vllm.svc:8000
+export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
+```
+
+---
 
 ## Quick Start
 
-Run Isartor instantly using Docker:
+### Docker (Recommended)
 
-```bash
-docker run -p 8080:8080 \
-  -e ISARTOR__GATEWAY_API_KEY="your-secret" \
-  -e ISARTOR__LLM_PROVIDER="openai" \
-  -e ISARTOR__EXTERNAL_LLM_API_KEY="sk-..." \
-  ghcr.io/isartor-ai/isartor:latest
-```
-
-Test it with `curl`:
-
-```bash
-curl -X POST http://localhost:8080/api/v1/chat \
-  -H "X-API-Key: your-secret" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Calculate 2+2"}'
-```
-## Quick Start
-
-Isartor can be installed and run in seconds using one of the following methods:
-
-### Path A: Docker (Easiest – Batteries Included)
-
-The fastest way to get started. All required ML models are baked into the image.
+All required ML models are baked into the image.
 
 ```bash
 docker run -p 3000:3000 ghcr.io/isartor-ai/isartor:latest
 ```
 
-### Path B: macOS & Linux (Binary)
-
-Install the latest release with a single command:
+### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.sh | bash
 ```
 
-### Path C: Windows (Binary)
-
-Install via PowerShell one-liner:
+### Windows (PowerShell)
 
 ```powershell
 irm https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.ps1 | iex
 ```
-
-> **Note for Binary Installs:**
-> Unlike Docker, the raw binary requires a `config.yaml` to locate GGUF model files on your disk. See the [Configuration Guide](docs/2-ARCHITECTURE.md#configuration) for details.
-
----
-
-Test the API with `curl`:
-
-```bash
-curl -X POST http://localhost:3000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Calculate 2+2"}'
-```
-
-## Local Development
-
-### Prerequisites
-
-- **Rust Toolchain**: [Install Rust](https://rustup.rs/) (Stable 1.75+)
-
 
 ### Build from Source
 
@@ -132,55 +99,69 @@ curl -X POST http://localhost:3000/api/v1/chat \
 git clone https://github.com/isartor-ai/Isartor.git
 cd Isartor
 cargo build --release
+./target/release/isartor
 ```
 
-The binary will be available at `./target/release/isartor`.
-
-> **Pure-Rust ML stack:** Isartor uses [candle](https://github.com/huggingface/candle) for all in-process inference — both Layer 2 classification (Gemma-2/Qwen2 GGUF) and Layer 1 sentence embeddings (all-MiniLM-L6-v2). No ONNX Runtime, no C++ toolchain, no `cmake` — just `cargo build`.
-
-## Configuration
-
-Isartor is configured via environment variables (prefixed with `ISARTOR__`) or a YAML/TOML configuration file.
-
-```yaml
-# isartor.yaml
-host_port: "0.0.0.0:8080"
-cache_mode: "both"
-llm_provider: "azure"
-external_llm_model: "gpt-4o-mini"
-enable_monitoring: true
-```
-
-## Deployment Modes: Minimalist to Enterprise
-
-## Deployment Modes: Minimalist Single-Binary vs Enterprise K8s
-
-Isartor uses a **Pluggable Trait Provider** (Hexagonal Architecture) pattern. The same binary adapts to any deployment scale — from edge devices to multi-replica Kubernetes clusters — by selecting backends at startup via environment variables.
-
-| Layer           | Minimalist Single-Binary           | Enterprise K8s                |
-|:---------------:|:----------------------------------:|:-----------------------------:|
-| **L1a Cache**   | In-memory LRU (ahash + parking_lot)| Redis cluster (shared cache)  |
-| **L1b Semantic**| Candle BertModel (in-process)      | External TEI (optional)       |
-| **L2 Router**   | Embedded Candle/Qwen2 (in-process) | Remote vLLM/TGI server        |
-| **L3 Fallback** | Cloud LLM (OpenAI/Anthropic)       | Cloud LLM (OpenAI/Anthropic)  |
-
-**Switching Modes:**
-Just set environment variables — no code changes or recompilation required.
-
+### Verify
 
 ```bash
-# Switch cache to Redis
-export ISARTOR__CACHE_BACKEND=redis
-export ISARTOR__REDIS_URL=redis://redis-cluster.svc:6379
-
-# Switch router to remote vLLM
-export ISARTOR__ROUTER_BACKEND=vllm
-export ISARTOR__VLLM_URL=http://vllm.svc:8000
-export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
+curl -X POST http://localhost:3000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Calculate 2+2"}'
 ```
 
-> For full architectural details see [`docs/2-ARCHITECTURE.md`](docs/2-ARCHITECTURE.md).
+---
+
+## Drop-In Integration
+
+Isartor exposes an OpenAI-compatible API. Point any SDK or agent at it by changing a single URL.
+
+```python
+import openai
+
+client = openai.OpenAI(base_url="http://localhost:3000/v1", api_key="your-gateway-key")
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[{"role": "user", "content": "Summarise this document."}],
+)
+```
+
+This works with **any** OpenAI-compatible client — the official Python/Node SDKs, LangChain, LlamaIndex, AutoGen, or autonomous agents like [OpenClaw](https://github.com/isartor-ai/openclaw). No code changes beyond the base URL.
+
+---
+
+## Enterprise Observability
+
+Isartor emits standard **OpenTelemetry** traces and metrics out of the box.
+
+- **Distributed traces** — every request produces a root span (`gateway_request`) with child spans for each layer (`l1a_exact_cache`, `l1b_semantic_cache`, `l2_classify_intent`, `l3_cloud_llm`).
+- **Prometheus metrics** — `isartor_request_duration_seconds`, `isartor_layer_duration_seconds`, `isartor_requests_total`.
+- **ROI metric** — `isartor_tokens_saved_total` tracks estimated tokens that never left your infrastructure. Pipe it into Grafana to prove cost savings to leadership.
+
+Enable with:
+
+```bash
+export ISARTOR__ENABLE_MONITORING=true
+export ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
+```
+
+See [docs/6-OBSERVABILITY.md](docs/6-OBSERVABILITY.md) for the full span and metric reference.
+
+---
+
+## Documentation
+
+| Guide | Description |
+|:------|:------------|
+| [Quick Start](docs/1-QUICKSTART.md) | Installation, first request, configuration basics |
+| [Architecture](docs/2-ARCHITECTURE.md) | Deep dive into the 3-layer funnel and trait provider pattern |
+| [Enterprise Guide](docs/3-ENTERPRISE-GUIDE.md) | Redis, vLLM, Kubernetes, Helm, horizontal scaling |
+| [Integrations](docs/4-INTEGRATIONS.md) | OpenAI SDK, LangChain, autonomous agents |
+| [Configuration Reference](docs/5-CONFIGURATION-REF.md) | Every environment variable and config key |
+| [Observability](docs/6-OBSERVABILITY.md) | OpenTelemetry spans, metrics, Grafana dashboards |
+
+---
 
 ## License
 
-Isartor is open-source software licensed under the **Apache License, Version 2.0**.
+Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
