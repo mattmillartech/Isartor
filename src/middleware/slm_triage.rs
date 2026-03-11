@@ -307,8 +307,8 @@ mod tests {
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::layer1::embeddings::shared_test_embedder;
-    use crate::models::ChatResponse;
     use crate::layer1::layer1a_cache::ExactMatchCache;
+    use crate::models::ChatResponse;
     use crate::state::AppLlmAgent;
     use crate::vector_cache::VectorCache;
     use std::num::NonZeroUsize;

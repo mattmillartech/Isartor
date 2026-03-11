@@ -41,7 +41,8 @@ impl EmbeddedCandleRouter {
         let _gguf_filename = gguf_filename.into();
         log::info!(
             "EmbeddedCandleRouter adapter created (skeleton) repo={} file={}",
-            _repo_id, _gguf_filename
+            _repo_id,
+            _gguf_filename
         );
         Self {
             _repo_id,
@@ -54,7 +55,10 @@ impl EmbeddedCandleRouter {
 impl SlmRouter for EmbeddedCandleRouter {
     async fn classify_intent(&self, prompt: &str) -> anyhow::Result<String> {
         // TODO: Tokenise → forward pass → parse LABEL from output.
-        log::debug!("EmbeddedCandleRouter::classify_intent (skeleton) prompt_len={}", prompt.len());
+        log::debug!(
+            "EmbeddedCandleRouter::classify_intent (skeleton) prompt_len={}",
+            prompt.len()
+        );
         // Default classification: fall through to the external LLM.
         Ok("COMPLEX".to_string())
     }
@@ -98,7 +102,8 @@ impl RemoteVllmRouter {
         let model_name = model_name.into();
         log::info!(
             "RemoteVllmRouter adapter created (skeleton) url={} model={}",
-            base_url, model_name
+            base_url,
+            model_name
         );
         Self {
             client,
@@ -115,7 +120,9 @@ impl SlmRouter for RemoteVllmRouter {
         //       classification system prompt and parse the LABEL.
         log::debug!(
             "RemoteVllmRouter::classify_intent (skeleton) prompt_len={} url={} model={}",
-            prompt.len(), self.base_url, self.model_name
+            prompt.len(),
+            self.base_url,
+            self.model_name
         );
         // Skeleton: return COMPLEX so the pipeline always falls through
         // to the external LLM until the real HTTP call is wired.
@@ -146,7 +153,10 @@ mod tests {
     async fn remote_vllm_skeleton_returns_complex() {
         let client = reqwest::Client::new();
         let router = RemoteVllmRouter::new(client, "http://localhost:8000", "gemma-2-2b-it");
-        let label = router.classify_intent("Explain quantum computing").await.unwrap();
+        let label = router
+            .classify_intent("Explain quantum computing")
+            .await
+            .unwrap();
         assert_eq!(label, "COMPLEX");
     }
 }

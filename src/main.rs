@@ -218,8 +218,7 @@ async fn main() -> anyhow::Result<()> {
         ));
 
     // Unauthenticated routes — bypass the middleware pipeline entirely.
-    let public = Router::new()
-        .route("/healthz", axum::routing::get(healthz));
+    let public = Router::new().route("/healthz", axum::routing::get(healthz));
 
     let app = public.merge(authenticated);
 

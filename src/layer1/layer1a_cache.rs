@@ -1,8 +1,8 @@
-use std::num::NonZeroUsize;
-use std::sync::Arc;
+use ahash::RandomState;
 use lru::LruCache;
 use parking_lot::RwLock;
-use ahash::RandomState;
+use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 /// Ultra-fast, concurrent, bounded exact match cache for Layer 1a.
 pub struct ExactMatchCache {

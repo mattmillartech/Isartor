@@ -10,8 +10,8 @@ use axum::{
 };
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use sha2::{Digest, Sha256};
 use log::{debug, info};
+use sha2::{Digest, Sha256};
 
 use crate::config::CacheMode;
 use crate::models::{ChatResponse, FinalLayer};
@@ -70,7 +70,10 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
         let key = hex::encode(Sha256::digest(prompt.as_bytes()));
 
-        debug!("Layer 1: Exact-match lookup for key {} (mode: {:?})", key, mode);
+        debug!(
+            "Layer 1: Exact-match lookup for key {} (mode: {:?})",
+            key, mode
+        );
 
         if let Some(cached) = state.exact_cache.get(&key) {
             info!("Layer 1: Exact cache HIT for key {}", key);
@@ -100,14 +103,21 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
         // fastembed (ONNX Runtime) is CPU-bound; run on the blocking pool
         // so we don't starve the Tokio async workers.
-        match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await {
+        match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await
+        {
             Ok(Ok(emb)) => Some(emb),
             Ok(Err(e)) => {
-                log::warn!("Layer 1: In-process embedding failed – skipping semantic cache: {:?}", e);
+                log::warn!(
+                    "Layer 1: In-process embedding failed – skipping semantic cache: {:?}",
+                    e
+                );
                 None
             }
             Err(e) => {
-                log::warn!("Layer 1: Embedding task panicked – skipping semantic cache: {:?}", e);
+                log::warn!(
+                    "Layer 1: Embedding task panicked – skipping semantic cache: {:?}",
+                    e
+                );
                 None
             }
         }
@@ -132,7 +142,10 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         }
     }
 
-    log::debug!("Layer 1: Cache MISS – forwarding downstream (mode: {:?})", mode);
+    log::debug!(
+        "Layer 1: Cache MISS – forwarding downstream (mode: {:?})",
+        mode
+    );
 
     // ------------------------------------------------------------------
     // 4. Cache miss: forward to next layer.
@@ -251,7 +264,7 @@ mod tests {
         Arc::new(AppState {
             http_client: reqwest::Client::new(),
             exact_cache: Arc::new(ExactMatchCache::new(
-                std::num::NonZeroUsize::new(100).unwrap()
+                std::num::NonZeroUsize::new(100).unwrap(),
             )),
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),

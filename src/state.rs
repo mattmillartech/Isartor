@@ -13,7 +13,6 @@ use crate::layer1::embeddings::TextEmbedder;
 use crate::layer1::layer1a_cache::ExactMatchCache;
 use crate::vector_cache::VectorCache;
 
-
 // ── Multi-provider Agent Wrapper ─────────────────────────────────────
 
 #[async_trait::async_trait]
@@ -75,7 +74,8 @@ impl AppState {
             .expect("failed to build reqwest client");
 
         let exact_cache = Arc::new(ExactMatchCache::new(
-            std::num::NonZeroUsize::new(config.cache_max_capacity as usize).unwrap_or_else(|| std::num::NonZeroUsize::new(128).unwrap())
+            std::num::NonZeroUsize::new(config.cache_max_capacity as usize)
+                .unwrap_or_else(|| std::num::NonZeroUsize::new(128).unwrap()),
         ));
         let vector_cache = Arc::new(VectorCache::new(
             config.similarity_threshold,
@@ -176,7 +176,6 @@ mod tests {
     async fn exact_cache_insert_and_get() {
         // Tested in layer1::layer1a_cache::tests — retained as placeholder.
     }
-
 
     // ── AppLlmAgent mock for testing ─────────────────────────────
 
@@ -282,7 +281,7 @@ mod tests {
     async fn app_state_caches_are_initialised() {
         let state = AppState::new(make_test_config("openai"), shared_test_embedder());
         // Verify caches and clients are properly initialised.
-    assert!(Arc::strong_count(&state.exact_cache) >= 1);
+        assert!(Arc::strong_count(&state.exact_cache) >= 1);
         assert!(Arc::strong_count(&state.vector_cache) >= 1);
         assert!(Arc::strong_count(&state.slm_client) >= 1);
     }

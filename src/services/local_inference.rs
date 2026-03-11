@@ -217,7 +217,9 @@ impl EmbeddedClassifier {
 
         tracing::info!(
             "EmbeddedClassifier: initialising, repo: {}, gguf: {}, model_path: {:?}",
-            cfg.repo_id, cfg.gguf_filename, cfg.model_path
+            cfg.repo_id,
+            cfg.gguf_filename,
+            cfg.model_path
         );
 
         // ── Step 1: Locate model files ───────────────────────────
@@ -228,7 +230,10 @@ impl EmbeddedClassifier {
         let model_path = if let Some(ref local) = cfg.model_path {
             let p = PathBuf::from(local);
             if p.exists() {
-                tracing::info!("EmbeddedClassifier: using local model file: {}", p.display());
+                tracing::info!(
+                    "EmbeddedClassifier: using local model file: {}",
+                    p.display()
+                );
                 p
             } else {
                 tracing::warn!(
@@ -314,7 +319,8 @@ impl EmbeddedClassifier {
                 Err(e) => {
                     tracing::debug!(
                         "tokenizer.json not found in repo {}: {}, trying next",
-                        repo_id, e
+                        repo_id,
+                        e
                     );
                 }
             }
@@ -350,7 +356,8 @@ impl EmbeddedClassifier {
 
         tracing::debug!(
             "GGUF file parsed, tensor_infos: {}, metadata_entries: {}",
-            content.tensor_infos.len(), content.metadata.len()
+            content.tensor_infos.len(),
+            content.metadata.len()
         );
 
         let weights = ModelWeights::from_gguf(content, &mut file, device)
@@ -377,10 +384,7 @@ impl EmbeddedClassifier {
             .generate(&formatted, self.config.max_classify_tokens)
             .await?;
 
-        tracing::debug!(
-            "EmbeddedClassifier: raw classification output: {}",
-            raw
-        );
+        tracing::debug!("EmbeddedClassifier: raw classification output: {}", raw);
 
         Ok(parse_classify_response(&raw))
     }
@@ -411,7 +415,8 @@ impl EmbeddedClassifier {
 
         tracing::debug!(
             "EmbeddedClassifier: starting generation, prompt_tokens: {}, max_tokens: {}",
-            prompt_len, max_tokens
+            prompt_len,
+            max_tokens
         );
 
         // Clone Arcs for the blocking closure.

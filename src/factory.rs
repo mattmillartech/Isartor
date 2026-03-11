@@ -33,11 +33,17 @@ pub fn build_exact_cache(config: &AppConfig) -> Arc<dyn ExactCache> {
         CacheBackend::Memory => {
             let capacity = NonZeroUsize::new(config.cache_max_capacity as usize)
                 .unwrap_or_else(|| NonZeroUsize::new(128).unwrap());
-            log::info!("Factory: ExactCache → InMemoryCache (capacity={})", capacity);
+            log::info!(
+                "Factory: ExactCache → InMemoryCache (capacity={})",
+                capacity
+            );
             Arc::new(InMemoryCache::new(capacity))
         }
         CacheBackend::Redis => {
-            log::info!("Factory: ExactCache → RedisExactCache (url={})", config.redis_url);
+            log::info!(
+                "Factory: ExactCache → RedisExactCache (url={})",
+                config.redis_url
+            );
             Arc::new(RedisExactCache::new(&config.redis_url))
         }
     }
@@ -61,7 +67,8 @@ pub fn build_slm_router(config: &AppConfig, http_client: &reqwest::Client) -> Ar
         RouterBackend::Vllm => {
             log::info!(
                 "Factory: SlmRouter → RemoteVllmRouter (url={}, model={})",
-                config.vllm_url, config.vllm_model
+                config.vllm_url,
+                config.vllm_model
             );
             Arc::new(RemoteVllmRouter::new(
                 http_client.clone(),

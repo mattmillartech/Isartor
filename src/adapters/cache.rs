@@ -8,10 +8,10 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use ahash::RandomState;
 use async_trait::async_trait;
 use lru::LruCache;
 use parking_lot::RwLock;
-use ahash::RandomState;
 
 use crate::core::ports::ExactCache;
 
@@ -94,7 +94,11 @@ impl ExactCache for RedisExactCache {
 
     async fn put(&self, key: &str, response: &str) -> anyhow::Result<()> {
         // TODO: Implement `SET {key} {response} EX {ttl}` via Redis.
-        log::debug!("RedisExactCache::put (not yet implemented) key={} response_len={}", key, response.len());
+        log::debug!(
+            "RedisExactCache::put (not yet implemented) key={} response_len={}",
+            key,
+            response.len()
+        );
         Ok(())
     }
 }
