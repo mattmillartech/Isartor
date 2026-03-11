@@ -3,7 +3,7 @@
 // and brute-force cosine-similarity search.
 //
 // This is a production-grade in-memory store. For datasets > ~100k entries,
-// swap in an HNSW crate (instant-distance, hnsw_rs) or external Qdrant.
+// swap in an external vector DB (Qdrant, Weaviate) or ANN library.
 // The interface stays identical — only the search algorithm changes.
 // =============================================================================
 

@@ -59,7 +59,7 @@ pub struct AppState {
     pub slm_client: Arc<SlmClient>,
 
     /// In-process sentence embedding model for Layer 1 semantic cache.
-    /// Uses fastembed (ONNX Runtime) with BAAI/bge-small-en-v1.5.
+    /// Pure-Rust candle BertModel with sentence-transformers/all-MiniLM-L6-v2.
     pub text_embedder: Arc<TextEmbedder>,
 
     #[cfg(feature = "embedded-inference")]

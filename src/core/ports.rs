@@ -44,7 +44,7 @@ pub trait ExactCache: Send + Sync {
 
 /// Asynchronous, thread-safe intent classifier for Layer 2 triage.
 ///
-/// Implementations may run inference in-process (Candle / ONNX) or delegate
+/// Implementations may run inference in-process (Candle) or delegate
 /// to a remote model serving endpoint (vLLM, TGI, llama.cpp sidecar).
 #[async_trait]
 pub trait SlmRouter: Send + Sync {

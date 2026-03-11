@@ -31,11 +31,21 @@ use crate::state::AppState;
 /// active cache(s). If the embedding service is unreachable in
 /// `semantic`/`both` modes, the layer gracefully falls through.
 pub async fn cache_middleware(request: Request, next: Next) -> Response {
-    let state = request
-        .extensions()
-        .get::<Arc<AppState>>()
-        .expect("AppState missing from request extensions")
-        .clone();
+    let state = match request.extensions().get::<Arc<AppState>>() {
+        Some(s) => s.clone(),
+        None => {
+            tracing::error!("Layer 1: AppState missing from request extensions");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(ChatResponse {
+                    layer: 1,
+                    message: "Gateway misconfiguration: missing application state".into(),
+                    model: None,
+                }),
+            )
+                .into_response();
+        }
+    };
 
     // ------------------------------------------------------------------
     // 1. Read the body to extract the prompt.
@@ -94,14 +104,14 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
     // ------------------------------------------------------------------
     // 3. Semantic lookup (when mode is Semantic or Both).
-    //    Uses the in-process fastembed TextEmbedder — no HTTP round-trip.
+    //    Uses the in-process candle TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
     // Removed span: info_span!("layer1b_semantic_process");
     let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
         let embedder = state.text_embedder.clone();
         let prompt_clone = prompt.clone();
 
-        // fastembed (ONNX Runtime) is CPU-bound; run on the blocking pool
+        // candle BertModel inference is CPU-bound; run on the blocking pool
         // so we don't starve the Tokio async workers.
         match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await
         {

@@ -57,7 +57,7 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
 | --- | --- | --- | --- |
 | **Gateway** | 2–20 | CPU utilisation / request rate | CPU nodes |
 | **Inference Pool** (vLLM) | 1–N | GPU utilisation / queue depth | GPU nodes |
-| **Embedding Pool** (TEI) | 1–N | Requests per second | CPU or GPU nodes (v2 pipeline only; v1 uses in-process fastembed) |
+| **Embedding Pool** (TEI) | 1–N | Requests per second | CPU or GPU nodes (v2 pipeline only; v1 uses in-process candle) |
 | **OTel Collector** | 1 (DaemonSet or Deployment) | — | CPU nodes |
 | **Ingress Controller** | 1–2 | — | CPU nodes |
 
@@ -168,7 +168,7 @@ spec:
               value: "phi-3-mini"
             - name: ISARTOR__LAYER2__TIMEOUT_SECONDS
               value: "30"
-            # Embedding pool (v2 pipeline only — v1 uses in-process fastembed)
+            # Embedding pool (v2 pipeline only — v1 uses in-process candle)
             - name: ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL
               value: "http://isartor-embedding:8082"
             - name: ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME
@@ -361,7 +361,7 @@ containers:
 
 ## Step 5: Embedding Pool (TEI) — v2 Pipeline Only
 
-> **Note:** The v1 middleware pipeline (`/api/chat`) generates Layer 1 embeddings in-process via fastembed. This external embedding pool is only needed if you use the v2 algorithmic pipeline (`/api/v2/chat`).
+> **Note:** The v1 middleware pipeline (`/api/chat`) generates Layer 1 embeddings in-process via candle BertModel. This external embedding pool is only needed if you use the v2 algorithmic pipeline (`/api/v2/chat`).
 
 [Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference) provides optimised embedding generation.
 

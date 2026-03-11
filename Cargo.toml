@@ -48,17 +48,16 @@ opentelemetry-otlp = { version = "0.31.0", default-features = false, features = 
 opentelemetry-semantic-conventions = "0.31.0"
 tracing-opentelemetry = "0.32.1"
 
-# ── Embedded ML Inference (candle) ─────────────────────────────────
-candle-core = { version = "0.9", optional = true }
-candle-nn = { version = "0.9", optional = true }
-candle-transformers = { version = "0.9", optional = true }
-hf-hub = { version = "0.4", default-features = false, features = ["tokio", "rustls-tls"], optional = true }
-tokenizers = { version = "0.21", optional = true }
-fastembed = { version = "5.12.0", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls", "image-models"] }
-
+# ── Embedded ML Inference (pure-Rust candle stack) ─────────────────
+candle-core = "0.9"
+candle-nn = "0.9"
+candle-transformers = "0.9"
+hf-hub = { version = "0.4", default-features = false, features = ["ureq", "tokio", "rustls-tls"] }
+tokenizers = "0.21"
 lru = "0.12"
 parking_lot = "0.12"
 ahash = "0.8"
+redis = { version = "0.25", features = ["tokio-comp"] }
 
 [dev-dependencies]
 # Test utilities
@@ -77,10 +76,4 @@ panic = "abort"
 
 [features]
 default = ["embedded-inference"]
-embedded-inference = [
-    "dep:candle-core",
-    "dep:candle-nn",
-    "dep:candle-transformers",
-    "dep:hf-hub",
-    "dep:tokenizers"
-]
+embedded-inference = []

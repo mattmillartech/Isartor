@@ -1,8 +1,8 @@
 # 📄 Level 1 — Minimal Deployment (Edge / VPS / Bare Metal)
 
-> **Single static binary, embedded candle inference + in-process fastembed embeddings, zero external dependencies.**
+> **Single static binary, embedded candle inference + in-process candle sentence embeddings, zero C/C++ dependencies.**
 
-This guide covers deploying Isartor as a standalone process — no sidecars, no Docker Compose, no orchestrator. The gateway binary embeds a Gemma-2-2B-IT GGUF model via [candle](https://github.com/huggingface/candle) for Layer 2 classification and uses [fastembed](https://crates.io/crates/fastembed) (ONNX Runtime, BAAI/bge-small-en-v1.5) for Layer 1 semantic cache embeddings — all entirely in-process.
+This guide covers deploying Isartor as a standalone process — no sidecars, no Docker Compose, no orchestrator. The gateway binary embeds a Gemma-2-2B-IT GGUF model via [candle](https://github.com/huggingface/candle) for Layer 2 classification and uses candle's `BertModel` (sentence-transformers/all-MiniLM-L6-v2) for Layer 1 semantic cache embeddings — all entirely in-process, pure Rust.
 
 ---
 
@@ -28,7 +28,7 @@ This guide covers deploying Isartor as a standalone process — no sidecars, no 
 | **Rust** (build from source) | 1.75+ | Latest stable |
 | **OS** | Linux (x86_64 / aarch64), macOS | Ubuntu 22.04 LTS |
 
-> **Memory budget:** Gemma-2-2B Q4_K_M ≈ 1.5 GB, fastembed ONNX model ≈ 33 MB, tokenizer ≈ 4 MB, gateway runtime ≈ 50 MB. Total: ~1.6 GB resident.
+> **Memory budget:** Gemma-2-2B Q4_K_M ≈ 1.5 GB, candle BertModel ≈ 90 MB, tokenizer ≈ 4 MB, gateway runtime ≈ 50 MB. Total: ~1.7 GB resident.
 
 ---
 
@@ -77,7 +77,7 @@ export ISARTOR__LLM_PROVIDER="openai"          # openai | azure | anthropic | xa
 export ISARTOR__EXTERNAL_LLM_MODEL="gpt-4o-mini"
 
 # Cache mode — "both" enables exact + semantic cache. Semantic embeddings
-# are generated in-process via fastembed (ONNX) — no sidecar needed.
+# are generated in-process via candle BertModel — no sidecar needed.
 export ISARTOR__CACHE_MODE="both"
 
 # Pluggable backends — Level 1 uses the defaults (no change needed):
@@ -96,8 +96,8 @@ On first start, the embedded classifier will **auto-download** the Gemma-2-2B-IT
 
 ```
 INFO  isartor > Listening on 0.0.0.0:8080
-INFO  isartor::layer1::embeddings > Initialising fastembed TextEmbedder (BAAI/bge-small-en-v1.5)...
-INFO  isartor::layer1::embeddings > TextEmbedder ready (~33 MB ONNX model loaded)
+INFO  isartor::layer1::embeddings > Initialising candle TextEmbedder (all-MiniLM-L6-v2)...
+INFO  isartor::layer1::embeddings > TextEmbedder ready (~90 MB BertModel loaded)
 INFO  isartor::services::local_inference > Downloading model from mradermacher/gemma-2-2b-it-GGUF...
 INFO  isartor::services::local_inference > Model loaded (1.5 GB), ready for inference
 ```
@@ -278,7 +278,7 @@ These are the most relevant `ISARTOR__*` variables for Level 1 deployments. For 
 | --- | --- | --- |
 | `ISARTOR__HOST_PORT` | `0.0.0.0:8080` | Bind address |
 | `ISARTOR__GATEWAY_API_KEY` | `changeme` | **Change in production** |
-| `ISARTOR__CACHE_MODE` | `both` | `both` recommended — fastembed provides in-process semantic embeddings |
+| `ISARTOR__CACHE_MODE` | `both` | `both` recommended — candle BertModel provides in-process semantic embeddings |
 | `ISARTOR__CACHE_BACKEND` | `memory` | In-process LRU — ideal for single-process Level 1 |
 | `ISARTOR__ROUTER_BACKEND` | `embedded` | In-process Candle GGUF SLM — zero external dependencies |
 | `ISARTOR__CACHE_TTL_SECS` | `300` | Cache TTL in seconds |
@@ -305,7 +305,7 @@ These are the most relevant `ISARTOR__*` variables for Level 1 deployments. For 
 
 | Metric | Typical Value (4-core x86_64) |
 | --- | --- |
-| Cold start (model download) | 30–120 s (depends on bandwidth; ~1.5 GB Gemma + ~33 MB fastembed ONNX) |
+| Cold start (model download) | 30–120 s (depends on bandwidth; ~1.5 GB Gemma + ~90 MB candle BertModel) |
 | Warm start (cached model) | 3–8 s |
 | Classification latency | 50–200 ms |
 | Simple task execution | 200–2000 ms |
@@ -320,7 +320,7 @@ These are the most relevant `ISARTOR__*` variables for Level 1 deployments. For 
 When your traffic outgrows Level 1, the migration path is straightforward:
 
 1. **Add the generation sidecar** — `ISARTOR__LAYER2__SIDECAR_URL=http://127.0.0.1:8081` (replaces embedded candle with the more powerful Phi-3-mini on GPU).
-2. **Optionally add an embedding sidecar for v2 pipeline** — `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082` (only needed if using the v2 algorithmic pipeline; v1 semantic cache already uses in-process fastembed).
+2. **Optionally add an embedding sidecar for v2 pipeline** — `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082` (only needed if using the v2 algorithmic pipeline; v1 semantic cache already uses in-process candle BertModel).
 3. **Deploy via Docker Compose** — See [📄 `docs/deploy-level2-sidecar.md`](deploy-level2-sidecar.md).
 
 > **Note:** The pluggable backend defaults (`cache_backend=memory`, `router_backend=embedded`) remain appropriate for Level 2 single-host deployments. You only need to switch to `cache_backend=redis` and `router_backend=vllm` at Level 3 when scaling horizontally.

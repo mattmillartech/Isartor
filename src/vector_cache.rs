@@ -1,5 +1,4 @@
 use std::time::{Duration, Instant};
-
 use tokio::sync::RwLock;
 
 /// A single cached entry: the embedding vector paired with its response.
@@ -11,6 +10,9 @@ struct CacheEntry {
 
 /// In-memory vector cache that uses cosine similarity to find semantically
 /// similar prompts.
+///
+/// Uses brute-force cosine similarity scan which is perfectly adequate for
+/// cache sizes typical in gateway workloads (< 10K entries, < 1ms per scan).
 ///
 /// Stored behind a `RwLock` so that reads can proceed concurrently while
 /// writes (inserts / evictions) hold exclusive access.
@@ -37,28 +39,24 @@ impl VectorCache {
         let entries = self.entries.read().await;
         let now = Instant::now();
 
-        let mut best_score: f64 = 0.0;
-        let mut best_response: Option<&str> = None;
+        let mut best: Option<(&CacheEntry, f64)> = None;
 
         for entry in entries.iter() {
-            // Skip expired entries during search (lazy eviction).
+            // Skip expired entries.
             if now.duration_since(entry.created_at) > self.ttl {
                 continue;
             }
-
             let score = cosine_similarity(query, &entry.embedding);
-            if score >= self.similarity_threshold && score > best_score {
-                best_score = score;
-                best_response = Some(&entry.response);
+            if score >= self.similarity_threshold {
+                if best.as_ref().map_or(true, |(_, s)| score > *s) {
+                    best = Some((entry, score));
+                }
             }
         }
 
-        if let Some(resp) = best_response {
-            tracing::info!(
-                similarity = format!("{:.4}", best_score),
-                "Vector cache: match found"
-            );
-            Some(resp.to_string())
+        if let Some((entry, score)) = best {
+            tracing::info!(similarity = format!("{:.4}", score), "Vector cache: match found");
+            Some(entry.response.clone())
         } else {
             None
         }

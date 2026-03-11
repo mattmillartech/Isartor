@@ -55,7 +55,8 @@ impl EmbeddedCandleRouter {
 #[async_trait]
 impl SlmRouter for EmbeddedCandleRouter {
     async fn classify_intent(&self, prompt: &str) -> anyhow::Result<String> {
-        // TODO: Tokenise → forward pass → parse LABEL from output.
+        // Skeleton: tokenise → forward pass → parse LABEL from output.
+        // Gated behind `embedded-inference` feature flag; not yet wired.
         log::debug!(
             "EmbeddedCandleRouter::classify_intent (skeleton) prompt_len={}",
             prompt.len()
@@ -117,18 +118,51 @@ impl RemoteVllmRouter {
 #[async_trait]
 impl SlmRouter for RemoteVllmRouter {
     async fn classify_intent(&self, prompt: &str) -> anyhow::Result<String> {
-        // TODO: POST to {base_url}/v1/chat/completions with the
-        //       classification system prompt and parse the LABEL.
         log::debug!(
-            "RemoteVllmRouter::classify_intent (skeleton) prompt_len={} url={} model={}",
+            "RemoteVllmRouter::classify_intent prompt_len={} url={} model={}",
             prompt.len(),
             self.base_url,
             self.model_name
         );
-        // Skeleton: return COMPLEX so the pipeline always falls through
-        // to the external LLM until the real HTTP call is wired.
-        let _ = &self.client; // suppress unused-field warning
-        Ok("COMPLEX".to_string())
+
+        // System prompt for intent classification
+        let system_prompt = "You are an intent classifier. Given a user prompt, respond with one word: either 'SIMPLE' or 'COMPLEX'. Only output the label.";
+
+        let url = format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/'));
+        let req_body = serde_json::json!({
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 1,
+            "temperature": 0.0
+        });
+
+        let resp = self.client.post(&url)
+            .json(&req_body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("RemoteVllmRouter HTTP error: {}: {}", status, text);
+        }
+
+        let resp_json: serde_json::Value = resp.json().await?;
+        // Try to extract the label from the first choice
+        let label = resp_json["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_uppercase();
+        if label == "SIMPLE" || label == "COMPLEX" {
+            Ok(label)
+        } else {
+            // Fallback: treat as COMPLEX if label is not recognized
+            Ok("COMPLEX".to_string())
+        }
     }
 }
 
@@ -152,8 +186,22 @@ mod tests {
 
     #[tokio::test]
     async fn remote_vllm_skeleton_returns_complex() {
+        // Use wiremock to mock the vLLM endpoint
+        use wiremock::{MockServer, Mock, ResponseTemplate, matchers::{method, path}};
+        let mock_server = MockServer::start().await;
+        // Mock the /v1/chat/completions endpoint to return a COMPLEX label
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": "COMPLEX" }
+                }]
+            })))
+            .mount(&mock_server)
+            .await;
+
         let client = reqwest::Client::new();
-        let router = RemoteVllmRouter::new(client, "http://localhost:8000", "gemma-2-2b-it");
+        let router = RemoteVllmRouter::new(client, mock_server.uri(), "gemma-2-2b-it");
         let label = router
             .classify_intent("Explain quantum computing")
             .await

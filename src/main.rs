@@ -1,19 +1,3 @@
-mod adapters;
-mod clients;
-mod config;
-mod core;
-mod factory;
-mod handler;
-mod layer1;
-mod middleware;
-mod models;
-mod pipeline;
-#[cfg(feature = "embedded-inference")]
-mod services;
-mod state;
-mod telemetry;
-mod vector_cache;
-
 use std::sync::Arc;
 
 use axum::{
@@ -23,14 +7,17 @@ use axum::{
 use bytes::Bytes;
 use http_body_util::BodyExt;
 
-use crate::config::AppConfig;
-use crate::pipeline::implementations::{
+use isartor::config::AppConfig;
+use isartor::handler;
+use isartor::middleware;
+use isartor::pipeline;
+use isartor::pipeline::implementations::{
     embedder::LlamaCppEmbedder, external_llm::RigExternalLlm,
     intent_classifier::LlamaCppIntentClassifier, local_executor::LlamaCppLocalExecutor,
     reranker::LlamaCppReranker, vector_store::InMemoryVectorStore,
 };
-use crate::pipeline::{AdaptiveConcurrencyLimiter, AlgorithmSuite, ConcurrencyConfig};
-use crate::state::AppState;
+use isartor::pipeline::{AdaptiveConcurrencyLimiter, AlgorithmSuite, ConcurrencyConfig};
+use isartor::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     // 1. Initialise structured logging & OTel telemetry
     // ------------------------------------------------------------------
     let config = Arc::new(AppConfig::load()?);
-    telemetry::init_telemetry(config.clone())?;
+    isartor::telemetry::init_telemetry(config.clone())?;
 
     // ------------------------------------------------------------------
     // 2. Build shared state.
@@ -61,10 +48,10 @@ async fn main() -> anyhow::Result<()> {
         );
 
     // Initialize the in-process sentence embedder for Layer 1 semantic cache.
-    // This blocks during startup (~1s) to load the ONNX model into RAM (~33 MB).
+    // This blocks during startup (~2s) to load the candle BertModel into RAM (~90 MB).
     let text_embedder = Arc::new(
-        layer1::embeddings::TextEmbedder::new()
-            .expect("Failed to initialize fastembed TextEmbedder (bge-small-en-v1.5)"),
+        isartor::layer1::embeddings::TextEmbedder::new()
+            .expect("Failed to initialize candle TextEmbedder (all-MiniLM-L6-v2)"),
     );
 
     let app_state = Arc::new(AppState::new(config.clone(), text_embedder));

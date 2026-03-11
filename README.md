@@ -1,3 +1,13 @@
+### Approximate Nearest Neighbor (ANN) Search
+
+Isartor uses an in-memory brute-force cosine similarity search over cached embeddings. This enables sub-millisecond semantic cache lookups at typical cache sizes.
+
+- Pure Rust implementation — zero C/C++ dependencies, seamless cross-compilation
+- Automatic index maintenance: insertions and evictions are handled transparently
+- Supports TTL and capacity limits for cache entries
+
+No additional setup is required—vector search is enabled by default in the semantic cache.
+
 # 🏛️ Isartor
 
 <p align="center">
@@ -21,8 +31,8 @@ Modern AI applications are drowning in API costs and network latency. Standard g
 ### Pluggable Trait Provider Architecture
 
 - **Minimalist Single-Binary Mode:**
-  - Runs fully embedded SLMs (Gemma-2, Qwen2-1.5B) and fastembed semantic cache in-process.
-  - Zero external dependencies: in-memory LRU cache, no Redis, no vLLM, no sidecars.
+  - Runs fully embedded SLMs (Gemma-2, Qwen2-1.5B) and pure-Rust candle semantic cache in-process.
+  - Zero C/C++ dependencies: in-memory LRU cache, no Redis, no vLLM, no sidecars.
   - Ideal for edge devices, air-gapped environments, and rapid prototyping.
 
 - **Enterprise K8s Mode:**
@@ -106,7 +116,7 @@ curl -X POST http://localhost:3000/api/v1/chat \
 ### Prerequisites
 
 - **Rust Toolchain**: [Install Rust](https://rustup.rs/) (Stable 1.75+)
-- **CMake**: Required for building some ML backends.
+
 
 ### Build from Source
 
@@ -117,6 +127,8 @@ cargo build --release
 ```
 
 The binary will be available at `./target/release/isartor`.
+
+> **Pure-Rust ML stack:** Isartor uses [candle](https://github.com/huggingface/candle) for all in-process inference — both Layer 2 classification (Gemma-2/Qwen2 GGUF) and Layer 1 sentence embeddings (all-MiniLM-L6-v2). No ONNX Runtime, no C++ toolchain, no `cmake` — just `cargo build`.
 
 ## Configuration
 
@@ -140,7 +152,7 @@ Isartor uses a **Pluggable Trait Provider** (Hexagonal Architecture) pattern. Th
 | Layer           | Minimalist Single-Binary           | Enterprise K8s                |
 |:---------------:|:----------------------------------:|:-----------------------------:|
 | **L1a Cache**   | In-memory LRU (ahash + parking_lot)| Redis cluster (shared cache)  |
-| **L1b Semantic**| Fastembed CPU (in-process)         | External TEI (optional)       |
+| **L1b Semantic**| Candle BertModel (in-process)      | External TEI (optional)       |
 | **L2 Router**   | Embedded Candle/Qwen2 (in-process) | Remote vLLM/TGI server        |
 | **L3 Fallback** | Cloud LLM (OpenAI/Anthropic)       | Cloud LLM (OpenAI/Anthropic)  |
 

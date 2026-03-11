@@ -1,3 +1,19 @@
+#[tokio::test]
+async fn redis_exact_cache_round_trip() {
+    // This test requires a running Redis instance on localhost:6379.
+    // It will be skipped if Redis is not available.
+    use isartor::adapters::cache::RedisExactCache;
+    let cache = RedisExactCache::new("redis://localhost:6379");
+    let key = "integration-test-key";
+    let value = "integration-test-value";
+    // Try to put and get, ignore errors if Redis is not running.
+    if let Ok(()) = cache.put(key, value).await {
+        let got = cache.get(key).await.unwrap();
+        assert_eq!(got, Some(value.to_string()));
+    } else {
+        eprintln!("[SKIP] Redis not available on localhost:6379");
+    }
+}
 // =============================================================================
 // Integration Tests — Full-stack gateway tests via HTTP.
 //

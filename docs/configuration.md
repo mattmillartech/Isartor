@@ -44,7 +44,7 @@ export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | `ISARTOR__ROUTER_BACKEND` | `String` | `embedded` | `embedded` — in-process Candle GGUF inference; `vllm` — remote vLLM / TGI server |
 | `ISARTOR__VLLM_URL` | `String` | `http://127.0.0.1:8000` | Base URL of the vLLM / TGI server. Only used when `router_backend=vllm` |
 | `ISARTOR__VLLM_MODEL` | `String` | `gemma-2-2b-it` | Model name for the vLLM server. Only used when `router_backend=vllm` |
-| `ISARTOR__EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational; v1 pipeline uses in-process fastembed) |
+| `ISARTOR__EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational; v1 pipeline uses in-process candle BertModel) |
 | `ISARTOR__SIMILARITY_THRESHOLD` | `f64` | `0.85` | Cosine similarity threshold for semantic cache hits (0.0–1.0) |
 | `ISARTOR__CACHE_TTL_SECS` | `u64` | `300` | Time-to-live for cached responses, in seconds |
 | `ISARTOR__CACHE_MAX_CAPACITY` | `u64` | `10000` | Maximum entries per cache (exact + semantic counted separately) |
@@ -68,7 +68,7 @@ export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 
 ### Embedding Sidecar (v2 Pipeline Only)
 
-> **Note:** The v1 middleware pipeline (`/api/chat`) uses **in-process fastembed** (ONNX Runtime, BAAI/bge-small-en-v1.5) for Layer 1 embeddings — no sidecar required. These variables are only used by the v2 algorithmic pipeline (`/api/v2/chat`).
+> **Note:** The v1 middleware pipeline (`/api/chat`) uses **in-process candle BertModel** (sentence-transformers/all-MiniLM-L6-v2) for Layer 1 embeddings — no sidecar required. These variables are only used by the v2 algorithmic pipeline (`/api/v2/chat`).
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -162,7 +162,7 @@ sidecar_url = "http://127.0.0.1:8081"
 model_name = "phi-3-mini"
 timeout_seconds = 30
 
-# Embedding Sidecar (v2 pipeline only — v1 uses in-process fastembed)
+# Embedding Sidecar (v2 pipeline only — v1 uses in-process candle)
 [embedding_sidecar]
 sidecar_url = "http://127.0.0.1:8082"
 model_name = "all-minilm"
@@ -194,7 +194,7 @@ pipeline_target_latency_ms = 500
 ### Level 1 — Minimal (Edge / VPS)
 
 ```bash
-ISARTOR__CACHE_MODE=both               # In-process fastembed enables semantic cache at all tiers
+ISARTOR__CACHE_MODE=both               # In-process candle BertModel enables semantic cache at all tiers
 ISARTOR__CACHE_BACKEND=memory          # Single process — in-process LRU is ideal
 ISARTOR__ROUTER_BACKEND=embedded       # In-process Candle SLM, no external dependencies
 ISARTOR__CACHE_TTL_SECS=300

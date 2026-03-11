@@ -9,7 +9,7 @@
 | exact_cache.provider    | ISARTOR__CACHE_BACKEND         | string   | memory                 | Layer 1a cache backend: memory or redis          |
 | exact_cache.redis_url   | ISARTOR__REDIS_URL             | string   | (none)                 | Redis connection string (if provider=redis)      |
 | exact_cache.redis_db    | ISARTOR__REDIS_DB              | int      | 0                      | Redis database index                             |
-| semantic_cache.provider | ISARTOR__SEMANTIC_BACKEND      | string   | fastembed              | Layer 1b semantic cache: fastembed or tei        |
+| semantic_cache.provider | ISARTOR__SEMANTIC_BACKEND      | string   | candle                 | Layer 1b semantic cache: candle (in-process) or tei (external) |
 | semantic_cache.remote_url| ISARTOR__TEI_URL               | string   | (none)                 | TEI endpoint (if provider=tei)                   |
 | slm_router.provider     | ISARTOR__ROUTER_BACKEND        | string   | embedded               | Layer 2 router: embedded or vllm                 |
 | slm_router.remote_url   | ISARTOR__VLLM_URL              | string   | (none)                 | vLLM/TGI endpoint (if provider=vllm)             |
@@ -28,7 +28,7 @@
 - `exact_cache.redis_url`, `exact_cache.redis_db`: Redis config
 
 ### Layer 1b: Semantic Cache
-- `semantic_cache.provider`: `fastembed` or `tei`
+- `semantic_cache.provider`: `candle` or `tei`
 - `semantic_cache.remote_url`: TEI endpoint
 
 ### Layer 2: SLM Router

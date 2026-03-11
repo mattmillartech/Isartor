@@ -32,11 +32,17 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
     );
 
     async {
-        let state = request
-            .extensions()
-            .get::<Arc<AppState>>()
-            .expect("AppState missing")
-            .clone();
+        let state = match request.extensions().get::<Arc<AppState>>() {
+            Some(s) => s.clone(),
+            None => {
+                tracing::error!("Monitoring: AppState missing from request extensions");
+                return (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Gateway misconfiguration: missing application state",
+                )
+                    .into_response();
+            }
+        };
 
         let enable_monitoring = state.config.enable_monitoring;
 

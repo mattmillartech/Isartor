@@ -18,7 +18,7 @@ use super::traits::{
 
 /// Stub embedder that produces a fixed-dimension zero vector.
 ///
-/// Replace with: ONNX runtime Sentence-BERT implementation.
+/// Replace with: candle BertModel sentence-embedding implementation.
 pub struct StubEmbedder {
     pub dimension: usize,
 }
@@ -32,12 +32,8 @@ impl StubEmbedder {
 #[async_trait]
 impl Embedder for StubEmbedder {
     async fn embed(&self, text: &str) -> anyhow::Result<Vec<f64>> {
-        // TODO: Implement using local ONNX runtime (e.g., Sentence-BERT).
-        //
-        // Production implementation should:
-        //   1. Tokenise `text` using the model's vocabulary.
-        //   2. Run ONNX inference to produce a dense embedding.
-        //   3. L2-normalise the vector.
+        // Stub: produces a deterministic hash-based vector for testing.
+        // Production code uses TextEmbedder (candle) or LlamaCppEmbedder instead.
         //
         // This stub produces a deterministic hash-based vector for testing.
         tracing::debug!(
@@ -73,7 +69,7 @@ impl Embedder for StubEmbedder {
 
 /// Stub vector store backed by a simple in-memory Vec with brute-force search.
 ///
-/// Replace with: HNSW index (e.g., `instant-distance`, `hnsw_rs`, or Qdrant).
+/// Replace with: production VectorCache or external vector DB (Qdrant, Weaviate).
 pub struct StubVectorStore {
     entries: tokio::sync::RwLock<Vec<(Vec<f64>, String)>>,
 }
@@ -93,14 +89,8 @@ impl VectorStore for StubVectorStore {
         query_vector: &[f64],
         threshold: f64,
     ) -> anyhow::Result<Option<(String, f64)>> {
-        // TODO: Implement using HNSW index for approximate nearest neighbor search.
-        //
-        // Production implementation should:
-        //   1. Query the HNSW graph with `ef_search` parameter.
-        //   2. Return the nearest neighbour if similarity ≥ threshold.
-        //   3. Support concurrent reads without blocking writers.
-        //
-        // This stub performs brute-force cosine similarity scan.
+        // Stub: brute-force cosine similarity scan for testing.
+        // Production code uses VectorCache or InMemoryVectorStore instead.
         let entries = self.entries.read().await;
 
         let mut best: Option<(String, f64)> = None;
@@ -138,14 +128,9 @@ pub struct StubIntentClassifier;
 #[async_trait]
 impl IntentClassifier for StubIntentClassifier {
     async fn classify(&self, text: &str) -> anyhow::Result<(IntentClassification, f64)> {
-        // TODO: Implement using local SLM performing Zero-Shot NLI task.
-        //
-        // Production implementation should:
-        //   1. Construct an NLI prompt with candidate labels.
-        //   2. Run inference on a local SLM (Phi-3, TinyLlama).
-        //   3. Parse the softmax output to get label + confidence.
-        //
-        // This stub uses naive keyword matching.
+        // Stub: naive keyword matching for testing.
+        // Production implementations: EmbeddedClassifier (candle Zero-Shot NLI),
+        //   LlamaCppClassifier (HTTP proxy to llama.cpp server).
         let lower = text.to_lowercase();
 
         let (intent, confidence) = if lower.contains("hello")
@@ -191,15 +176,14 @@ impl IntentClassifier for StubIntentClassifier {
 
 /// Stub local executor that returns a canned response.
 ///
-/// Replace with: Ollama / local ONNX text generation model.
+/// Replace with: Ollama / local candle text generation model.
 pub struct StubLocalExecutor;
 
 #[async_trait]
 impl LocalExecutor for StubLocalExecutor {
     async fn execute_simple(&self, prompt: &str) -> anyhow::Result<String> {
-        // TODO: Implement via local SLM (Ollama, vLLM, or ONNX runtime).
-        //
-        // This stub returns a synthetic response for testing.
+        // Stub: returns a synthetic response for testing.
+        // Production implementation: LlamaCppExecutor (HTTP proxy to llama.cpp server).
         tracing::debug!(
             prompt_len = prompt.len(),
             "StubLocalExecutor: generating simple response"
@@ -221,7 +205,7 @@ impl LocalExecutor for StubLocalExecutor {
 
 /// Stub reranker that selects the first N documents (no actual scoring).
 ///
-/// Replace with: Cross-Encoder model (e.g., ms-marco-MiniLM) via ONNX.
+/// Replace with: Cross-Encoder model (e.g., ms-marco-MiniLM) via candle.
 pub struct StubReranker;
 
 #[async_trait]
@@ -232,15 +216,9 @@ impl Reranker for StubReranker {
         documents: &[String],
         top_k: usize,
     ) -> anyhow::Result<Vec<(String, f64)>> {
-        // TODO: Implement using local Cross-Encoder model to filter
-        //       irrelevant context to save tokens.
-        //
-        // Production implementation should:
-        //   1. For each document, form a (prompt, document) pair.
-        //   2. Run Cross-Encoder inference to get a relevance score.
-        //   3. Sort by descending score and return top-K.
-        //
-        // This stub assigns a synthetic score based on keyword overlap.
+        // Stub: assigns a synthetic score based on keyword overlap.
+        // Production implementation: LlamaCppReranker (HTTP proxy to llama.cpp
+        //   serving a Cross-Encoder model like ms-marco-MiniLM).
         let prompt_words: std::collections::HashSet<&str> = prompt.split_whitespace().collect();
 
         let mut scored: Vec<(String, f64)> = documents
@@ -283,10 +261,9 @@ pub struct StubExternalLlm;
 #[async_trait]
 impl ExternalLlm for StubExternalLlm {
     async fn complete(&self, prompt: &str, context_documents: &[String]) -> anyhow::Result<String> {
-        // TODO: Implement via rig-core Agent or direct HTTP call to
-        //       the configured LLM provider.
-        //
-        // This stub echoes the prompt and context document count.
+        // Stub: echoes the prompt and context document count for testing.
+        // Production implementations: LlamaCppExternalLlm (HTTP proxy),
+        //   RigAgent (rig-core Agent with OpenAI / Anthropic / Azure providers).
         tracing::debug!(
             prompt_len = prompt.len(),
             context_docs = context_documents.len(),

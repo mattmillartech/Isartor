@@ -18,11 +18,20 @@ use crate::state::AppState;
 /// `gateway_api_key`. If the key is missing or does not match, the
 /// pipeline is short-circuited with a `401 Unauthorized` response.
 pub async fn auth_middleware(request: Request, next: Next) -> Response {
-    let state = request
-        .extensions()
-        .get::<Arc<AppState>>()
-        .expect("AppState missing from request extensions")
-        .clone();
+    let state = match request.extensions().get::<Arc<AppState>>() {
+        Some(s) => s.clone(),
+        None => {
+            tracing::error!("Layer 0: AppState missing from request extensions");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "error": "Internal Server Error",
+                    "message": "Gateway misconfiguration: missing application state"
+                })),
+            )
+                .into_response();
+        }
+    };
 
     let api_key = request
         .headers()

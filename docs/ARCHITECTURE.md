@@ -46,7 +46,7 @@ Level 1 (Edge)           Level 2 (Compose)        Level 3 (K8s)
 | **Gateway pods** | Stateless — scale horizontally via HPA on CPU / RPS | Each pod has its own in-memory LRU unless `cache_backend=redis` |
 | **Exact cache** | `memory` → per-pod; `redis` → shared across all pods | Redis: network round-trip (~0.5 ms); Memory: no shared state |
 | **Router (L2)** | `embedded` → per-pod CPU; `vllm` → shared GPU pool | Embedded: `Mutex` serialises inference per pod; vLLM: continuous batching |
-| **Semantic cache** | In-process fastembed — per-pod, no sharing | Embedding model (~33 MB) loaded per pod |
+| **Semantic cache** | In-process candle BertModel — per-pod, no sharing | Embedding model (~90 MB) loaded per pod |
 | **Layer 3 (LLM)** | Cloud API — inherently scalable | Rate limits from the LLM provider |
 
 **Key insight:** Switching to `cache_backend=redis` is what unlocks true

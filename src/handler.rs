@@ -19,11 +19,21 @@ use crate::state::AppState;
 pub async fn chat_handler(request: Request) -> impl IntoResponse {
     let span = info_span!("layer3_llm", ai.prompt.length_bytes = tracing::field::Empty);
     async move {
-        let state = request
-            .extensions()
-            .get::<Arc<AppState>>()
-            .expect("AppState missing from request extensions")
-            .clone();
+        let state = match request.extensions().get::<Arc<AppState>>() {
+            Some(s) => s.clone(),
+            None => {
+                tracing::error!("Layer 3: AppState missing from request extensions");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ChatResponse {
+                        layer: 3,
+                        message: "Gateway misconfiguration: missing application state".into(),
+                        model: None,
+                    }),
+                )
+                    .into_response();
+            }
+        };
 
         // ------------------------------------------------------------------
     // 1. Read the body (may have been re-attached by Layer 2).

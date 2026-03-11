@@ -15,6 +15,7 @@ use lru::LruCache;
 use parking_lot::RwLock;
 
 use crate::core::ports::ExactCache;
+use redis::AsyncCommands;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Adapter: InMemoryCache — bounded LRU with ahash + parking_lot
@@ -68,7 +69,7 @@ impl ExactCache for InMemoryCache {
 /// deferred.  This skeleton demonstrates the adapter shape.
 pub struct RedisExactCache {
     /// Redis connection URL (e.g. `redis://redis-master:6379`).
-    _url: String,
+    url: String,
     // In a full implementation this would hold:
     // pool: redis::aio::ConnectionManager,
 }
@@ -79,27 +80,32 @@ impl RedisExactCache {
     /// # Arguments
     /// * `url` — Redis connection string (e.g. `redis://redis-master:6379`).
     pub fn new(url: impl Into<String>) -> Self {
-        let _url = url.into();
-        log::info!("RedisExactCache adapter created (skeleton) url={}", _url);
-        Self { _url }
+        let url = url.into();
+        log::info!("RedisExactCache adapter created url={}", url);
+        Self { url }
     }
 }
 
 #[async_trait]
 impl ExactCache for RedisExactCache {
     async fn get(&self, key: &str) -> anyhow::Result<Option<String>> {
-        // TODO: Implement `GET {key}` via the Redis connection pool.
-        log::debug!("RedisExactCache::get (not yet implemented) key={}", key);
-        Ok(None)
+        log::debug!("RedisExactCache::get key={}", key);
+        let client = redis::Client::open(self.url.as_str())?;
+    let mut conn = client.get_multiplexed_tokio_connection().await?;
+        let val: Option<String> = conn.get(key).await?;
+        Ok(val)
     }
 
     async fn put(&self, key: &str, response: &str) -> anyhow::Result<()> {
-        // TODO: Implement `SET {key} {response} EX {ttl}` via Redis.
         log::debug!(
-            "RedisExactCache::put (not yet implemented) key={} response_len={}",
+            "RedisExactCache::put key={} response_len={}",
             key,
             response.len()
         );
+        let client = redis::Client::open(self.url.as_str())?;
+    let mut conn = client.get_multiplexed_tokio_connection().await?;
+        // Set with a default TTL (e.g., 1 hour = 3600s). Adjust as needed.
+        let _: () = conn.set_ex(key, response, 3600).await?;
         Ok(())
     }
 }

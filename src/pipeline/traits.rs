@@ -4,7 +4,7 @@
 //
 // These traits define the extension points of the pipeline. Each one
 // corresponds to a specific algorithmic capability that will be plugged
-// in with a concrete implementation (ONNX runtime, HNSW index, Cross-
+// in with a concrete implementation (candle BertModel, HNSW index, Cross-
 // Encoder model, etc.).
 //
 // The traits use `async_trait` because every real implementation will
@@ -23,15 +23,12 @@ use async_trait::async_trait;
 /// - Semantic cache lookup (Layer 1)
 /// - Similarity-based routing decisions
 ///
-/// # TODO: Implement using local ONNX runtime (e.g., Sentence-BERT).
+/// Production implementations:
+/// - [`TextEmbedder`](crate::layer1::embeddings::TextEmbedder) — pure-Rust candle BertModel (all-MiniLM-L6-v2)
+/// - [`LlamaCppEmbedder`] — HTTP proxy to a llama.cpp / TEI sidecar
+/// - [`StubEmbedder`] — deterministic hash-based vector for tests
 ///
-/// The production implementation should:
-/// 1. Load a pre-trained Sentence-BERT (or similar) ONNX model at startup.
-/// 2. Tokenise the input text using the model's tokeniser.
-/// 3. Run inference on the ONNX runtime to produce a fixed-dimension vector.
-/// 4. Normalise the vector to unit length for cosine similarity.
-///
-/// Expected latency budget: < 5ms for local ONNX inference.
+/// Expected latency budget: < 5ms for local candle inference.
 #[async_trait]
 pub trait Embedder: Send + Sync {
     /// Embed the given text into a dense vector representation.
@@ -53,18 +50,14 @@ pub trait Embedder: Send + Sync {
 /// Stores prompt embeddings keyed to their cached responses, enabling
 /// semantic deduplication of requests.
 ///
-/// # TODO: Implement using HNSW index for approximate nearest neighbor search.
+/// Production implementations:
+/// - [`VectorCache`](crate::vector_cache::VectorCache) — in-memory brute-force
+///   cosine-similarity scan (sub-millisecond for typical cache sizes < 10K).
+/// - [`InMemoryVectorStore`](super::implementations::vector_store::InMemoryVectorStore) —
+///   brute-force scan for small workloads.
+/// - [`StubVectorStore`] — lightweight stub for unit tests.
 ///
-/// The production implementation should:
-/// 1. Use an HNSW (Hierarchical Navigable Small World) graph index
-///    (e.g., via the `hnsw_rs` or `instant-distance` crate, or Qdrant).
-/// 2. Support configurable `ef_construction` and `M` parameters for
-///    index build quality vs. speed trade-off.
-/// 3. Return the closest vector + its associated response if the cosine
-///    similarity exceeds the threshold.
-/// 4. Handle index persistence (snapshot / restore) for crash recovery.
-///
-/// Expected latency budget: < 1ms for in-memory HNSW search.
+/// Expected latency budget: < 1ms for in-memory search.
 #[async_trait]
 pub trait VectorStore: Send + Sync {
     /// Search for the nearest cached response to the given query vector.
@@ -101,16 +94,12 @@ pub trait VectorStore: Send + Sync {
 /// - `Simple` → handled by the local SLM executor (short-circuit).
 /// - `Complex` / `Rag` / `CodeGen` → proceeds to Layer 2.5 and Layer 3.
 ///
-/// # TODO: Implement using local SLM performing Zero-Shot NLI task.
-///
-/// The production implementation should:
-/// 1. Use a local Small Language Model (e.g., Phi-3, TinyLlama) via
-///    ONNX runtime or Ollama.
-/// 2. Frame the classification as a Zero-Shot Natural Language Inference
-///    (NLI) task with candidate labels ["simple", "complex", "rag", "codegen"].
-/// 3. Return the top label and its softmax confidence score.
-/// 4. Fall back to `Unclassifiable` if inference fails or confidence
-///    is below a minimum viable threshold.
+/// Production implementations:
+/// - [`EmbeddedClassifier`](crate::services::local_inference::EmbeddedClassifier) —
+///   Qwen2-1.5B quantised GGUF model via candle (in-process, no sidecar).
+/// - [`LlamaCppClassifier`](super::implementations::intent_classifier::LlamaCppClassifier) —
+///   HTTP proxy to a llama.cpp / Ollama sidecar.
+/// - [`StubIntentClassifier`] — keyword heuristics for unit tests.
 ///
 /// Expected latency budget: < 50ms for local SLM inference.
 #[async_trait]
@@ -134,7 +123,7 @@ pub trait IntentClassifier: Send + Sync {
 ///
 /// The implementation may use:
 /// - Ollama with a lightweight model (e.g., llama3, phi-3)
-/// - A local ONNX-based text generation model
+/// - A local candle-based text generation model
 /// - A template-based response system for known simple patterns
 #[async_trait]
 pub trait LocalExecutor: Send + Sync {
@@ -156,16 +145,14 @@ pub trait LocalExecutor: Send + Sync {
 /// most useful ones. This dramatically reduces token consumption in the
 /// final LLM call.
 ///
-/// # TODO: Implement using local Cross-Encoder model to filter irrelevant
-/// #       context to save tokens.
+/// Production implementations:
+/// - [`LlamaCppReranker`](super::implementations::reranker::LlamaCppReranker) —
+///   HTTP proxy to a llama.cpp / Ollama sidecar for LLM-based reranking.
+/// - [`StubReranker`] — keyword-overlap heuristic for unit tests.
 ///
-/// The production implementation should:
-/// 1. Use a Cross-Encoder model (e.g., `cross-encoder/ms-marco-MiniLM-L-6-v2`)
-///    loaded via ONNX runtime.
-/// 2. For each (prompt, document) pair, compute a relevance score.
-/// 3. Sort documents by descending relevance score.
-/// 4. Return the top-K documents (configurable, default K=5).
-/// 5. Include relevance scores in the result for observability.
+/// Future enhancement: a local Cross-Encoder model (e.g.,
+/// `cross-encoder/ms-marco-MiniLM-L-6-v2`) loaded via candle
+/// would eliminate the sidecar dependency and reduce latency further.
 ///
 /// Expected latency budget: < 20ms for reranking 20 documents locally.
 #[async_trait]

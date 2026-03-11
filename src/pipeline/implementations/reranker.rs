@@ -7,7 +7,7 @@
 // to rate relevance on a 0–10 scale.  Sorts by descending score, returns top-K.
 //
 // This is a practical production approach when you don't have a dedicated
-// Cross-Encoder ONNX model.  The SLM acts as a semantic judge.
+// Cross-Encoder model via candle.  The SLM acts as a semantic judge.
 //
 // Lightweight Sidecar Strategy:
 //   Uses the OpenAI-compatible `/v1/chat/completions` endpoint.
