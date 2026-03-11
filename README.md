@@ -14,12 +14,21 @@ Modern AI applications are drowning in API costs and network latency. Standard g
 
 ## Key Features
 
-- **🚀 Edge-Native Intelligence** – Runs SLMs (Gemma-2) and embedding models (BGE) embedded directly in the Rust binary via ONNX/Candle.
-- **⚡ Sub-Millisecond Semantic Cache** – In-process vector search identifies semantically identical prompts instantly without external sidecars.
-- **🛡️ Multi-Layer Funnel** – A sequential pipeline (Auth → Cache → SLM Triage → Cloud) that short-circuits as early as possible.
-- **📦 Single-Binary Deployment** – Compiles to a tiny, static musl binary (~5MB) for distroless containers or bare-metal edge devices.
-- **☸️ Kubernetes-Native** – First-class support for Helm, Prometheus, and horizontal scaling.
-- **📊 Observability-First** – Full OpenTelemetry integration with distributed tracing (Jaeger/Tempo) and granular metrics (Grafana).
+### Pluggable Trait Provider Architecture
+
+- **Minimalist Single-Binary Mode:**
+  - Runs fully embedded SLMs (Gemma-2, Qwen2-1.5B) and fastembed semantic cache in-process.
+  - Zero external dependencies: in-memory LRU cache, no Redis, no vLLM, no sidecars.
+  - Ideal for edge devices, air-gapped environments, and rapid prototyping.
+
+- **Enterprise K8s Mode:**
+  - Switches to Redis for cache and vLLM/TGI for SLM routing via config (no code changes).
+  - Horizontally scalable: stateless gateway pods, shared Redis cache, GPU inference pool.
+  - Designed for multi-replica Kubernetes, managed observability, and high throughput.
+
+- **Sub-Millisecond Semantic Cache:** In-process vector search for instant semantic matches.
+- **Multi-Layer Funnel:** Sequential pipeline (Auth → Cache → SLM Triage → Cloud) short-circuits early to minimize cost and latency.
+- **Observability-First:** OpenTelemetry, Jaeger, Tempo, Prometheus, Grafana.
 
 ## Architecture
 
@@ -51,15 +60,18 @@ curl -X POST http://localhost:8080/api/v1/chat \
 ## Local Development
 
 ### Prerequisites
+
 - **Rust Toolchain**: [Install Rust](https://rustup.rs/) (Stable 1.75+)
 - **CMake**: Required for building some ML backends.
 
 ### Build from Source
+
 ```bash
 git clone https://github.com/isartor-ai/Isartor.git
 cd Isartor
 cargo build --release
 ```
+
 The binary will be available at `./target/release/isartor`.
 
 ## Configuration
@@ -74,6 +86,36 @@ llm_provider: "azure"
 external_llm_model: "gpt-4o-mini"
 enable_monitoring: true
 ```
+
+## Deployment Modes: Minimalist to Enterprise
+
+## Deployment Modes: Minimalist Single-Binary vs Enterprise K8s
+
+Isartor uses a **Pluggable Trait Provider** (Hexagonal Architecture) pattern. The same binary adapts to any deployment scale — from edge devices to multi-replica Kubernetes clusters — by selecting backends at startup via environment variables.
+
+| Layer           | Minimalist Single-Binary           | Enterprise K8s                |
+|:---------------:|:----------------------------------:|:-----------------------------:|
+| **L1a Cache**   | In-memory LRU (ahash + parking_lot)| Redis cluster (shared cache)  |
+| **L1b Semantic**| Fastembed CPU (in-process)         | External TEI (optional)       |
+| **L2 Router**   | Embedded Candle/Qwen2 (in-process) | Remote vLLM/TGI server        |
+| **L3 Fallback** | Cloud LLM (OpenAI/Anthropic)       | Cloud LLM (OpenAI/Anthropic)  |
+
+**Switching Modes:**
+Just set environment variables — no code changes or recompilation required.
+
+
+```bash
+# Switch cache to Redis
+export ISARTOR__CACHE_BACKEND=redis
+export ISARTOR__REDIS_URL=redis://redis-cluster.svc:6379
+
+# Switch router to remote vLLM
+export ISARTOR__ROUTER_BACKEND=vllm
+export ISARTOR__VLLM_URL=http://vllm.svc:8000
+export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
+```
+
+> For full architectural details see [`docs/2-ARCHITECTURE.md`](docs/2-ARCHITECTURE.md).
 
 ## License
 
