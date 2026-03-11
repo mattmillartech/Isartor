@@ -78,6 +78,9 @@ export ISARTOR__EXTERNAL_LLM_MODEL="gpt-4o-mini"
 
 # Cache mode — "both" enables exact + semantic cache. Semantic embeddings
 # are generated in-process via candle BertModel — no sidecar needed.
+
+# Layer 2.5 (Context Optimiser):
+# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 export ISARTOR__CACHE_MODE="both"
 
 # Pluggable backends — Level 1 uses the defaults (no change needed):

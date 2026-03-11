@@ -62,6 +62,11 @@ The gateway creates spans for:
 | `context_optimise` | 2.5 | Retrieve + rerank documents |
 | `external_llm` | 3 | Cloud LLM API call |
 
+
+### Layer 2.5 — Context Optimiser
+
+Layer 2.5 is instrumented as the `context_optimise` span. It covers retrieval and reranking operations that optimize context before LLM invocation.
+
 Each span carries attributes like `layer`, `cache_hit`, `intent`, `model`, `tokens`, and `duration_ms`.
 
 ### Metrics

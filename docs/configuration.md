@@ -99,6 +99,15 @@ export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | `ISARTOR__ENABLE_MONITORING` | `bool` | `false` | Enable OpenTelemetry trace and metric export |
 | `ISARTOR__OTEL_EXPORTER_ENDPOINT` | `String` | `http://localhost:4317` | OTel Collector gRPC endpoint |
 
+
+### Layer 2.5 — Context Optimiser
+
+Layer 2.5 retrieves and reranks candidate documents or responses to minimize downstream token usage. It is controlled by the following variable:
+
+| Variable | Type | Default | Description |
+| --- | --- | --- | --- |
+| `ISARTOR__PIPELINE_RERANK_TOP_K` | `u64` | `5` | Number of top-K documents to keep after reranking (Layer 2.5) |
+
 ### Pipeline v2 — Algorithmic Gateway Tuning
 
 | Variable | Type | Default | Description |

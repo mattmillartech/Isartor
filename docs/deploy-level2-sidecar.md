@@ -61,6 +61,9 @@ This guide covers deploying Isartor with a dedicated AI sidecar for generation. 
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │ Optional: slm-embed :8082 (llama.cpp, v2 pipeline only) │  │
 │  └──────────────────────────────────────────────────────────┘  │
+
+# Layer 2.5 (Context Optimiser):
+# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 └─────────────────────────────────────────────────────────────────┘
 ```
 

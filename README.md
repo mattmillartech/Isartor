@@ -48,7 +48,15 @@ Modern AI applications are drowning in API costs and network latency. Standard g
 
 ![Architecture Diagram](docs/images/architecture_diagram.png)
 
-Isartor uses a **Multi-Layer Funnel** approach to request orchestration. Every incoming prompt passes through a series of "short-circuit" layers. Layer 1 (Semantic Cache) uses embedded embeddings to find instant matches. Layer 2 (SLM Triage) classifies the intent; if the task is simple (e.g., "What time is it?"), it is resolved by an in-process Small Language Model. Only "Complex" intents that require reasoning or world-knowledge are forwarded to Layer 3 (Cloud LLMs).
+Isartor uses a **Multi-Layer Funnel** approach to request orchestration. Every incoming prompt passes through a series of "short-circuit" layers:
+
+- **Layer 0:** Auth, rate limiting, concurrency control
+- **Layer 1:** Semantic + exact cache (in-process candle BertModel)
+- **Layer 2:** SLM Triage (intent classification, simple task execution)
+- **Layer 2.5:** Context Optimiser (retrieve + rerank to minimize token usage)
+- **Layer 3:** Cloud LLM fallback (OpenAI, Anthropic, etc.)
+
+Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and is instrumented as the `context_optimise` span in observability.
 
 ## Quick Start
 

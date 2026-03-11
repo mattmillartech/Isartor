@@ -13,7 +13,9 @@ binary:
 | Dimension | **Minimalist** (Edge / VPS) | **Enterprise** (K8s / Cloud) |
 |---|---|---|
 | Cache (L1a) | In-process LRU (ahash + parking_lot) | Redis cluster |
+| Semantic (L1b) | Candle BertModel (in-process) | External TEI (optional) |
 | Router (L2) | Embedded Candle GGUF inference | Remote vLLM / TGI server |
+| Context Optimiser (L2.5) | In-process rerank (retrieve + rerank, e.g., top-K selection) | Distributed rerank (optional, e.g., TEI/ANN pool) |
 | Deployment | Single static binary, `docker run` | Helm chart, horizontal auto-scaling |
 | Dependencies | Zero external services | Redis, vLLM pods, Prometheus, Jaeger |
 
@@ -30,12 +32,19 @@ The pluggable adapter architecture is the foundation of Isartor's
 scalability story. Each deployment tier builds on the previous one with
 zero code changes:
 
-```
+```text
 Level 1 (Edge)           Level 2 (Compose)        Level 3 (K8s)
 ┌────────────────┐       ┌────────────────┐       ┌────────────────┐
 │ Single Process  │       │ Gateway + GPU   │       │ N Gateway Pods  │
 │ memory cache    │──▶    │ Sidecar         │──▶    │ + Redis Cluster │
 │ embedded candle │       │ memory cache    │       │ + vLLM Pool     │
+│ context optimiser │     │ (optional)      │       │ (optional)      │
+
+---
+
+## Layer 2.5 — Context Optimiser
+
+Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and is instrumented as the `context_optimise` span in observability.
 └────────────────┘       └────────────────┘       └────────────────┘
 ```
 

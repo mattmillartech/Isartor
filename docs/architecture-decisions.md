@@ -16,6 +16,7 @@ AI gateway traffic follows a power-law distribution: the majority of prompts are
 
 ### Decision
 
+
 Implement a **sequential pipeline** with 4+ layers, each capable of short-circuiting:
 
 - **Layer 0** — Operational defense (auth, rate limiting, concurrency control)
@@ -23,6 +24,9 @@ Implement a **sequential pipeline** with 4+ layers, each capable of short-circui
 - **Layer 2** — Local SLM triage (classify intent, execute simple tasks locally)
 - **Layer 2.5** — Context optimiser (retrieve + rerank to minimise token usage)
 - **Layer 3** — Cloud LLM fallback (only the hardest prompts)
+
+**Layer 2.5 (Context Optimiser):**
+Retrieves and reranks candidate documents or responses to minimize downstream token usage. Typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. Configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and instrumented as the `context_optimise` span in observability.
 
 ### Consequences
 

@@ -36,6 +36,7 @@ Isartor implements a multi-layer funnel for prompt routing and caching, using a 
 | **L1a Cache**   | In-memory LRU (ahash + parking_lot)| Redis cluster (shared cache, async, via redis crate)  |
 | **L1b Semantic**| Candle BertModel (in-process)      | External TEI (optional)       |
 | **L2 Router**   | Embedded Candle/Qwen2 (in-process) | Remote vLLM/TGI server        |
+| **L2.5 Context Optimiser** | In-process rerank (retrieve + rerank, e.g., top-K selection) | Distributed rerank (optional, e.g., TEI/ANN pool) |
 | **L3 Fallback** | Cloud LLM (OpenAI/Anthropic)       | Cloud LLM (OpenAI/Anthropic)  |
 
 - **L1a Exact Match Cache:** Fast LRU cache for prompt deduplication (single-binary) or distributed Redis cache (enterprise/K8s). Uses async Rust `redis` crate for high-throughput shared caching.
@@ -57,9 +58,14 @@ flowchart TD
     B --> C[Cache L1a: LRU/Redis]
     C --> D[Cache L1b: Candle/TEI]
     D --> E[SLM Router: Candle/vLLM]
-    E --> F[Cloud Fallback: OpenAI/Anthropic]
-    F --> G[Response]
+    E --> F[Context Optimiser: Retrieve + Rerank]
+    F --> G[Cloud Fallback: OpenAI/Anthropic]
+    G --> H[Response]
 ```
+
+## Layer 2.5 — Context Optimiser
+
+Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and is instrumented as the `context_optimise` span in observability.
 
 ## Mode Switching Example
 
@@ -81,5 +87,6 @@ export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
 The `RedisExactCache` adapter uses the async `redis` crate and multiplexed connections for high-throughput, distributed caching. It supports `GET` and `SET` with TTL out of the box. See `src/adapters/cache.rs` for details.
 
 ## See Also
+
 - [README.md](../README.md)
 - [docs/ARCHITECTURE.md](ARCHITECTURE.md)

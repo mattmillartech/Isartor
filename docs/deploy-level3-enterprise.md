@@ -43,12 +43,15 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
               ┌────────────────────┼────────────────────┐
               │                    │                     │
      ┌────────▼───────┐  ┌────────▼───────┐   ┌────────▼───────┐
-     │ Inference Pool  │  │ Embedding Pool  │   │ Cloud LLM      │
-     │ (vLLM / TGI)   │  │ (TEI / llama)   │   │ (OpenAI / etc) │
-     │                 │  │ v2 pipeline only │   │ (Layer 3 only)  │
-     │ GPU Nodes       │  │ CPU/GPU Nodes   │   └────────────────┘
-     │ HPA on GPU util │  │ HPA on RPS      │
-     └─────────────────┘  └─────────────────┘
+  │ Inference Pool  │  │ Embedding Pool  │   │ Cloud LLM      │
+  │ (vLLM / TGI)   │  │ (TEI / llama)   │   │ (OpenAI / etc) │
+  │                 │  │ v2 pipeline only │   │ (Layer 3 only)  │
+  │ GPU Nodes       │  │ CPU/GPU Nodes   │   └────────────────┘
+  │ HPA on GPU util │  │ HPA on RPS      │
+  └─────────────────┘  └─────────────────┘
+
+# Layer 2.5 (Context Optimiser):
+# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 ```
 
 ### Component Summary
