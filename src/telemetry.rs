@@ -1,39 +1,89 @@
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    metrics::{MeterProviderBuilder, PeriodicReader},
-    trace::TracerProviderBuilder,
+    metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
+    trace::{SdkTracerProvider, TracerProviderBuilder},
     Resource,
 };
-use opentelemetry_semantic_conventions::resource::SERVICE_NAME;
+use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use std::sync::Arc;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{
+    fmt,
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+    EnvFilter,
+};
 
 use crate::config::AppConfig;
 
+// ═══════════════════════════════════════════════════════════════════════
+// OtelGuard — RAII flush on shutdown
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Holds the OTel providers so they can be flushed and shut down cleanly
+/// when the guard is dropped (at the end of `main`).
+pub struct OtelGuard {
+    tracer_provider: Option<SdkTracerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
+}
+
+impl Drop for OtelGuard {
+    fn drop(&mut self) {
+        if let Some(tp) = self.tracer_provider.take() {
+            if let Err(e) = tp.shutdown() {
+                eprintln!("[otel] tracer provider shutdown error: {e:?}");
+            }
+        }
+        if let Some(mp) = self.meter_provider.take() {
+            if let Err(e) = mp.shutdown() {
+                eprintln!("[otel] meter provider shutdown error: {e:?}");
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Initialisation
+// ═══════════════════════════════════════════════════════════════════════
+
 /// Initialise structured logging, OpenTelemetry tracing (OTLP/gRPC),
-/// and metric collection.  When `enable_monitoring` is `false` only
-/// console logging is active.
-pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
-    let resource = Resource::builder_empty()
-        .with_attributes(vec![KeyValue::new(SERVICE_NAME, "isartor-gateway")])
-        .build();
+/// and metric collection.
+///
+/// Returns an [`OtelGuard`] that **must** be held until process exit so
+/// that in-flight spans and metrics are flushed cleanly.
+///
+/// When `enable_monitoring` is `false`, only console logging is active
+/// and the guard is inert (no OTel SDK initialised).
+pub fn init_telemetry(config: &Arc<AppConfig>) -> anyhow::Result<OtelGuard> {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,h2=warn,hyper=warn,tower=warn"));
 
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let fmt_layer = tracing_subscriber::fmt::layer().pretty();
-
+    // ── Console-only mode ────────────────────────────────────────
     if !config.enable_monitoring {
+        // Pretty format for local development.
         tracing_subscriber::registry()
             .with(env_filter)
-            .with(fmt_layer)
+            .with(fmt::layer().pretty())
             .init();
-        tracing::info!("OpenTelemetry monitoring disabled. Using local console logs.");
-        return Ok(());
+
+        tracing::info!("Telemetry: console-only mode (ISARTOR__ENABLE_MONITORING=false)");
+        return Ok(OtelGuard {
+            tracer_provider: None,
+            meter_provider: None,
+        });
     }
 
+    // ── Full OTel mode ───────────────────────────────────────────
     let endpoint = &config.otel_exporter_endpoint;
 
-    // ── 1. Distributed Tracing (TracerProvider → OTLP gRPC) ──────
+    let resource = Resource::builder_empty()
+        .with_attributes(vec![
+            KeyValue::new(SERVICE_NAME, "isartor-gateway"),
+            KeyValue::new(SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+        ])
+        .build();
+
+    // 1. Distributed Tracing — TracerProvider → OTLP gRPC
     let span_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
@@ -46,9 +96,9 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
 
     global::set_tracer_provider(tracer_provider.clone());
     let tracer = global::tracer("isartor-gateway");
-    let tracer_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let otel_trace_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
-    // ── 2. Metrics (MeterProvider → OTLP gRPC → Prometheus) ──────
+    // 2. Metrics — MeterProvider → OTLP gRPC → Prometheus-compatible
     let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
@@ -63,28 +113,30 @@ pub fn init_telemetry(config: Arc<AppConfig>) -> anyhow::Result<()> {
 
     global::set_meter_provider(meter_provider.clone());
 
-    // ── 3. tracing-subscriber: console + OTel layer ──────────────
+    // 3. tracing-subscriber: structured JSON to stdout + OTel layer
+    //    JSON output is required for fluentd / Logstash / CloudWatch ingestion.
+    let json_layer = fmt::layer()
+        .json()
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_span_list(true)
+        .flatten_event(true);
+
     tracing_subscriber::registry()
         .with(env_filter)
-        .with(fmt_layer)
-        .with(tracer_layer)
+        .with(json_layer)
+        .with(otel_trace_layer)
         .init();
 
     tracing::info!(
-        endpoint = %endpoint,
-        "OpenTelemetry monitoring ENABLED (Traces & Metrics)."
+        otel.endpoint = %endpoint,
+        service.name = "isartor-gateway",
+        service.version = env!("CARGO_PKG_VERSION"),
+        "Telemetry: OpenTelemetry ENABLED (traces + metrics → OTLP gRPC)"
     );
 
-    Ok(())
-}
-
-/// Flush in-flight spans & metrics before process exit.
-#[allow(dead_code)]
-pub fn shutdown_telemetry() {
-    // In OpenTelemetry 0.31+, shutdown is handled by dropping the
-    // TracerProvider. We replace the global provider with a no-op,
-    // which causes the original provider to drop and flush.
-    opentelemetry::global::set_tracer_provider(
-        opentelemetry::trace::noop::NoopTracerProvider::new(),
-    );
+    Ok(OtelGuard {
+        tracer_provider: Some(tracer_provider),
+        meter_provider: Some(meter_provider),
+    })
 }

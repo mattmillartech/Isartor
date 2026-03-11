@@ -12,6 +12,7 @@ pub mod core;
 pub mod factory;
 pub mod handler;
 pub mod layer1;
+pub mod metrics;
 pub mod middleware;
 pub mod models;
 pub mod pipeline;

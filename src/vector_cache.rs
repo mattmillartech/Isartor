@@ -36,16 +36,28 @@ impl VectorCache {
     /// Search for a cached response whose embedding is within the
     /// similarity threshold. Returns the best match if one exists.
     pub async fn search(&self, query: &[f32]) -> Option<String> {
+        let span = tracing::info_span!(
+            "l1b_semantic_cache_search",
+            cache.entries_scanned = tracing::field::Empty,
+            cache.hit = false,
+            cosine_similarity = tracing::field::Empty,
+        );
+
+        // Acquire the read lock before entering the span so the non-Send
+        // `SpanGuard` never lives across an `.await` point.
         let entries = self.entries.read().await;
+        let _guard = span.enter();
         let now = Instant::now();
 
         let mut best: Option<(&CacheEntry, f64)> = None;
+        let mut scanned: u64 = 0;
 
         for entry in entries.iter() {
             // Skip expired entries.
             if now.duration_since(entry.created_at) > self.ttl {
                 continue;
             }
+            scanned += 1;
             let score = cosine_similarity(query, &entry.embedding);
             if score >= self.similarity_threshold {
                 if best.as_ref().map_or(true, |(_, s)| score > *s) {
@@ -54,10 +66,15 @@ impl VectorCache {
             }
         }
 
+        span.record("cache.entries_scanned", scanned);
+
         if let Some((entry, score)) = best {
-            tracing::info!(similarity = format!("{:.4}", score), "Vector cache: match found");
+            span.record("cache.hit", true);
+            span.record("cosine_similarity", format!("{score:.4}").as_str());
+            tracing::info!(cosine_similarity = score, "Semantic cache hit");
             Some(entry.response.clone())
         } else {
+            tracing::debug!("Semantic cache miss");
             None
         }
     }
@@ -65,11 +82,21 @@ impl VectorCache {
     /// Insert a new embedding + response pair into the cache.
     /// Evicts expired entries and enforces the capacity cap.
     pub async fn insert(&self, embedding: Vec<f32>, response: String) {
+        let span = tracing::debug_span!(
+            "l1b_semantic_cache_insert",
+            cache.evicted = tracing::field::Empty,
+            cache.size_after = tracing::field::Empty,
+        );
+
+        // Acquire the write lock before entering the span.
         let mut entries = self.entries.write().await;
+        let _guard = span.enter();
         let now = Instant::now();
 
+        let before = entries.len();
         // Evict expired entries.
         entries.retain(|e| now.duration_since(e.created_at) <= self.ttl);
+        let evicted = before - entries.len();
 
         // If still at capacity, remove the oldest entry.
         if entries.len() >= self.max_capacity {
@@ -82,7 +109,10 @@ impl VectorCache {
             created_at: now,
         });
 
-        tracing::debug!(size = entries.len(), "Vector cache: inserted new entry");
+        let size = entries.len();
+        span.record("cache.evicted", evicted as u64);
+        span.record("cache.size_after", size as u64);
+        tracing::debug!(cache.size = size, evicted, "Semantic cache: inserted new entry");
     }
 }
 

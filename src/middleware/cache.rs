@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
     body::Body,
@@ -10,7 +11,6 @@ use axum::{
 };
 use bytes::Bytes;
 use http_body_util::BodyExt;
-use log::{debug, info};
 use sha2::{Digest, Sha256};
 
 use crate::config::CacheMode;
@@ -73,6 +73,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes).to_string());
 
     let mode = &state.config.cache_mode;
+    let layer_start = Instant::now();
 
     // ------------------------------------------------------------------
     // 2. Exact-match lookup (when mode is Exact or Both).
@@ -80,14 +81,16 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
         let key = hex::encode(Sha256::digest(prompt.as_bytes()));
 
-        debug!(
-            "Layer 1: Exact-match lookup for key {} (mode: {:?})",
-            key, mode
+        tracing::debug!(
+            cache.mode = ?mode,
+            cache.key = %key,
+            "L1a: exact-match lookup",
         );
 
         if let Some(cached) = state.exact_cache.get(&key) {
-            info!("Layer 1: Exact cache HIT for key {}", key);
+            tracing::info!(cache.key = %key, "L1a: exact cache HIT");
             tracing::Span::current().record("gateway.cache.hit", true);
+            crate::metrics::record_layer_duration("L1a_ExactCache", layer_start.elapsed());
             let mut response = (
                 StatusCode::OK,
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -106,27 +109,30 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // 3. Semantic lookup (when mode is Semantic or Both).
     //    Uses the in-process candle TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
-    // Removed span: info_span!("layer1b_semantic_process");
     let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
         let embedder = state.text_embedder.clone();
         let prompt_clone = prompt.clone();
 
         // candle BertModel inference is CPU-bound; run on the blocking pool
         // so we don't starve the Tokio async workers.
-        match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await
+        let result = tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await;
+        match result
         {
-            Ok(Ok(emb)) => Some(emb),
+            Ok(Ok(emb)) => {
+                tracing::debug!(embedding.dims = emb.len(), "L1b: embedding generated");
+                Some(emb)
+            }
             Ok(Err(e)) => {
-                log::warn!(
-                    "Layer 1: In-process embedding failed – skipping semantic cache: {:?}",
-                    e
+                tracing::warn!(
+                    error = %e,
+                    "L1b: in-process embedding failed – skipping semantic cache",
                 );
                 None
             }
             Err(e) => {
-                log::warn!(
-                    "Layer 1: Embedding task panicked – skipping semantic cache: {:?}",
-                    e
+                tracing::warn!(
+                    error = %e,
+                    "L1b: embedding task panicked – skipping semantic cache",
                 );
                 None
             }
@@ -137,10 +143,11 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
     // Search the vector cache if we obtained an embedding.
     if let Some(ref emb) = embedding {
-        log::debug!("Layer 1: Semantic lookup (dims: {})", emb.len());
+        tracing::debug!(embedding.dims = emb.len(), "L1b: semantic lookup");
         if let Some(cached) = state.vector_cache.search(emb).await {
-            log::info!("Layer 1: Semantic cache HIT");
+            tracing::info!("L1b: semantic cache HIT");
             tracing::Span::current().record("gateway.cache.hit", true);
+            crate::metrics::record_layer_duration("L1b_SemanticCache", layer_start.elapsed());
             let mut response = (
                 StatusCode::OK,
                 [(axum::http::header::CONTENT_TYPE, "application/json")],
@@ -152,9 +159,9 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         }
     }
 
-    log::debug!(
-        "Layer 1: Cache MISS – forwarding downstream (mode: {:?})",
-        mode
+    tracing::debug!(
+        cache.mode = ?mode,
+        "L1: cache MISS – forwarding downstream",
     );
 
     // ------------------------------------------------------------------
@@ -174,12 +181,12 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         if resp_parts.status.is_success() {
             // Store in exact cache.
             if let Some(key) = exact_key {
-                debug!("Layer 1: Storing in exact cache for key {}", key);
+                tracing::debug!(cache.key = %key, "L1a: storing in exact cache");
                 state.exact_cache.put(key, resp_string.clone());
             }
             // Store in vector cache.
             if let Some(emb) = embedding {
-                log::debug!("Layer 1: Storing in vector cache");
+                tracing::debug!("L1b: storing in vector cache");
                 state.vector_cache.insert(emb, resp_string.clone()).await;
             }
         }

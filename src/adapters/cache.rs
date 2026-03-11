@@ -16,6 +16,7 @@ use parking_lot::RwLock;
 
 use crate::core::ports::ExactCache;
 use redis::AsyncCommands;
+use tracing::Instrument;
 
 // ═══════════════════════════════════════════════════════════════════════
 // Adapter: InMemoryCache — bounded LRU with ahash + parking_lot
@@ -43,14 +44,27 @@ impl InMemoryCache {
 #[async_trait]
 impl ExactCache for InMemoryCache {
     async fn get(&self, key: &str) -> anyhow::Result<Option<String>> {
+        let span = tracing::info_span!("l1a_exact_cache_get", cache.backend = "memory", cache.key = %key, cache.hit = tracing::field::Empty);
+        let _guard = span.enter();
         // LruCache::get requires &mut self to promote the entry (LRU touch).
         let mut cache = self.inner.write();
-        Ok(cache.get(key).cloned())
+        let result = cache.get(key).cloned();
+        let hit = result.is_some();
+        span.record("cache.hit", hit);
+        if hit {
+            tracing::info!(cache.hit = true, "L1a exact cache HIT");
+        } else {
+            tracing::debug!(cache.hit = false, "L1a exact cache MISS");
+        }
+        Ok(result)
     }
 
     async fn put(&self, key: &str, response: &str) -> anyhow::Result<()> {
+        let span = tracing::debug_span!("l1a_exact_cache_put", cache.backend = "memory", cache.key = %key, response_len = response.len());
+        let _guard = span.enter();
         let mut cache = self.inner.write();
         cache.put(key.to_owned(), response.to_owned());
+        tracing::debug!("L1a exact cache: stored entry");
         Ok(())
     }
 }
@@ -89,24 +103,38 @@ impl RedisExactCache {
 #[async_trait]
 impl ExactCache for RedisExactCache {
     async fn get(&self, key: &str) -> anyhow::Result<Option<String>> {
-        log::debug!("RedisExactCache::get key={}", key);
-        let client = redis::Client::open(self.url.as_str())?;
-    let mut conn = client.get_multiplexed_tokio_connection().await?;
-        let val: Option<String> = conn.get(key).await?;
-        Ok(val)
+        let span = tracing::info_span!("l1a_exact_cache_get", cache.backend = "redis", cache.key = %key, cache.hit = tracing::field::Empty);
+        async {
+            tracing::debug!("RedisExactCache: GET");
+            let client = redis::Client::open(self.url.as_str())?;
+            let mut conn = client.get_multiplexed_tokio_connection().await?;
+            let val: Option<String> = conn.get(key).await?;
+            let hit = val.is_some();
+            tracing::Span::current().record("cache.hit", hit);
+            if hit {
+                tracing::info!(cache.hit = true, "L1a Redis cache HIT");
+            } else {
+                tracing::debug!(cache.hit = false, "L1a Redis cache MISS");
+            }
+            Ok(val)
+        }
+        .instrument(span)
+        .await
     }
 
     async fn put(&self, key: &str, response: &str) -> anyhow::Result<()> {
-        log::debug!(
-            "RedisExactCache::put key={} response_len={}",
-            key,
-            response.len()
-        );
-        let client = redis::Client::open(self.url.as_str())?;
-    let mut conn = client.get_multiplexed_tokio_connection().await?;
-        // Set with a default TTL (e.g., 1 hour = 3600s). Adjust as needed.
-        let _: () = conn.set_ex(key, response, 3600).await?;
-        Ok(())
+        let span = tracing::debug_span!("l1a_exact_cache_put", cache.backend = "redis", cache.key = %key, response_len = response.len());
+        async {
+            tracing::debug!("RedisExactCache: SET");
+            let client = redis::Client::open(self.url.as_str())?;
+            let mut conn = client.get_multiplexed_tokio_connection().await?;
+            // Set with a default TTL (e.g., 1 hour = 3600s). Adjust as needed.
+            let _: () = conn.set_ex(key, response, 3600).await?;
+            tracing::debug!("L1a Redis cache: stored entry");
+            Ok(())
+        }
+        .instrument(span)
+        .await
     }
 }
 

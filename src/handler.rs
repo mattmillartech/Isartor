@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::Request;
 use axum::http::StatusCode;
@@ -17,8 +18,14 @@ use crate::state::AppState;
 /// not handle the request. Dispatches the prompt to the configured
 /// LLM provider via `rig-core`.
 pub async fn chat_handler(request: Request) -> impl IntoResponse {
-    let span = info_span!("layer3_llm", ai.prompt.length_bytes = tracing::field::Empty);
+    let span = info_span!(
+        "layer3_llm",
+        ai.prompt.length_bytes = tracing::field::Empty,
+        provider.name = tracing::field::Empty,
+        model = tracing::field::Empty,
+    );
     async move {
+        let layer_start = Instant::now();
         let state = match request.extensions().get::<Arc<AppState>>() {
             Some(s) => s.clone(),
             None => {
@@ -62,13 +69,16 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
     tracing::Span::current().record("ai.prompt.length_bytes", prompt.len() as u64);
 
     let provider_name = state.llm_agent.provider_name();
-    tracing::info!(prompt = %prompt, provider = provider_name, "Layer 3: Forwarding to Layer 3 LLM via Rig");
+    tracing::Span::current().record("provider.name", provider_name);
+    tracing::Span::current().record("model", state.config.external_llm_model.as_str());
+    tracing::info!(prompt = %prompt, provider = provider_name, "Layer 3: Forwarding to LLM via Rig");
 
     // ------------------------------------------------------------------
     // 2. Dispatch to the configured rig-core Agent.
     // ------------------------------------------------------------------
     match state.llm_agent.chat(&prompt).await {
         Ok(text) => {
+            crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
             let mut response = (
                 StatusCode::OK,
                 Json(ChatResponse {
@@ -82,6 +92,7 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
             response
         }
         Err(e) => {
+            crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
             tracing::error!(error = %e, provider = provider_name, "Layer 3: LLM call failed");
             let mut response = (
                 StatusCode::BAD_GATEWAY,

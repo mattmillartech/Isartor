@@ -25,27 +25,24 @@ async fn main() -> anyhow::Result<()> {
     // 1. Initialise structured logging & OTel telemetry
     // ------------------------------------------------------------------
     let config = Arc::new(AppConfig::load()?);
-    isartor::telemetry::init_telemetry(config.clone())?;
+    let _otel_guard = isartor::telemetry::init_telemetry(&config)?;
 
     // ------------------------------------------------------------------
     // 2. Build shared state.
     // ------------------------------------------------------------------
-    println!("Isartor gateway starting on {}", config.host_port);
-    println!(
-        "Cache layer configured: cache_mode={:?} embedding_model={} similarity_threshold={}",
-        config.cache_mode, config.embedding_model, config.similarity_threshold
+    tracing::info!(
+        host_port = %config.host_port,
+        cache_mode = ?config.cache_mode,
+        embedding_model = %config.embedding_model,
+        similarity_threshold = config.similarity_threshold,
+        "Isartor gateway starting"
     );
-    println!(
-        "LLM provider configured: llm_provider={} model={}",
-        config.llm_provider, config.external_llm_model
+    tracing::info!(
+        llm_provider = %config.llm_provider,
+        model = %config.external_llm_model,
+        inference_engine = ?config.inference_engine,
+        "LLM provider configured"
     );
-    println!(
-            "Engine & provider details: inference_engine={:?} azure_deployment_id={} external_llm_url={} api_key_len={}",
-            config.inference_engine,
-            config.azure_deployment_id,
-            config.external_llm_url,
-            config.external_llm_api_key.len()
-        );
 
     // Initialize the in-process sentence embedder for Layer 1 semantic cache.
     // This blocks during startup (~2s) to load the candle BertModel into RAM (~90 MB).
@@ -210,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
     // 4. Start the server.
     // ------------------------------------------------------------------
     let listener = tokio::net::TcpListener::bind(&config.host_port).await?;
-    println!("Listening on {}", config.host_port);
+    tracing::info!(addr = %config.host_port, "Listening");
     axum::serve(listener, app).await?;
 
     Ok(())

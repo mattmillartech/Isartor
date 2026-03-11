@@ -4,131 +4,117 @@ use std::time::Instant;
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
-use opentelemetry::metrics::{Counter, Histogram};
-use opentelemetry::{global, KeyValue};
+use tracing::Instrument;
 
+use crate::metrics;
 use crate::models::FinalLayer;
 use crate::state::AppState;
 
 /// Root monitoring middleware — **outermost** layer in the Axum stack.
 ///
 /// Responsibilities:
-///   1. Start a parent trace span (`gateway_request`) that wraps the
-///      entire request lifetime.
+///   1. Open a parent trace span (`gateway_request`) that wraps the
+///      entire request lifetime, carrying standard HTTP attributes
+///      **and** the custom `isartor.final_layer` tag.
 ///   2. After the response returns, read the [`FinalLayer`] extension
 ///      that child middlewares (cache / SLM / handler) inserted to
 ///      determine *which* gateway layer handled the request.
-///   3. Record an `isartor_requests_total` counter **and** an
-///      `isartor_request_duration_seconds` histogram, both tagged with
-///      the granular `final_layer` label.
+///   3. Record OTel metrics via the global `GatewayMetrics` singleton:
+///      - `isartor_requests_total`
+///      - `isartor_request_duration_seconds`
+///      - `isartor_tokens_saved_total` (when resolved before L3)
 pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl IntoResponse {
-    let method = request.method().to_string();
+    let method = request.method().clone();
     let path = request.uri().path().to_string();
+    let client_addr = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
 
-    // Diagnostics: use println! for compatibility
-    println!(
-        "[monitoring] gateway_request: method={} path={}",
-        method, path
+    // Extract the prompt length for tokens-saved estimation.
+    // We peek at the Content-Length header as a rough proxy (the body
+    // hasn't been consumed yet).
+    let content_length: u64 = request
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    // Create the root span with all required HTTP + business attributes.
+    // `isartor.final_layer` and `http.status_code` are recorded after
+    // the response returns.
+    let root_span = tracing::info_span!(
+        "gateway_request",
+        http.method = %method,
+        http.route = %path,
+        http.status_code = tracing::field::Empty,
+        client.address = %client_addr,
+        isartor.final_layer = tracing::field::Empty,
     );
 
-    async {
-        let state = match request.extensions().get::<Arc<AppState>>() {
-            Some(s) => s.clone(),
-            None => {
-                tracing::error!("Monitoring: AppState missing from request extensions");
-                return (
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    "Gateway misconfiguration: missing application state",
-                )
-                    .into_response();
+    let state_opt = request.extensions().get::<Arc<AppState>>().cloned();
+
+    let start = Instant::now();
+    // Run the entire middleware + handler chain inside the root span.
+    // Use `.instrument()` so the span is active across the await without
+    // holding a non-Send guard.
+    let response = next.run(request).instrument(root_span.clone()).await;
+    let elapsed = start.elapsed();
+
+    // ── Determine final layer ────────────────────────────────────
+    let final_layer = response
+        .extensions()
+        .get::<FinalLayer>()
+        .copied()
+        .unwrap_or_else(|| {
+            if response.status().is_client_error() {
+                FinalLayer::AuthBlocked
+            } else {
+                FinalLayer::Cloud
             }
+        });
+
+    let layer_label = final_layer.as_str();
+    let status_code = response.status().as_u16();
+
+    // ── Record span attributes ───────────────────────────────────
+    root_span.record("http.status_code", status_code);
+    root_span.record("isartor.final_layer", layer_label);
+
+    // ── Record OTel metrics ──────────────────────────────────────
+    metrics::record_request(layer_label, status_code, elapsed.as_secs_f64());
+
+    // Record tokens saved when request was resolved before Layer 3.
+    let resolved_early = matches!(
+        final_layer,
+        FinalLayer::ExactCache | FinalLayer::SemanticCache | FinalLayer::Slm
+    );
+    if resolved_early {
+        // Estimate using prompt size or a conservative default.
+        let estimated_tokens = if content_length > 0 {
+            metrics::estimate_tokens(
+                &"x".repeat(content_length as usize), // rough char-count proxy
+            )
+        } else {
+            256 // conservative default
         };
-
-        let enable_monitoring = state.config.enable_monitoring;
-
-        // Lazily initialise OTel instruments only when monitoring is on.
-        let mut counter: Option<Counter<u64>> = None;
-        let mut histogram: Option<Histogram<f64>> = None;
-
-        if enable_monitoring {
-            let meter = global::meter("isartor.gateway");
-            counter = Some(
-                meter
-                    .u64_counter("isartor_requests_total")
-                    .with_description(
-                        "Total requests processed, labelled by the final handling layer",
-                    )
-                    .build(),
-            );
-            histogram = Some(
-                meter
-                    .f64_histogram("isartor_request_duration_seconds")
-                    .with_description("End-to-end request latency in seconds")
-                    .build(),
-            );
-        }
-
-        let start = Instant::now();
-
-        // ── Run the rest of the middleware / handler chain ────────
-        let response = next.run(request).await;
-
-        let elapsed = start.elapsed();
-
-        // ── Determine final layer ────────────────────────────────
-        let final_layer = response
-            .extensions()
-            .get::<FinalLayer>()
-            .copied()
-            .unwrap_or_else(|| {
-                // Fallback heuristic when no extension was set.
-                if response.status().is_client_error() {
-                    FinalLayer::AuthBlocked
-                } else {
-                    // Check legacy ChatResponse.layer field
-                    response
-                        .extensions()
-                        .get::<crate::models::ChatResponse>()
-                        .map(|cr| match cr.layer {
-                            1 => FinalLayer::ExactCache, // generic "cache" fallback
-                            2 => FinalLayer::Slm,
-                            _ => FinalLayer::Cloud,
-                        })
-                        .unwrap_or(FinalLayer::Cloud)
-                }
-            });
-
-        let layer_label = final_layer.as_str();
-
-        // ── Record trace attribute ───────────────────────────────
-        // root_span removed; no tracing attribute recording
-
-        // ── Record OTel metrics ──────────────────────────────────
-        let attrs = [
-            KeyValue::new("final_layer", layer_label),
-            KeyValue::new("status_code", response.status().as_u16().to_string()),
-        ];
-
-        if let Some(c) = counter {
-            c.add(1, &attrs);
-        }
-        if let Some(h) = histogram {
-            h.record(elapsed.as_secs_f64(), &attrs);
-        }
-
-        println!(
-            "[monitoring] Request finished: method={} path={} final_layer={} status={} duration_ms={}",
-            method,
-            path,
-            layer_label,
-            response.status().as_u16(),
-            elapsed.as_millis()
-        );
-
-        response
+        metrics::record_tokens_saved(layer_label, estimated_tokens);
     }
-    // .instrument(root_span.clone())  // root_span removed, no tracing
-    .await
+
+    tracing::info!(
+        http.method = %method,
+        http.route = %path,
+        http.status_code = status_code,
+        isartor.final_layer = layer_label,
+        duration_ms = elapsed.as_millis() as u64,
+        monitoring = state_opt.as_ref().map_or(false, |s| s.config.enable_monitoring),
+        "Request completed"
+    );
+
+    response
 }
 
 #[cfg(test)]

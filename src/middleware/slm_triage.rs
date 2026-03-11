@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
     body::Body,
@@ -68,6 +69,7 @@ struct ChatCompletionResponse {
 pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
     let span = info_span!("layer2_slm", slm.complexity_score = tracing::field::Empty);
     async move {
+        let layer_start = Instant::now();
         let state = match request.extensions().get::<Arc<AppState>>() {
             Some(s) => s.clone(),
             None => {
@@ -114,9 +116,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
     // ------------------------------------------------------------------
     // 2. Classify the prompt via the selected Inference Engine.
     // ------------------------------------------------------------------
-    let inference_span = info_span!("layer2_slm_inference");
     let is_simple = {
-        let _inf_guard = inference_span.enter();
         if state.config.inference_engine == crate::config::InferenceEngineMode::Embedded {
         #[cfg(feature = "embedded-inference")]
         {
@@ -207,7 +207,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
             }
         }
     }
-    }; // close inference_span block
+    }; // close classification block
 
     // ------------------------------------------------------------------
     // 3. Branch: short-circuit or continue.
@@ -221,6 +221,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                 if let Some(classifier) = &state.embedded_classifier {
                     match classifier.execute(&prompt).await {
                         Ok(answer) => {
+                            crate::metrics::record_layer_duration("L2_SLM", layer_start.elapsed());
                             let mut response = (
                                 StatusCode::OK,
                                 Json(ChatResponse {
@@ -273,6 +274,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                             .next()
                             .map(|c| c.message.content)
                             .unwrap_or_default();
+                        crate::metrics::record_layer_duration("L2_SLM", layer_start.elapsed());
                         let mut response = (
                             StatusCode::OK,
                             Json(ChatResponse {

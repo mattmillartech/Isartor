@@ -7,6 +7,7 @@
 //! | `RemoteVllmRouter`     | vLLM / TGI (HTTP)            | Enterprise / GPU cluster    |
 
 use async_trait::async_trait;
+use tracing::Instrument;
 
 use crate::core::ports::SlmRouter;
 
@@ -55,14 +56,21 @@ impl EmbeddedCandleRouter {
 #[async_trait]
 impl SlmRouter for EmbeddedCandleRouter {
     async fn classify_intent(&self, prompt: &str) -> anyhow::Result<String> {
+        let span = tracing::info_span!(
+            "l2_classify_intent",
+            router.backend = "embedded_candle",
+            router.decision = tracing::field::Empty,
+            prompt_len = prompt.len(),
+        );
+        let _guard = span.enter();
         // Skeleton: tokenise → forward pass → parse LABEL from output.
         // Gated behind `embedded-inference` feature flag; not yet wired.
-        log::debug!(
-            "EmbeddedCandleRouter::classify_intent (skeleton) prompt_len={}",
-            prompt.len()
-        );
+        tracing::debug!("EmbeddedCandleRouter: classify_intent (skeleton)");
         // Default classification: fall through to the external LLM.
-        Ok("COMPLEX".to_string())
+        let decision = "COMPLEX";
+        span.record("router.decision", decision);
+        tracing::info!(router.decision = decision, "L2 intent classified (embedded candle)");
+        Ok(decision.to_string())
     }
 }
 
@@ -118,51 +126,59 @@ impl RemoteVllmRouter {
 #[async_trait]
 impl SlmRouter for RemoteVllmRouter {
     async fn classify_intent(&self, prompt: &str) -> anyhow::Result<String> {
-        log::debug!(
-            "RemoteVllmRouter::classify_intent prompt_len={} url={} model={}",
-            prompt.len(),
-            self.base_url,
-            self.model_name
+        let span = tracing::info_span!(
+            "l2_classify_intent",
+            router.backend = "remote_vllm",
+            router.decision = tracing::field::Empty,
+            router.model = %self.model_name,
+            router.url = %self.base_url,
+            prompt_len = prompt.len(),
         );
+        async {
+            // System prompt for intent classification
+            let system_prompt = "You are an intent classifier. Given a user prompt, respond with one word: either 'SIMPLE' or 'COMPLEX'. Only output the label.";
 
-        // System prompt for intent classification
-        let system_prompt = "You are an intent classifier. Given a user prompt, respond with one word: either 'SIMPLE' or 'COMPLEX'. Only output the label.";
+            let url = format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/'));
+            let req_body = serde_json::json!({
+                "model": self.model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": 1,
+                "temperature": 0.0
+            });
 
-        let url = format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/'));
-        let req_body = serde_json::json!({
-            "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": 1,
-            "temperature": 0.0
-        });
+            let resp = self.client.post(&url)
+                .json(&req_body)
+                .send()
+                .await?;
 
-        let resp = self.client.post(&url)
-            .json(&req_body)
-            .send()
-            .await?;
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                anyhow::bail!("RemoteVllmRouter HTTP error: {}: {}", status, text);
+            }
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("RemoteVllmRouter HTTP error: {}: {}", status, text);
+            let resp_json: serde_json::Value = resp.json().await?;
+            // Try to extract the label from the first choice
+            let label = resp_json["choices"][0]["message"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_uppercase();
+            let decision = if label == "SIMPLE" || label == "COMPLEX" {
+                label
+            } else {
+                // Fallback: treat as COMPLEX if label is not recognized
+                "COMPLEX".to_string()
+            };
+            tracing::Span::current().record("router.decision", &decision.as_str());
+            tracing::info!(router.decision = %decision, "L2 intent classified (remote vLLM)");
+            Ok(decision)
         }
-
-        let resp_json: serde_json::Value = resp.json().await?;
-        // Try to extract the label from the first choice
-        let label = resp_json["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("")
-            .trim()
-            .to_uppercase();
-        if label == "SIMPLE" || label == "COMPLEX" {
-            Ok(label)
-        } else {
-            // Fallback: treat as COMPLEX if label is not recognized
-            Ok("COMPLEX".to_string())
-        }
+        .instrument(span)
+        .await
     }
 }
 
