@@ -26,6 +26,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error handling
 anyhow = "1"
 
+# Logging (used by adapters/factory for format-string log macros)
+log = "0.4"
+
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -52,6 +55,10 @@ candle-transformers = { version = "0.9", optional = true }
 hf-hub = { version = "0.4", default-features = false, features = ["tokio", "rustls-tls"], optional = true }
 tokenizers = { version = "0.21", optional = true }
 fastembed = { version = "5.12.0", default-features = false, features = ["hf-hub-rustls-tls", "ort-download-binaries-rustls-tls", "image-models"] }
+
+lru = "0.12"
+parking_lot = "0.12"
+ahash = "0.8"
 
 [dev-dependencies]
 # Test utilities

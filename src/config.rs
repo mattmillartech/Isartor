@@ -31,6 +31,34 @@ pub enum CacheMode {
     Both,
 }
 
+/// Cache backend for Layer 1a exact-match cache.
+///
+/// Set via `ISARTOR__CACHE_BACKEND` env var.
+///
+/// * `"memory"` — In-process LRU cache (ahash + parking_lot). Default.
+/// * `"redis"`  — Distributed Redis cache for multi-replica K8s deployments.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheBackend {
+    #[default]
+    Memory,
+    Redis,
+}
+
+/// Router backend for Layer 2 SLM intent classification.
+///
+/// Set via `ISARTOR__ROUTER_BACKEND` env var.
+///
+/// * `"embedded"` — In-process Candle inference (GGUF model). Default.
+/// * `"vllm"`     — Remote vLLM / TGI inference server over HTTP.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RouterBackend {
+    #[default]
+    Embedded,
+    Vllm,
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // Layer 2 Settings — Lightweight Sidecar (llama.cpp)
 // ═════════════════════════════════════════════════════════════════════
@@ -93,6 +121,26 @@ pub struct AppConfig {
     // ── Layer 1 — Cache ─────────────────────────────────────────────
     /// Cache strategy: "exact", "semantic", or "both".
     pub cache_mode: CacheMode,
+
+    /// Cache backend: "memory" (in-process LRU) or "redis" (distributed).
+    /// Controls which `ExactCache` adapter is instantiated at startup.
+    pub cache_backend: CacheBackend,
+
+    /// Redis URL for the distributed exact-match cache.
+    /// Only used when `cache_backend` = `"redis"`.
+    pub redis_url: String,
+
+    /// Router backend: "embedded" (Candle in-process) or "vllm" (remote HTTP).
+    /// Controls which `SlmRouter` adapter is instantiated at startup.
+    pub router_backend: RouterBackend,
+
+    /// Base URL of the vLLM / TGI inference server.
+    /// Only used when `router_backend` = `"vllm"`.
+    pub vllm_url: String,
+
+    /// Model name for the vLLM server.
+    /// Only used when `router_backend` = `"vllm"`.
+    pub vllm_model: String,
 
     /// Embedding model name (e.g. "all-minilm").
     /// Only used when `cache_mode` is `semantic` or `both`.
@@ -187,6 +235,11 @@ impl AppConfig {
             .set_default("gateway_api_key", "changeme")?
             // Layer 1
             .set_default("cache_mode", "both")?
+            .set_default("cache_backend", "memory")?
+            .set_default("redis_url", "redis://127.0.0.1:6379")?
+            .set_default("router_backend", "embedded")?
+            .set_default("vllm_url", "http://127.0.0.1:8000")?
+            .set_default("vllm_model", "gemma-2-2b-it")?
             .set_default("embedding_model", "all-minilm")?
             .set_default("similarity_threshold", 0.85)?
             .set_default("cache_ttl_secs", 300_i64)?
@@ -316,6 +369,11 @@ mod tests {
                 assert_eq!(config.inference_engine, InferenceEngineMode::Sidecar);
                 assert_eq!(config.gateway_api_key, "changeme");
                 assert_eq!(config.cache_mode, CacheMode::Both);
+                assert_eq!(config.cache_backend, CacheBackend::Memory);
+                assert_eq!(config.redis_url, "redis://127.0.0.1:6379");
+                assert_eq!(config.router_backend, RouterBackend::Embedded);
+                assert_eq!(config.vllm_url, "http://127.0.0.1:8000");
+                assert_eq!(config.vllm_model, "gemma-2-2b-it");
                 assert_eq!(config.embedding_model, "all-minilm");
                 assert!((config.similarity_threshold - 0.85).abs() < 1e-9);
                 assert_eq!(config.cache_ttl_secs, 300);
@@ -352,6 +410,16 @@ mod tests {
             .set_default("gateway_api_key", "changeme")
             .unwrap()
             .set_default("cache_mode", "both")
+            .unwrap()
+            .set_default("cache_backend", "memory")
+            .unwrap()
+            .set_default("redis_url", "redis://127.0.0.1:6379")
+            .unwrap()
+            .set_default("router_backend", "embedded")
+            .unwrap()
+            .set_default("vllm_url", "http://127.0.0.1:8000")
+            .unwrap()
+            .set_default("vllm_model", "gemma-2-2b-it")
             .unwrap()
             .set_default("embedding_model", "all-minilm")
             .unwrap()
@@ -443,6 +511,16 @@ mod tests {
             .set_default("gateway_api_key", "changeme")
             .unwrap()
             .set_default("cache_mode", "both")
+            .unwrap()
+            .set_default("cache_backend", "memory")
+            .unwrap()
+            .set_default("redis_url", "redis://127.0.0.1:6379")
+            .unwrap()
+            .set_default("router_backend", "embedded")
+            .unwrap()
+            .set_default("vllm_url", "http://127.0.0.1:8000")
+            .unwrap()
+            .set_default("vllm_model", "gemma-2-2b-it")
             .unwrap()
             .set_default("embedding_model", "all-minilm")
             .unwrap()
@@ -538,6 +616,11 @@ mod tests {
             .set_default("host_port", "0.0.0.0:8080").unwrap()
             .set_default("gateway_api_key", "changeme").unwrap()
             .set_default("cache_mode", "both").unwrap()
+            .set_default("cache_backend", "memory").unwrap()
+            .set_default("redis_url", "redis://127.0.0.1:6379").unwrap()
+            .set_default("router_backend", "embedded").unwrap()
+            .set_default("vllm_url", "http://127.0.0.1:8000").unwrap()
+            .set_default("vllm_model", "gemma-2-2b-it").unwrap()
             .set_default("embedding_model", "all-minilm").unwrap()
             .set_default("similarity_threshold", 0.85).unwrap()
             .set_default("cache_ttl_secs", 300_i64).unwrap()

@@ -98,9 +98,9 @@ cp .env.full.example .env.full
 Edit `.env.full` and set your provider:
 
 ```bash
-ISARTOR_LLM_PROVIDER=openai
-ISARTOR_EXTERNAL_LLM_MODEL=gpt-4o-mini
-ISARTOR_EXTERNAL_LLM_API_KEY=sk-...
+ISARTOR__LLM_PROVIDER=openai
+ISARTOR__EXTERNAL_LLM_MODEL=gpt-4o-mini
+ISARTOR__EXTERNAL_LLM_API_KEY=sk-...
 ```
 
 ### 3. Start the Full Stack
@@ -226,28 +226,37 @@ These variables are relevant to the sidecar architecture. For the full reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ISARTOR_LAYER2__SIDECAR_URL` | `http://127.0.0.1:8081` | Generation sidecar URL (use Docker service name in Compose: `http://slm-generation:8081`) |
-| `ISARTOR_LAYER2__MODEL_NAME` | `phi-3-mini` | Model name for OpenAI-compatible requests |
-| `ISARTOR_LAYER2__TIMEOUT_SECONDS` | `30` | HTTP timeout for generation calls |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `http://127.0.0.1:8082` | Embedding sidecar URL — **v2 pipeline only** (v1 uses in-process fastembed; use `http://slm-embedding:8082` in Compose) |
-| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `all-minilm` | Embedding model name — v2 pipeline only |
-| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `10` | HTTP timeout for embedding calls — v2 pipeline only |
+| `ISARTOR__LAYER2__SIDECAR_URL` | `http://127.0.0.1:8081` | Generation sidecar URL (use Docker service name in Compose: `http://slm-generation:8081`) |
+| `ISARTOR__LAYER2__MODEL_NAME` | `phi-3-mini` | Model name for OpenAI-compatible requests |
+| `ISARTOR__LAYER2__TIMEOUT_SECONDS` | `30` | HTTP timeout for generation calls |
+| `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL` | `http://127.0.0.1:8082` | Embedding sidecar URL — **v2 pipeline only** (v1 uses in-process fastembed; use `http://slm-embedding:8082` in Compose) |
+| `ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME` | `all-minilm` | Embedding model name — v2 pipeline only |
+| `ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `10` | HTTP timeout for embedding calls — v2 pipeline only |
+
+### Pluggable Backends
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ISARTOR__CACHE_BACKEND` | `memory` | In-process LRU — ideal for single-host Docker Compose |
+| `ISARTOR__ROUTER_BACKEND` | `embedded` | In-process Candle SLM classification — no external dependency |
+
+> **Scalability note:** These defaults are appropriate for Level 2 (single host). When moving to Level 3 (multi-replica K8s), switch to `cache_backend=redis` and `router_backend=vllm` for horizontal scaling.
 
 ### Cache
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ISARTOR_CACHE_MODE` | `both` | Use `both` — in-process fastembed (v1) provides semantic embeddings at all tiers |
-| `ISARTOR_SIMILARITY_THRESHOLD` | `0.85` | Cosine similarity threshold for cache hits |
-| `ISARTOR_PIPELINE_SIMILARITY_THRESHOLD` | `0.92` | Similarity threshold for v2 pipeline cache |
-| `ISARTOR_PIPELINE_EMBEDDING_DIM` | `384` | Must match the embedding model dimension |
+| `ISARTOR__CACHE_MODE` | `both` | Use `both` — in-process fastembed (v1) provides semantic embeddings at all tiers |
+| `ISARTOR__SIMILARITY_THRESHOLD` | `0.85` | Cosine similarity threshold for cache hits |
+| `ISARTOR__PIPELINE_SIMILARITY_THRESHOLD` | `0.92` | Similarity threshold for v2 pipeline cache |
+| `ISARTOR__PIPELINE_EMBEDDING_DIM` | `384` | Must match the embedding model dimension |
 
 ### Observability
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ISARTOR_ENABLE_MONITORING` | `true` (in Compose) | Enable OTel trace/metric export |
-| `ISARTOR_OTEL_EXPORTER_ENDPOINT` | `http://otel-collector:4317` | OTel Collector gRPC endpoint |
+| `ISARTOR__ENABLE_MONITORING` | `true` (in Compose) | Enable OTel trace/metric export |
+| `ISARTOR__OTEL_EXPORTER_ENDPOINT` | `http://otel-collector:4317` | OTel Collector gRPC endpoint |
 
 ---
 
@@ -311,9 +320,9 @@ Before moving to Level 3, you can vertically scale Level 2:
 | --- | --- |
 | **More GPU VRAM** | Use larger quantisation (Q8_0 instead of Q4_K_M) for better quality |
 | **Bigger model** | Swap Phi-3-mini for Phi-3-medium or Qwen2-7B in the Compose command |
-| **More cache** | Increase `ISARTOR_CACHE_MAX_CAPACITY` and `ISARTOR_CACHE_TTL_SECS` |
+| **More cache** | Increase `ISARTOR__CACHE_MAX_CAPACITY` and `ISARTOR__CACHE_TTL_SECS` |
 | **Faster embedding** | Use `nomic-embed-text` (768-dim) for richer semantic matching |
-| **More concurrency** | Tune `ISARTOR_PIPELINE_MAX_CONCURRENCY` and `ISARTOR_PIPELINE_TARGET_LATENCY_MS` |
+| **More concurrency** | Tune `ISARTOR__PIPELINE_MAX_CONCURRENCY` and `ISARTOR__PIPELINE_TARGET_LATENCY_MS` |
 
 ---
 

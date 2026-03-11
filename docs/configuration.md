@@ -1,6 +1,6 @@
 # 📄 Configuration Reference
 
-> **Complete reference for all `ISARTOR_*` environment variables, config file support, and per-tier defaults.**
+> **Complete reference for all `ISARTOR__*` environment variables, config file support, and per-tier defaults.**
 
 ---
 
@@ -8,14 +8,18 @@
 
 Isartor uses the [`config`](https://crates.io/crates/config) crate with the following precedence (highest wins):
 
-1. **Environment variables** — prefixed with `ISARTOR_`, double-underscore `__` maps to nested structs.
+1. **Environment variables** — prefixed with `ISARTOR`, using `__` (double-underscore) as separator. Nested structs add another `__` level.
 2. **Config file** — `isartor.toml`, `isartor.yaml`, or `isartor.json` in the working directory (optional).
 3. **Compiled defaults** — sensible values baked into the binary.
 
 ```bash
-# Example: nested struct via env var
-# AppConfig.layer2.sidecar_url → ISARTOR_LAYER2__SIDECAR_URL
-export ISARTOR_LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
+# Example: flat field
+# AppConfig.cache_backend → ISARTOR__CACHE_BACKEND
+export ISARTOR__CACHE_BACKEND="redis"
+
+# Example: nested struct field
+# AppConfig.layer2.sidecar_url → ISARTOR__LAYER2__SIDECAR_URL
+export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 ```
 
 ---
@@ -26,33 +30,41 @@ export ISARTOR_LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_HOST_PORT` | `String` | `0.0.0.0:8080` | Socket address the server binds to |
-| `ISARTOR_GATEWAY_API_KEY` | `String` | `changeme` | API key required in `X-API-Key` header (Layer 0) |
+| `ISARTOR__HOST_PORT` | `String` | `0.0.0.0:8080` | Socket address the server binds to |
+| `ISARTOR__GATEWAY_API_KEY` | `String` | `changeme` | API key required in `X-API-Key` header (Layer 0) |
+| `ISARTOR__INFERENCE_ENGINE` | `String` | `sidecar` | `sidecar` — uses external sidecar for Layer 2; `embedded` — uses in-process Candle engine (requires `embedded-inference` feature) |
 
 ### Layer 1 — Cache
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_CACHE_MODE` | `String` | `both` | `exact` — SHA-256 hash only; `semantic` — cosine similarity; `both` — exact first, then semantic |
-| `ISARTOR_EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational; v1 pipeline uses in-process fastembed) |
-| `ISARTOR_SIMILARITY_THRESHOLD` | `f64` | `0.85` | Cosine similarity threshold for semantic cache hits (0.0–1.0) |
-| `ISARTOR_CACHE_TTL_SECS` | `u64` | `300` | Time-to-live for cached responses, in seconds |
-| `ISARTOR_CACHE_MAX_CAPACITY` | `u64` | `10000` | Maximum entries per cache (exact + semantic counted separately) |
+| `ISARTOR__CACHE_MODE` | `String` | `both` | `exact` — SHA-256 hash only; `semantic` — cosine similarity; `both` — exact first, then semantic |
+| `ISARTOR__CACHE_BACKEND` | `String` | `memory` | `memory` — in-process LRU (ahash + parking_lot); `redis` — distributed Redis cache for multi-replica scaling |
+| `ISARTOR__REDIS_URL` | `String` | `redis://127.0.0.1:6379` | Redis connection URI. Only used when `cache_backend=redis` |
+| `ISARTOR__ROUTER_BACKEND` | `String` | `embedded` | `embedded` — in-process Candle GGUF inference; `vllm` — remote vLLM / TGI server |
+| `ISARTOR__VLLM_URL` | `String` | `http://127.0.0.1:8000` | Base URL of the vLLM / TGI server. Only used when `router_backend=vllm` |
+| `ISARTOR__VLLM_MODEL` | `String` | `gemma-2-2b-it` | Model name for the vLLM server. Only used when `router_backend=vllm` |
+| `ISARTOR__EMBEDDING_MODEL` | `String` | `all-minilm` | Embedding model name (informational; v1 pipeline uses in-process fastembed) |
+| `ISARTOR__SIMILARITY_THRESHOLD` | `f64` | `0.85` | Cosine similarity threshold for semantic cache hits (0.0–1.0) |
+| `ISARTOR__CACHE_TTL_SECS` | `u64` | `300` | Time-to-live for cached responses, in seconds |
+| `ISARTOR__CACHE_MAX_CAPACITY` | `u64` | `10000` | Maximum entries per cache (exact + semantic counted separately) |
+
+> **Scalability note:** When running multiple gateway replicas (Level 3 / K8s), set `ISARTOR__CACHE_BACKEND=redis` so all pods share the same exact-match cache. With `memory` (the default), each pod maintains an independent cache, leading to lower hit rates and duplicated work.
 
 ### Layer 2 — Generation Sidecar (llama.cpp)
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_LAYER2__SIDECAR_URL` | `String` | `http://127.0.0.1:8081` | Base URL of the generation sidecar (OpenAI-compatible API) |
-| `ISARTOR_LAYER2__MODEL_NAME` | `String` | `phi-3-mini` | Model name sent in the API `model` field |
-| `ISARTOR_LAYER2__TIMEOUT_SECONDS` | `u64` | `30` | HTTP request timeout for sidecar calls |
+| `ISARTOR__LAYER2__SIDECAR_URL` | `String` | `http://127.0.0.1:8081` | Base URL of the generation sidecar (OpenAI-compatible API) |
+| `ISARTOR__LAYER2__MODEL_NAME` | `String` | `phi-3-mini` | Model name sent in the API `model` field |
+| `ISARTOR__LAYER2__TIMEOUT_SECONDS` | `u64` | `30` | HTTP request timeout for sidecar calls |
 
 ### Layer 2 — Legacy (v1 Middleware, Ollama-Compatible)
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_LOCAL_SLM_URL` | `String` | `http://localhost:11434/api/generate` | URL of the local SLM for v1 middleware triage |
-| `ISARTOR_LOCAL_SLM_MODEL` | `String` | `llama3` | Model name for v1 middleware requests |
+| `ISARTOR__LOCAL_SLM_URL` | `String` | `http://localhost:11434/api/generate` | URL of the local SLM for v1 middleware triage |
+| `ISARTOR__LOCAL_SLM_MODEL` | `String` | `llama3` | Model name for v1 middleware requests |
 
 ### Embedding Sidecar (v2 Pipeline Only)
 
@@ -60,43 +72,43 @@ export ISARTOR_LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) — v2 pipeline only |
-| `ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name — v2 pipeline only |
-| `ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls — v2 pipeline only |
+| `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) — v2 pipeline only |
+| `ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name — v2 pipeline only |
+| `ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls — v2 pipeline only |
 
 ### Layer 3 — External Cloud LLM
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_LLM_PROVIDER` | `String` | `openai` | Provider: `openai`, `azure`, `anthropic`, `xai` |
-| `ISARTOR_EXTERNAL_LLM_URL` | `String` | `https://api.openai.com/v1/chat/completions` | Base URL for the external LLM API |
-| `ISARTOR_EXTERNAL_LLM_MODEL` | `String` | `gpt-4o-mini` | Model name to request |
-| `ISARTOR_EXTERNAL_LLM_API_KEY` | `String` | *(empty)* | API key for the cloud LLM provider |
+| `ISARTOR__LLM_PROVIDER` | `String` | `openai` | Provider: `openai`, `azure`, `anthropic`, `xai` |
+| `ISARTOR__EXTERNAL_LLM_URL` | `String` | `https://api.openai.com/v1/chat/completions` | Base URL for the external LLM API |
+| `ISARTOR__EXTERNAL_LLM_MODEL` | `String` | `gpt-4o-mini` | Model name to request |
+| `ISARTOR__EXTERNAL_LLM_API_KEY` | `String` | *(empty)* | API key for the cloud LLM provider |
 
 ### Azure OpenAI (Layer 3)
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_AZURE_DEPLOYMENT_ID` | `String` | *(empty)* | Azure OpenAI deployment ID (only when `llm_provider=azure`) |
-| `ISARTOR_AZURE_API_VERSION` | `String` | `2024-08-01-preview` | Azure OpenAI API version |
+| `ISARTOR__AZURE_DEPLOYMENT_ID` | `String` | *(empty)* | Azure OpenAI deployment ID (only when `llm_provider=azure`) |
+| `ISARTOR__AZURE_API_VERSION` | `String` | `2024-08-01-preview` | Azure OpenAI API version |
 
 ### Observability
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_ENABLE_MONITORING` | `bool` | `false` | Enable OpenTelemetry trace and metric export |
-| `ISARTOR_OTEL_EXPORTER_ENDPOINT` | `String` | `http://localhost:4317` | OTel Collector gRPC endpoint |
+| `ISARTOR__ENABLE_MONITORING` | `bool` | `false` | Enable OpenTelemetry trace and metric export |
+| `ISARTOR__OTEL_EXPORTER_ENDPOINT` | `String` | `http://localhost:4317` | OTel Collector gRPC endpoint |
 
 ### Pipeline v2 — Algorithmic Gateway Tuning
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR_PIPELINE_EMBEDDING_DIM` | `u64` | `384` | Embedding vector dimension (must match model: 384 for MiniLM, 768 for nomic-embed-text, 1024 for mxbai-embed-large) |
-| `ISARTOR_PIPELINE_SIMILARITY_THRESHOLD` | `f64` | `0.92` | Cosine similarity threshold for the v2 pipeline semantic cache |
-| `ISARTOR_PIPELINE_RERANK_TOP_K` | `u64` | `5` | Number of top-K documents to keep after reranking (Layer 2.5) |
-| `ISARTOR_PIPELINE_MAX_CONCURRENCY` | `u64` | `256` | Maximum concurrency limit (ceiling) for the adaptive limiter |
-| `ISARTOR_PIPELINE_MIN_CONCURRENCY` | `u64` | `4` | Minimum concurrency limit (floor) for the adaptive limiter |
-| `ISARTOR_PIPELINE_TARGET_LATENCY_MS` | `u64` | `500` | Target P95 latency in ms for the adaptive concurrency algorithm (AIMD) |
+| `ISARTOR__PIPELINE_EMBEDDING_DIM` | `u64` | `384` | Embedding vector dimension (must match model: 384 for MiniLM, 768 for nomic-embed-text, 1024 for mxbai-embed-large) |
+| `ISARTOR__PIPELINE_SIMILARITY_THRESHOLD` | `f64` | `0.92` | Cosine similarity threshold for the v2 pipeline semantic cache |
+| `ISARTOR__PIPELINE_RERANK_TOP_K` | `u64` | `5` | Number of top-K documents to keep after reranking (Layer 2.5) |
+| `ISARTOR__PIPELINE_MAX_CONCURRENCY` | `u64` | `256` | Maximum concurrency limit (ceiling) for the adaptive limiter |
+| `ISARTOR__PIPELINE_MIN_CONCURRENCY` | `u64` | `4` | Minimum concurrency limit (floor) for the adaptive limiter |
+| `ISARTOR__PIPELINE_TARGET_LATENCY_MS` | `u64` | `500` | Target P95 latency in ms for the adaptive concurrency algorithm (AIMD) |
 
 ### Embedded Classifier (Compiled Defaults)
 
@@ -128,13 +140,21 @@ Place as `isartor.toml` in the working directory:
 
 host_port = "0.0.0.0:8080"
 gateway_api_key = "my-production-key"
+inference_engine = "sidecar"
 
 # Layer 1 — Cache
 cache_mode = "both"
+cache_backend = "memory"          # "memory" or "redis"
+redis_url = "redis://127.0.0.1:6379"  # only used when cache_backend = "redis"
 embedding_model = "all-minilm"
 similarity_threshold = 0.85
 cache_ttl_secs = 600
 cache_max_capacity = 50000
+
+# Layer 2 — Router backend
+router_backend = "embedded"       # "embedded" or "vllm"
+vllm_url = "http://127.0.0.1:8000"    # only used when router_backend = "vllm"
+vllm_model = "gemma-2-2b-it"          # only used when router_backend = "vllm"
 
 # Layer 2 — Generation Sidecar
 [layer2]
@@ -174,40 +194,51 @@ pipeline_target_latency_ms = 500
 ### Level 1 — Minimal (Edge / VPS)
 
 ```bash
-ISARTOR_CACHE_MODE=both               # In-process fastembed enables semantic cache at all tiers
-ISARTOR_CACHE_TTL_SECS=300
-ISARTOR_CACHE_MAX_CAPACITY=5000       # Smaller memory footprint
-ISARTOR_ENABLE_MONITORING=false       # No collector running
-ISARTOR_PIPELINE_MAX_CONCURRENCY=64   # Single-machine limits
-ISARTOR_PIPELINE_MIN_CONCURRENCY=2
-ISARTOR_PIPELINE_TARGET_LATENCY_MS=1000
+ISARTOR__CACHE_MODE=both               # In-process fastembed enables semantic cache at all tiers
+ISARTOR__CACHE_BACKEND=memory          # Single process — in-process LRU is ideal
+ISARTOR__ROUTER_BACKEND=embedded       # In-process Candle SLM, no external dependencies
+ISARTOR__CACHE_TTL_SECS=300
+ISARTOR__CACHE_MAX_CAPACITY=5000       # Smaller memory footprint
+ISARTOR__ENABLE_MONITORING=false       # No collector running
+ISARTOR__PIPELINE_MAX_CONCURRENCY=64   # Single-machine limits
+ISARTOR__PIPELINE_MIN_CONCURRENCY=2
+ISARTOR__PIPELINE_TARGET_LATENCY_MS=1000
 ```
 
 ### Level 2 — Sidecar (Docker Compose)
 
 ```bash
-ISARTOR_CACHE_MODE=both               # Semantic cache enabled
-ISARTOR_CACHE_TTL_SECS=300
-ISARTOR_CACHE_MAX_CAPACITY=10000
-ISARTOR_ENABLE_MONITORING=true
-ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
-ISARTOR_PIPELINE_MAX_CONCURRENCY=256
-ISARTOR_PIPELINE_MIN_CONCURRENCY=4
-ISARTOR_PIPELINE_TARGET_LATENCY_MS=500
+ISARTOR__CACHE_MODE=both               # Semantic cache enabled
+ISARTOR__CACHE_BACKEND=memory          # Single-host Docker Compose — in-process is fine
+ISARTOR__ROUTER_BACKEND=embedded       # SLM runs in-process; sidecar handles generation only
+ISARTOR__CACHE_TTL_SECS=300
+ISARTOR__CACHE_MAX_CAPACITY=10000
+ISARTOR__ENABLE_MONITORING=true
+ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
+ISARTOR__PIPELINE_MAX_CONCURRENCY=256
+ISARTOR__PIPELINE_MIN_CONCURRENCY=4
+ISARTOR__PIPELINE_TARGET_LATENCY_MS=500
 ```
 
 ### Level 3 — Enterprise (Kubernetes)
 
 ```bash
-ISARTOR_CACHE_MODE=both
-ISARTOR_CACHE_TTL_SECS=600            # Longer TTL, more cache value
-ISARTOR_CACHE_MAX_CAPACITY=100000     # Large cache for high traffic
-ISARTOR_ENABLE_MONITORING=true
-ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector.isartor:4317
-ISARTOR_PIPELINE_MAX_CONCURRENCY=512  # Higher concurrency ceiling
-ISARTOR_PIPELINE_MIN_CONCURRENCY=8
-ISARTOR_PIPELINE_TARGET_LATENCY_MS=300  # Tighter latency target
+ISARTOR__CACHE_MODE=both
+ISARTOR__CACHE_BACKEND=redis           # ← Shared cache across all pods for consistent hit rates
+ISARTOR__REDIS_URL=redis://redis.isartor:6379
+ISARTOR__ROUTER_BACKEND=vllm           # ← GPU-backed vLLM server for high-throughput SLM routing
+ISARTOR__VLLM_URL=http://vllm.isartor:8000
+ISARTOR__VLLM_MODEL=gemma-2-2b-it
+ISARTOR__CACHE_TTL_SECS=600            # Longer TTL, more cache value
+ISARTOR__CACHE_MAX_CAPACITY=100000     # Large cache for high traffic
+ISARTOR__ENABLE_MONITORING=true
+ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector.isartor:4317
+ISARTOR__PIPELINE_MAX_CONCURRENCY=512  # Higher concurrency ceiling
+ISARTOR__PIPELINE_MIN_CONCURRENCY=8
+ISARTOR__PIPELINE_TARGET_LATENCY_MS=300  # Tighter latency target
 ```
+
+> **Scalability:** With `cache_backend=redis`, every gateway replica shares the same exact-match cache, ensuring cache hits are consistent regardless of which pod serves the request. With `router_backend=vllm`, the SLM classification workload is offloaded to a GPU-backed vLLM cluster that can be independently scaled (more GPU replicas = higher throughput). This allows the stateless Isartor gateway pods to scale horizontally to hundreds of replicas without contention.
 
 ---
 
@@ -216,39 +247,39 @@ ISARTOR_PIPELINE_TARGET_LATENCY_MS=300  # Tighter latency target
 ### OpenAI
 
 ```bash
-ISARTOR_LLM_PROVIDER=openai
-ISARTOR_EXTERNAL_LLM_URL=https://api.openai.com/v1/chat/completions
-ISARTOR_EXTERNAL_LLM_MODEL=gpt-4o-mini
-ISARTOR_EXTERNAL_LLM_API_KEY=sk-...
+ISARTOR__LLM_PROVIDER=openai
+ISARTOR__EXTERNAL_LLM_URL=https://api.openai.com/v1/chat/completions
+ISARTOR__EXTERNAL_LLM_MODEL=gpt-4o-mini
+ISARTOR__EXTERNAL_LLM_API_KEY=sk-...
 ```
 
 ### Azure OpenAI
 
 ```bash
-ISARTOR_LLM_PROVIDER=azure
-ISARTOR_EXTERNAL_LLM_URL=https://your-resource.openai.azure.com
-ISARTOR_EXTERNAL_LLM_MODEL=gpt-4o-mini
-ISARTOR_EXTERNAL_LLM_API_KEY=your-azure-key
-ISARTOR_AZURE_DEPLOYMENT_ID=your-deployment-name
-ISARTOR_AZURE_API_VERSION=2024-08-01-preview
+ISARTOR__LLM_PROVIDER=azure
+ISARTOR__EXTERNAL_LLM_URL=https://your-resource.openai.azure.com
+ISARTOR__EXTERNAL_LLM_MODEL=gpt-4o-mini
+ISARTOR__EXTERNAL_LLM_API_KEY=your-azure-key
+ISARTOR__AZURE_DEPLOYMENT_ID=your-deployment-name
+ISARTOR__AZURE_API_VERSION=2024-08-01-preview
 ```
 
 ### Anthropic
 
 ```bash
-ISARTOR_LLM_PROVIDER=anthropic
-ISARTOR_EXTERNAL_LLM_URL=https://api.anthropic.com/v1/messages
-ISARTOR_EXTERNAL_LLM_MODEL=claude-3-5-sonnet-20241022
-ISARTOR_EXTERNAL_LLM_API_KEY=sk-ant-...
+ISARTOR__LLM_PROVIDER=anthropic
+ISARTOR__EXTERNAL_LLM_URL=https://api.anthropic.com/v1/messages
+ISARTOR__EXTERNAL_LLM_MODEL=claude-3-5-sonnet-20241022
+ISARTOR__EXTERNAL_LLM_API_KEY=sk-ant-...
 ```
 
 ### xAI / Grok
 
 ```bash
-ISARTOR_LLM_PROVIDER=xai
-ISARTOR_EXTERNAL_LLM_URL=https://api.x.ai/v1/chat/completions
-ISARTOR_EXTERNAL_LLM_MODEL=grok-2
-ISARTOR_EXTERNAL_LLM_API_KEY=xai-...
+ISARTOR__LLM_PROVIDER=xai
+ISARTOR__EXTERNAL_LLM_URL=https://api.x.ai/v1/chat/completions
+ISARTOR__EXTERNAL_LLM_MODEL=grok-2
+ISARTOR__EXTERNAL_LLM_API_KEY=xai-...
 ```
 
 ---

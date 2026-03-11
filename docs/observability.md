@@ -38,11 +38,11 @@ Isartor ships with first-class [OpenTelemetry](https://opentelemetry.io/) suppor
 Set these two environment variables:
 
 ```bash
-ISARTOR_ENABLE_MONITORING=true
-ISARTOR_OTEL_EXPORTER_ENDPOINT=http://localhost:4317   # or your collector address
+ISARTOR__ENABLE_MONITORING=true
+ISARTOR__OTEL_EXPORTER_ENDPOINT=http://localhost:4317   # or your collector address
 ```
 
-When `ISARTOR_ENABLE_MONITORING=false` (the default), Isartor uses console-only logging via `tracing-subscriber` with `RUST_LOG` filtering. No OTel SDK is initialised — zero overhead.
+When `ISARTOR__ENABLE_MONITORING=false` (the default), Isartor uses console-only logging via `tracing-subscriber` with `RUST_LOG` filtering. No OTel SDK is initialised — zero overhead.
 
 ---
 
@@ -87,7 +87,7 @@ Metrics are exported via OTLP to the OTel Collector, which exposes a Prometheus-
 No observability stack is needed. Use `RUST_LOG` for structured console output:
 
 ```bash
-ISARTOR_ENABLE_MONITORING=false
+ISARTOR__ENABLE_MONITORING=false
 RUST_LOG=isartor=info
 ```
 
@@ -120,8 +120,8 @@ Services included:
 The gateway is pre-configured with:
 
 ```bash
-ISARTOR_ENABLE_MONITORING=true
-ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
+ISARTOR__ENABLE_MONITORING=true
+ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
 ```
 
 ### Level 3 — Kubernetes (Managed or Self-Hosted)
@@ -138,7 +138,7 @@ ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
 For all options, point the gateway at the collector:
 
 ```bash
-ISARTOR_OTEL_EXPORTER_ENDPOINT=http://otel-collector.isartor:4317
+ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector.isartor:4317
 ```
 
 ---
@@ -300,8 +300,8 @@ groups:
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| No traces in Jaeger | `ISARTOR_ENABLE_MONITORING=false` | Set to `true` |
-| No traces in Jaeger | Collector not reachable | Verify `ISARTOR_OTEL_EXPORTER_ENDPOINT` and that port 4317 is open |
+| No traces in Jaeger | `ISARTOR__ENABLE_MONITORING=false` | Set to `true` |
+| No traces in Jaeger | Collector not reachable | Verify `ISARTOR__OTEL_EXPORTER_ENDPOINT` and that port 4317 is open |
 | No metrics in Prometheus | Prometheus can't scrape collector | Check `prometheus.yml` targets and Docker networking |
 | Grafana shows "No data" | Prometheus data source misconfigured | Verify URL is `http://prometheus:9090` (Docker service name) |
 | Console shows `OpenTelemetry monitoring disabled` | Config loaded with `enable_monitoring=false` | Check env vars and config file precedence |

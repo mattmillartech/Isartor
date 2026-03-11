@@ -11,7 +11,7 @@ use axum::{
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use sha2::{Digest, Sha256};
-use tracing::{info_span, Instrument};
+use log::{debug, info};
 
 use crate::config::CacheMode;
 use crate::models::{ChatResponse, FinalLayer};
@@ -31,13 +31,11 @@ use crate::state::AppState;
 /// active cache(s). If the embedding service is unreachable in
 /// `semantic`/`both` modes, the layer gracefully falls through.
 pub async fn cache_middleware(request: Request, next: Next) -> Response {
-    let span = info_span!("layer1_cache", gateway.cache.hit = false);
-    async move {
-        let state = request
-            .extensions()
-            .get::<Arc<AppState>>()
-            .expect("AppState missing from request extensions")
-            .clone();
+    let state = request
+        .extensions()
+        .get::<Arc<AppState>>()
+        .expect("AppState missing from request extensions")
+        .clone();
 
     // ------------------------------------------------------------------
     // 1. Read the body to extract the prompt.
@@ -59,7 +57,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     };
 
     // Try JSON `{ "prompt": "..." }`, fall back to raw string.
-    let prompt: String = serde_json::from_slice::<serde_json::Value>(&body_bytes)
+    let prompt: String = serde_json::from_slice::<serde_json::Value>(body_bytes.as_ref())
         .ok()
         .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
         .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes).to_string());
@@ -72,13 +70,10 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
         let key = hex::encode(Sha256::digest(prompt.as_bytes()));
 
-        let exact_span = info_span!("layer1a_exact_lookup", cache.key = %key);
-        let _exact_guard = exact_span.enter();
+        debug!("Layer 1: Exact-match lookup for key {} (mode: {:?})", key, mode);
 
-        tracing::debug!(cache_key = %key, mode = ?mode, "Layer 1: Exact-match lookup");
-
-        if let Some(cached) = state.exact_cache.get(&key).await {
-            tracing::info!(cache_key = %key, "Layer 1: Exact cache HIT");
+        if let Some(cached) = state.exact_cache.get(&key) {
+            info!("Layer 1: Exact cache HIT for key {}", key);
             tracing::Span::current().record("gateway.cache.hit", true);
             let mut response = (
                 StatusCode::OK,
@@ -98,9 +93,8 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // 3. Semantic lookup (when mode is Semantic or Both).
     //    Uses the in-process fastembed TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
-    let semantic_span = info_span!("layer1b_semantic_process");
+    // Removed span: info_span!("layer1b_semantic_process");
     let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
-        let _sem_guard = semantic_span.enter();
         let embedder = state.text_embedder.clone();
         let prompt_clone = prompt.clone();
 
@@ -109,11 +103,11 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         match tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_clone)).await {
             Ok(Ok(emb)) => Some(emb),
             Ok(Err(e)) => {
-                tracing::warn!(error = %e, "Layer 1: In-process embedding failed – skipping semantic cache");
+                log::warn!("Layer 1: In-process embedding failed – skipping semantic cache: {:?}", e);
                 None
             }
             Err(e) => {
-                tracing::warn!(error = %e, "Layer 1: Embedding task panicked – skipping semantic cache");
+                log::warn!("Layer 1: Embedding task panicked – skipping semantic cache: {:?}", e);
                 None
             }
         }
@@ -123,10 +117,9 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 
     // Search the vector cache if we obtained an embedding.
     if let Some(ref emb) = embedding {
-        let _sem_guard = semantic_span.enter();
-        tracing::debug!(dims = emb.len(), "Layer 1: Semantic lookup");
+        log::debug!("Layer 1: Semantic lookup (dims: {})", emb.len());
         if let Some(cached) = state.vector_cache.search(emb).await {
-            tracing::info!("Layer 1: Semantic cache HIT");
+            log::info!("Layer 1: Semantic cache HIT");
             tracing::Span::current().record("gateway.cache.hit", true);
             let mut response = (
                 StatusCode::OK,
@@ -139,7 +132,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         }
     }
 
-    tracing::debug!(mode = ?mode, "Layer 1: Cache MISS – forwarding downstream");
+    log::debug!("Layer 1: Cache MISS – forwarding downstream (mode: {:?})", mode);
 
     // ------------------------------------------------------------------
     // 4. Cache miss: forward to next layer.
@@ -158,12 +151,12 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         if resp_parts.status.is_success() {
             // Store in exact cache.
             if let Some(key) = exact_key {
-                tracing::debug!(cache_key = %key, "Layer 1: Storing in exact cache");
-                state.exact_cache.insert(key, resp_string.clone()).await;
+                debug!("Layer 1: Storing in exact cache for key {}", key);
+                state.exact_cache.put(key, resp_string.clone());
             }
             // Store in vector cache.
             if let Some(emb) = embedding {
-                tracing::debug!("Layer 1: Storing in vector cache");
+                log::debug!("Layer 1: Storing in vector cache");
                 state.vector_cache.insert(emb, resp_string.clone()).await;
             }
         }
@@ -180,9 +173,6 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         }),
     )
         .into_response()
-    }
-    .instrument(span)
-    .await
 }
 
 #[cfg(test)]
@@ -195,8 +185,9 @@ mod tests {
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
     use crate::layer1::embeddings::shared_test_embedder;
+    use crate::layer1::layer1a_cache::ExactMatchCache;
     use crate::models::ChatResponse;
-    use crate::state::{AppLlmAgent, ExactCache};
+    use crate::state::AppLlmAgent;
     use crate::vector_cache::VectorCache;
 
     struct MockAgent;
@@ -217,6 +208,11 @@ mod tests {
             inference_engine: crate::config::InferenceEngineMode::Sidecar,
             gateway_api_key: "test".into(),
             cache_mode: mode,
+            cache_backend: crate::config::CacheBackend::Memory,
+            redis_url: "redis://127.0.0.1:6379".into(),
+            router_backend: crate::config::RouterBackend::Embedded,
+            vllm_url: "http://127.0.0.1:8000".into(),
+            vllm_model: "gemma-2-2b-it".into(),
             embedding_model: "all-minilm".into(),
             similarity_threshold: 0.85,
             cache_ttl_secs: 300,
@@ -254,7 +250,9 @@ mod tests {
         let config = test_config(mode);
         Arc::new(AppState {
             http_client: reqwest::Client::new(),
-            exact_cache: Arc::new(ExactCache::new(300, 100)),
+            exact_cache: Arc::new(ExactMatchCache::new(
+                std::num::NonZeroUsize::new(100).unwrap()
+            )),
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
@@ -319,7 +317,7 @@ mod tests {
 
         // The response should now be in the exact cache.
         let key = hex::encode(sha2::Sha256::digest(b"hello"));
-        let cached = state.exact_cache.get(&key).await;
+        let cached = state.exact_cache.get(&key);
         assert!(cached.is_some(), "Response should be cached after miss");
 
         // Second request — cache hit, should get cached response.
@@ -372,7 +370,7 @@ mod tests {
             model: None,
         })
         .unwrap();
-        state.exact_cache.insert(key, cached_json).await;
+        state.exact_cache.put(key, cached_json);
 
         let app = cache_app(state);
 
@@ -408,7 +406,7 @@ mod tests {
 
         // Verify cached under the raw text key.
         let key = hex::encode(sha2::Sha256::digest(b"raw prompt text"));
-        let cached = state.exact_cache.get(&key).await;
+        let cached = state.exact_cache.get(&key);
         assert!(cached.is_some());
     }
 }

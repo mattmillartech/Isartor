@@ -1,3 +1,32 @@
+# Layer 1a: Exact-match Cache (Updated)
+
+Layer 1a now uses a high-performance, concurrent, bounded LRU cache (`ExactMatchCache`) implemented with `ahash`, `lru`, and `parking_lot`. This replaces the legacy async `ExactCache` (HashMap-based).
+
+**Current Implementation:**
+```
+ExactMatchCache (sync, LRU, ahash, parking_lot)
+```
+
+All Layer 1a cache operations are synchronous and thread-safe. The cache is part of `AppState` and is accessed directly in the Layer 1a middleware. All legacy `ExactCache` code and references have been removed.
+
+#### Migration Notes
+- Removed: `ExactCache` (async, HashMap-based)
+- Added: `ExactMatchCache` (sync, LRU, ahash, parking_lot)
+- Updated: `AppState`, `middleware/cache.rs`, and all usages to use the new cache API.
+
+## Pluggable Trait Provider Pattern
+
+Isartor uses a Hexagonal Architecture (Ports & Adapters) for cache and
+router backends. Trait interfaces ("Ports") in `src/core/ports.rs` decouple
+the pipeline from any concrete implementation. A factory in `src/factory.rs`
+reads `AppConfig` and wires the correct adapter at startup.
+
+| Port | Minimalist Adapter | Enterprise Adapter |
+|------|--------------------|--------------------|
+| `ExactCache` | `InMemoryCache` (ahash + LRU) | `RedisExactCache` (Redis) |
+| `SlmRouter` | `EmbeddedCandleRouter` (Candle) | `RemoteVllmRouter` (vLLM) |
+
+Full details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 # Isartor — Intelligent AI Orchestration Gateway Architecture
 
 ## High-Level Overview
@@ -244,23 +273,29 @@ The parser falls back to keyword detection and defaults to `COMPLEX` (safest rou
 
 | Env Variable | Field | Default | Used By |
 |---|---|---|---|
-| `ISARTOR_HOST_PORT` | `host_port` | `0.0.0.0:8080` | `main.rs` |
-| `ISARTOR_GATEWAY_API_KEY` | `gateway_api_key` | `changeme` | Layer 0 |
-| `ISARTOR_LAYER2__SIDECAR_URL` | `layer2.sidecar_url` | `http://127.0.0.1:8081` | Layer 2 (sidecar mode) |
-| `ISARTOR_LAYER2__MODEL_NAME` | `layer2.model_name` | `phi-3-mini` | Layer 2 (sidecar mode) |
-| `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL` | `embedding_sidecar.sidecar_url` | `http://127.0.0.1:8082` | v2 Pipeline (legacy; v1 uses in-process fastembed) |
-| `ISARTOR_EXTERNAL_LLM_API_KEY` | `external_llm_api_key` | *(empty)* | Layer 3 |
+| `ISARTOR__HOST_PORT` | `host_port` | `0.0.0.0:8080` | `main.rs` |
+| `ISARTOR__GATEWAY_API_KEY` | `gateway_api_key` | `changeme` | Layer 0 |
+| `ISARTOR__INFERENCE_ENGINE` | `inference_engine` | `sidecar` | Layer 2 engine mode |
+| `ISARTOR__CACHE_BACKEND` | `cache_backend` | `memory` | `memory` (in-process LRU) or `redis` (distributed) |
+| `ISARTOR__REDIS_URL` | `redis_url` | `redis://127.0.0.1:6379` | Redis connection (when `cache_backend=redis`) |
+| `ISARTOR__ROUTER_BACKEND` | `router_backend` | `embedded` | `embedded` (Candle GGUF) or `vllm` (remote) |
+| `ISARTOR__VLLM_URL` | `vllm_url` | `http://127.0.0.1:8000` | vLLM server URL (when `router_backend=vllm`) |
+| `ISARTOR__VLLM_MODEL` | `vllm_model` | `gemma-2-2b-it` | vLLM model name (when `router_backend=vllm`) |
+| `ISARTOR__LAYER2__SIDECAR_URL` | `layer2.sidecar_url` | `http://127.0.0.1:8081` | Layer 2 (sidecar mode) |
+| `ISARTOR__LAYER2__MODEL_NAME` | `layer2.model_name` | `phi-3-mini` | Layer 2 (sidecar mode) |
+| `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL` | `embedding_sidecar.sidecar_url` | `http://127.0.0.1:8082` | v2 Pipeline (legacy; v1 uses in-process fastembed) |
+| `ISARTOR__EXTERNAL_LLM_API_KEY` | `external_llm_api_key` | *(empty)* | Layer 3 |
 
 ### Embedded Classifier Configuration
 
 | Env Variable | Field | Default | Description |
 |---|---|---|---|
-| `ISARTOR_EMBEDDED_CLASSIFIER__REPO_ID` | `embedded_classifier.repo_id` | `mradermacher/gemma-2-2b-it-GGUF` | HF repository hosting the GGUF model |
-| `ISARTOR_EMBEDDED_CLASSIFIER__GGUF_FILENAME` | `embedded_classifier.gguf_filename` | `gemma-2-2b-it.Q4_K_M.gguf` | GGUF model filename |
-| `ISARTOR_EMBEDDED_CLASSIFIER__MAX_CLASSIFY_TOKENS` | `embedded_classifier.max_classify_tokens` | `20` | Max tokens for classification |
-| `ISARTOR_EMBEDDED_CLASSIFIER__MAX_GENERATE_TOKENS` | `embedded_classifier.max_generate_tokens` | `256` | Max tokens for simple-task execution |
-| `ISARTOR_EMBEDDED_CLASSIFIER__TEMPERATURE` | `embedded_classifier.temperature` | `0.0` | Sampling temperature (0 = greedy) |
-| `ISARTOR_EMBEDDED_CLASSIFIER__REPETITION_PENALTY` | `embedded_classifier.repetition_penalty` | `1.1` | Repetition penalty |
+| `ISARTOR__EMBEDDED_CLASSIFIER__REPO_ID` | `embedded_classifier.repo_id` | `mradermacher/gemma-2-2b-it-GGUF` | HF repository hosting the GGUF model |
+| `ISARTOR__EMBEDDED_CLASSIFIER__GGUF_FILENAME` | `embedded_classifier.gguf_filename` | `gemma-2-2b-it.Q4_K_M.gguf` | GGUF model filename |
+| `ISARTOR__EMBEDDED_CLASSIFIER__MAX_CLASSIFY_TOKENS` | `embedded_classifier.max_classify_tokens` | `20` | Max tokens for classification |
+| `ISARTOR__EMBEDDED_CLASSIFIER__MAX_GENERATE_TOKENS` | `embedded_classifier.max_generate_tokens` | `256` | Max tokens for simple-task execution |
+| `ISARTOR__EMBEDDED_CLASSIFIER__TEMPERATURE` | `embedded_classifier.temperature` | `0.0` | Sampling temperature (0 = greedy) |
+| `ISARTOR__EMBEDDED_CLASSIFIER__REPETITION_PENALTY` | `embedded_classifier.repetition_penalty` | `1.1` | Repetition penalty |
 
 ## Deployment
 

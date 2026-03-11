@@ -134,63 +134,74 @@ spec:
             - containerPort: 8080
               name: http
           env:
-            - name: ISARTOR_HOST_PORT
+            - name: ISARTOR__HOST_PORT
               value: "0.0.0.0:8080"
-            - name: ISARTOR_GATEWAY_API_KEY
+            - name: ISARTOR__GATEWAY_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: isartor-gateway-secret
                   key: gateway-api-key
+            # Pluggable backends — scaled for multi-replica K8s
+            - name: ISARTOR__CACHE_BACKEND
+              value: "redis"          # Shared cache across all gateway pods
+            - name: ISARTOR__REDIS_URL
+              value: "redis://redis.isartor:6379"
+            - name: ISARTOR__ROUTER_BACKEND
+              value: "vllm"           # GPU-backed vLLM inference pool
+            - name: ISARTOR__VLLM_URL
+              value: "http://isartor-inference:8081"
+            - name: ISARTOR__VLLM_MODEL
+              value: "gemma-2-2b-it"
             # Cache
-            - name: ISARTOR_CACHE_MODE
+            - name: ISARTOR__CACHE_MODE
               value: "both"
-            - name: ISARTOR_SIMILARITY_THRESHOLD
+            - name: ISARTOR__SIMILARITY_THRESHOLD
               value: "0.85"
-            - name: ISARTOR_CACHE_TTL_SECS
+            - name: ISARTOR__CACHE_TTL_SECS
               value: "300"
-            - name: ISARTOR_CACHE_MAX_CAPACITY
+            - name: ISARTOR__CACHE_MAX_CAPACITY
               value: "50000"
             # Inference pool (internal service)
-            - name: ISARTOR_LAYER2__SIDECAR_URL
+            - name: ISARTOR__LAYER2__SIDECAR_URL
               value: "http://isartor-inference:8081"
-            - name: ISARTOR_LAYER2__MODEL_NAME
+            - name: ISARTOR__LAYER2__MODEL_NAME
               value: "phi-3-mini"
-            - name: ISARTOR_LAYER2__TIMEOUT_SECONDS
+            - name: ISARTOR__LAYER2__TIMEOUT_SECONDS
               value: "30"
             # Embedding pool (v2 pipeline only — v1 uses in-process fastembed)
-            - name: ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL
+            - name: ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL
               value: "http://isartor-embedding:8082"
-            - name: ISARTOR_EMBEDDING_SIDECAR__MODEL_NAME
+            - name: ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME
               value: "all-minilm"
-            - name: ISARTOR_EMBEDDING_SIDECAR__TIMEOUT_SECONDS
+            - name: ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS
               value: "10"
             # Layer 3 — Cloud LLM
-            - name: ISARTOR_LLM_PROVIDER
+            - name: ISARTOR__LLM_PROVIDER
               value: "openai"
-            - name: ISARTOR_EXTERNAL_LLM_MODEL
+            - name: ISARTOR__EXTERNAL_LLM_MODEL
               value: "gpt-4o-mini"
-            - name: ISARTOR_EXTERNAL_LLM_API_KEY
+            - name: ISARTOR__EXTERNAL_LLM_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: isartor-llm-secret
                   key: api-key
             # Observability
-            - name: ISARTOR_ENABLE_MONITORING
+            - name: ISARTOR__ENABLE_MONITORING
               value: "true"
-            - name: ISARTOR_OTEL_EXPORTER_ENDPOINT
+            - name: ISARTOR__OTEL_EXPORTER_ENDPOINT
               value: "http://otel-collector.isartor:4317"
             # Pipeline v2 tuning
-            - name: ISARTOR_PIPELINE_EMBEDDING_DIM
+            - name: ISARTOR__PIPELINE_EMBEDDING_DIM
               value: "384"
-            - name: ISARTOR_PIPELINE_SIMILARITY_THRESHOLD
+            - name: ISARTOR__PIPELINE_SIMILARITY_THRESHOLD
               value: "0.92"
-            - name: ISARTOR_PIPELINE_RERANK_TOP_K
+            - name: ISARTOR__PIPELINE_RERANK_TOP_K
               value: "5"
-            - name: ISARTOR_PIPELINE_MAX_CONCURRENCY
+            - name: ISARTOR__PIPELINE_MAX_CONCURRENCY
               value: "512"
-            - name: ISARTOR_PIPELINE_MIN_CONCURRENCY
+            - name: ISARTOR__PIPELINE_MIN_CONCURRENCY
               value: "8"
-            - name: ISARTOR_PIPELINE_TARGET_LATENCY_MS
+            - name: ISARTOR__PIPELINE_TARGET_LATENCY_MS
               value: "300"
           resources:
             requests:
@@ -582,7 +593,53 @@ For Kubernetes deployments, you have several options:
 | **Managed (Azure)** | Azure Monitor + Application Insights | Low |
 | **Third-party** | Datadog / New Relic / Grafana Cloud | Low |
 
-The gateway exports traces and metrics via OTLP gRPC to whatever `ISARTOR_OTEL_EXPORTER_ENDPOINT` points at. See [`docs/observability.md`](observability.md) for detailed setup.
+The gateway exports traces and metrics via OTLP gRPC to whatever `ISARTOR__OTEL_EXPORTER_ENDPOINT` points at. See [`docs/observability.md`](observability.md) for detailed setup.
+
+---
+
+## Scalability Deep-Dive
+
+Level 3 is designed for horizontal scaling. The Pluggable Trait Provider architecture ensures every component can scale independently:
+
+### Stateless Gateway Pods
+
+The Isartor gateway binary is **fully stateless** when configured with `cache_backend=redis` and `router_backend=vllm`. All request-scoped state (cache, inference) is offloaded to external services, meaning:
+
+- **Gateway pods scale linearly** — add replicas via HPA without coordination overhead.
+- **Zero warm-up penalty** — new pods serve requests immediately (no model loading, no cache priming).
+- **Rolling updates** — deploy new versions with zero downtime; old and new pods share the same Redis cache.
+
+### Shared Cache via Redis
+
+With `ISARTOR__CACHE_BACKEND=redis`:
+
+| Benefit | Impact |
+| --- | --- |
+| **Consistent hit rate** | All pods read/write the same cache — no per-pod cold caches |
+| **Memory efficiency** | Cache memory is centralised, not duplicated N times |
+| **Persistence** | Redis AOF/RDB survives pod restarts |
+| **Cluster mode** | Redis Cluster or ElastiCache provides sharded, HA caching |
+
+### GPU Inference Pool (vLLM)
+
+With `ISARTOR__ROUTER_BACKEND=vllm`:
+
+| Benefit | Impact |
+| --- | --- |
+| **Independent GPU scaling** | Scale inference replicas separately from gateway pods |
+| **Continuous batching** | vLLM's PagedAttention maximises GPU utilisation |
+| **Mixed hardware** | Gateway runs on cheap CPU nodes; inference on GPU nodes |
+| **Cost control** | Scale inference to zero when idle (KEDA + queue-depth trigger) |
+
+### Scaling Dimensions
+
+| Dimension | Knob | Metric |
+| --- | --- | --- |
+| Gateway replicas | HPA `minReplicas` / `maxReplicas` | CPU utilisation, request rate |
+| Inference replicas | HPA on custom GPU metrics | GPU utilisation, queue depth |
+| Cache capacity | `ISARTOR__CACHE_MAX_CAPACITY` | Cache hit rate, memory usage |
+| Concurrency | `ISARTOR__PIPELINE_MAX_CONCURRENCY` | P95 latency, AIMD backoff |
+| Redis | Redis Cluster nodes | Key count, memory, eviction rate |
 
 ---
 
@@ -594,7 +651,7 @@ The gateway exports traces and metrics via OTLP gRPC to whatever `ISARTOR_OTEL_E
 | **Scale-to-zero** | Use KEDA with queue-depth trigger to scale inference to 0 when idle |
 | **Right-size GPU** | A100 80 GB for large models, T4/L4 for Phi-3-mini (4 GB VRAM is sufficient) |
 | **Shared GPU** | NVIDIA MPS or MIG to run multiple inference pods per GPU |
-| **Semantic cache** | Higher `ISARTOR_CACHE_MAX_CAPACITY` = fewer inference calls |
+| **Semantic cache** | Higher `ISARTOR__CACHE_MAX_CAPACITY` = fewer inference calls |
 | **Smaller quantisation** | Q4_K_M uses less VRAM at marginal quality cost |
 
 ---
@@ -603,8 +660,8 @@ The gateway exports traces and metrics via OTLP gRPC to whatever `ISARTOR_OTEL_E
 
 - [ ] TLS termination at ingress (cert-manager + Let's Encrypt or cloud certs)
 - [ ] mTLS between services (Istio / Linkerd / Cilium)
-- [ ] `ISARTOR_GATEWAY_API_KEY` from Kubernetes Secret, not plaintext
-- [ ] `ISARTOR_EXTERNAL_LLM_API_KEY` from Kubernetes Secret
+- [ ] `ISARTOR__GATEWAY_API_KEY` from Kubernetes Secret, not plaintext
+- [ ] `ISARTOR__EXTERNAL_LLM_API_KEY` from Kubernetes Secret
 - [ ] Network policies restricting pod-to-pod communication
 - [ ] RBAC: least-privilege ServiceAccounts for each workload
 - [ ] Pod security standards: `restricted` or `baseline`

@@ -68,17 +68,22 @@ Create a minimal `.env` file or export variables directly:
 
 ```bash
 # Required — your cloud LLM key for Layer 3 fallback
-export ISARTOR_EXTERNAL_LLM_API_KEY="sk-..."
+export ISARTOR__EXTERNAL_LLM_API_KEY="sk-..."
 
 # Optional — override defaults
-export ISARTOR_GATEWAY_API_KEY="my-secret-key"
-export ISARTOR_HOST_PORT="0.0.0.0:8080"
-export ISARTOR_LLM_PROVIDER="openai"          # openai | azure | anthropic | xai
-export ISARTOR_EXTERNAL_LLM_MODEL="gpt-4o-mini"
+export ISARTOR__GATEWAY_API_KEY="my-secret-key"
+export ISARTOR__HOST_PORT="0.0.0.0:8080"
+export ISARTOR__LLM_PROVIDER="openai"          # openai | azure | anthropic | xai
+export ISARTOR__EXTERNAL_LLM_MODEL="gpt-4o-mini"
 
 # Cache mode — "both" enables exact + semantic cache. Semantic embeddings
 # are generated in-process via fastembed (ONNX) — no sidecar needed.
-export ISARTOR_CACHE_MODE="both"
+export ISARTOR__CACHE_MODE="both"
+
+# Pluggable backends — Level 1 uses the defaults (no change needed):
+#   ISARTOR__CACHE_BACKEND=memory     — in-process LRU (ahash + parking_lot)
+#   ISARTOR__ROUTER_BACKEND=embedded  — in-process Candle GGUF SLM
+# These are ideal for a single-process deployment with zero dependencies.
 ```
 
 ### 3. Start the Gateway
@@ -130,9 +135,9 @@ docker build -t isartor:latest -f docker/Dockerfile .
 docker run -d \
   --name isartor \
   -p 8080:8080 \
-  -e ISARTOR_GATEWAY_API_KEY="my-secret-key" \
-  -e ISARTOR_EXTERNAL_LLM_API_KEY="sk-..." \
-  -e ISARTOR_CACHE_MODE="both" \
+  -e ISARTOR__GATEWAY_API_KEY="my-secret-key" \
+  -e ISARTOR__EXTERNAL_LLM_API_KEY="sk-..." \
+  -e ISARTOR__CACHE_MODE="both" \
   -v isartor-models:/root/.cache/huggingface \
   isartor:latest
 ```
@@ -169,12 +174,14 @@ sudo useradd --system --no-create-home --shell /usr/sbin/nologin isartor
 ```bash
 sudo mkdir -p /etc/isartor
 sudo tee /etc/isartor/env <<'EOF'
-ISARTOR_HOST_PORT=0.0.0.0:8080
-ISARTOR_GATEWAY_API_KEY=your-production-key
-ISARTOR_EXTERNAL_LLM_API_KEY=sk-...
-ISARTOR_LLM_PROVIDER=openai
-ISARTOR_EXTERNAL_LLM_MODEL=gpt-4o-mini
-ISARTOR_CACHE_MODE=both
+ISARTOR__HOST_PORT=0.0.0.0:8080
+ISARTOR__GATEWAY_API_KEY=your-production-key
+ISARTOR__EXTERNAL_LLM_API_KEY=sk-...
+ISARTOR__LLM_PROVIDER=openai
+ISARTOR__EXTERNAL_LLM_MODEL=gpt-4o-mini
+ISARTOR__CACHE_MODE=both
+ISARTOR__CACHE_BACKEND=memory
+ISARTOR__ROUTER_BACKEND=embedded
 RUST_LOG=isartor=info
 EOF
 sudo chmod 600 /etc/isartor/env
@@ -265,19 +272,21 @@ The embedded classifier checks `~/.cache/huggingface/` by default. Set `HF_HOME`
 
 ## Level 1 Configuration Reference
 
-These are the most relevant `ISARTOR_*` variables for Level 1 deployments. For the full reference, see [`docs/configuration.md`](configuration.md).
+These are the most relevant `ISARTOR__*` variables for Level 1 deployments. For the full reference, see [`docs/configuration.md`](configuration.md).
 
 | Variable | Default | Level 1 Notes |
 | --- | --- | --- |
-| `ISARTOR_HOST_PORT` | `0.0.0.0:8080` | Bind address |
-| `ISARTOR_GATEWAY_API_KEY` | `changeme` | **Change in production** |
-| `ISARTOR_CACHE_MODE` | `both` | `both` recommended — fastembed provides in-process semantic embeddings |
-| `ISARTOR_CACHE_TTL_SECS` | `300` | Cache TTL in seconds |
-| `ISARTOR_CACHE_MAX_CAPACITY` | `10000` | Max entries per cache |
-| `ISARTOR_LLM_PROVIDER` | `openai` | `openai` · `azure` · `anthropic` · `xai` |
-| `ISARTOR_EXTERNAL_LLM_API_KEY` | *(empty)* | **Required** for Layer 3 fallback |
-| `ISARTOR_EXTERNAL_LLM_MODEL` | `gpt-4o-mini` | Cloud LLM model name |
-| `ISARTOR_ENABLE_MONITORING` | `false` | Enable for stdout OTel (no collector needed) |
+| `ISARTOR__HOST_PORT` | `0.0.0.0:8080` | Bind address |
+| `ISARTOR__GATEWAY_API_KEY` | `changeme` | **Change in production** |
+| `ISARTOR__CACHE_MODE` | `both` | `both` recommended — fastembed provides in-process semantic embeddings |
+| `ISARTOR__CACHE_BACKEND` | `memory` | In-process LRU — ideal for single-process Level 1 |
+| `ISARTOR__ROUTER_BACKEND` | `embedded` | In-process Candle GGUF SLM — zero external dependencies |
+| `ISARTOR__CACHE_TTL_SECS` | `300` | Cache TTL in seconds |
+| `ISARTOR__CACHE_MAX_CAPACITY` | `10000` | Max entries per cache |
+| `ISARTOR__LLM_PROVIDER` | `openai` | `openai` · `azure` · `anthropic` · `xai` |
+| `ISARTOR__EXTERNAL_LLM_API_KEY` | *(empty)* | **Required** for Layer 3 fallback |
+| `ISARTOR__EXTERNAL_LLM_MODEL` | `gpt-4o-mini` | Cloud LLM model name |
+| `ISARTOR__ENABLE_MONITORING` | `false` | Enable for stdout OTel (no collector needed) |
 
 ### Embedded Classifier Defaults (Compiled)
 
@@ -310,9 +319,11 @@ These are the most relevant `ISARTOR_*` variables for Level 1 deployments. For t
 
 When your traffic outgrows Level 1, the migration path is straightforward:
 
-1. **Add the generation sidecar** — `ISARTOR_LAYER2__SIDECAR_URL=http://127.0.0.1:8081` (replaces embedded candle with the more powerful Phi-3-mini on GPU).
-2. **Optionally add an embedding sidecar for v2 pipeline** — `ISARTOR_EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082` (only needed if using the v2 algorithmic pipeline; v1 semantic cache already uses in-process fastembed).
+1. **Add the generation sidecar** — `ISARTOR__LAYER2__SIDECAR_URL=http://127.0.0.1:8081` (replaces embedded candle with the more powerful Phi-3-mini on GPU).
+2. **Optionally add an embedding sidecar for v2 pipeline** — `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL=http://127.0.0.1:8082` (only needed if using the v2 algorithmic pipeline; v1 semantic cache already uses in-process fastembed).
 3. **Deploy via Docker Compose** — See [📄 `docs/deploy-level2-sidecar.md`](deploy-level2-sidecar.md).
+
+> **Note:** The pluggable backend defaults (`cache_backend=memory`, `router_backend=embedded`) remain appropriate for Level 2 single-host deployments. You only need to switch to `cache_backend=redis` and `router_backend=vllm` at Level 3 when scaling horizontally.
 
 No code changes required — only environment variables and infrastructure.
 

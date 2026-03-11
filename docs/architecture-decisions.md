@@ -105,7 +105,7 @@ The tier is selected purely by environment variables and infrastructure, not by 
 - **Positive:** A single codebase and binary serves all deployment scenarios.
 - **Positive:** Users start at Level 1 and upgrade incrementally — no migrations.
 - **Positive:** Clear documentation entry points for each tier.
-- **Negative:** Some config variables are irrelevant at certain tiers (e.g., `ISARTOR_LAYER2__SIDECAR_URL` is unused at Level 1 with embedded candle).
+- **Negative:** Some config variables are irrelevant at certain tiers (e.g., `ISARTOR__LAYER2__SIDECAR_URL` is unused at Level 1 with embedded candle).
 - **Negative:** Testing all three tiers requires different infrastructure setups.
 
 ---
@@ -151,7 +151,7 @@ Use [rig-core](https://crates.io/crates/rig-core) (v0.32.0) as the unified LLM c
 
 ### Consequences
 
-- **Positive:** Single configuration surface (`ISARTOR_LLM_PROVIDER` + `ISARTOR_EXTERNAL_LLM_API_KEY`) switches providers.
+- **Positive:** Single configuration surface (`ISARTOR__LLM_PROVIDER` + `ISARTOR__EXTERNAL_LLM_API_KEY`) switches providers.
 - **Positive:** Provider-specific quirks (Azure deployment IDs, Anthropic versioning) handled by rig.
 - **Negative:** Adds a dependency; rig's release cadence may not match our needs.
 - **Negative:** Limited to providers rig supports (but covers all major ones).
@@ -172,14 +172,14 @@ Implement an **Additive Increase / Multiplicative Decrease (AIMD)** concurrency 
 
 - If P95 latency < target → `limit += 1` (additive increase).
 - If P95 latency > target → `limit *= 0.5` (multiplicative decrease).
-- Bounded by `ISARTOR_PIPELINE_MIN_CONCURRENCY` and `ISARTOR_PIPELINE_MAX_CONCURRENCY`.
+- Bounded by `ISARTOR__PIPELINE_MIN_CONCURRENCY` and `ISARTOR__PIPELINE_MAX_CONCURRENCY`.
 
 ### Consequences
 
 - **Positive:** Self-tuning: the limit converges to the optimal value for the current load.
 - **Positive:** Protects downstream services (sidecars, cloud LLMs) from overload.
 - **Negative:** During cold start, the limit starts low and ramps up — initial requests may see 503s.
-- **Tuning:** `ISARTOR_PIPELINE_TARGET_LATENCY_MS` must be calibrated per deployment tier.
+- **Tuning:** `ISARTOR__PIPELINE_TARGET_LATENCY_MS` must be calibrated per deployment tier.
 
 ---
 
@@ -246,7 +246,7 @@ Use **OpenTelemetry** (OTLP gRPC) as the sole telemetry interface. Traces and me
 
 - **Positive:** Vendor-neutral — switch backends by reconfiguring the collector, not the app.
 - **Positive:** OTLP is a CNCF standard with wide ecosystem support.
-- **Positive:** When `ISARTOR_ENABLE_MONITORING=false`, no OTel SDK is initialised — zero overhead.
+- **Positive:** When `ISARTOR__ENABLE_MONITORING=false`, no OTel SDK is initialised — zero overhead.
 - **Negative:** Requires an OTel Collector as middleware (adds one more service in Level 2/3).
 - **Negative:** Auto-instrumentation is less mature in Rust than in Java/Python.
 
@@ -291,6 +291,57 @@ Use **fastembed** (`fastembed = "5.12.0"`) to run **BAAI/bge-small-en-v1.5** in-
 - **Negative:** Binary size increases by ~5 MB (ONNX Runtime shared library).
 - **Negative:** First startup downloads the model (~33 MB) if not pre-cached.
 - **Negative:** `Mutex` serialises concurrent embedding calls within a single process (acceptable at current scale; can be replaced with a pool of models if needed).
+
+---
+
+## ADR-012: Pluggable Trait Provider (Hexagonal Architecture)
+
+| | |
+| --- | --- |
+| **Status** | Accepted |
+| **Date** | 2025-06 |
+| **Deciders** | Core team |
+| **Relates to** | ADR-003 (Embedded Candle), ADR-004 (Three Deployment Tiers) |
+
+### Context
+
+As Isartor grew from a single-process binary (Level 1) to a multi-tier deployment (Level 1 → 2 → 3), the cache and SLM router components became tightly coupled to their in-process implementations. Scaling to Level 3 (Kubernetes, multiple replicas) requires:
+
+1. **Shared cache** — in-process LRU caches are isolated per pod; cache hits are inconsistent, duplicating work.
+2. **GPU-backed inference** — in-process Candle inference is CPU-bound; Level 3 needs a dedicated GPU inference pool (vLLM / TGI) that can scale independently.
+
+Hard-coding these choices into the gateway binary would require compile-time feature flags or code branching, making the binary non-portable across tiers.
+
+### Decision
+
+Adopt the **Ports & Adapters (Hexagonal Architecture)** pattern:
+
+- **Ports** (`src/core/ports.rs`) — Define `ExactCache` and `SlmRouter` as `async_trait` traits (`Send + Sync`), representing the interfaces the gateway depends on.
+- **Adapters** (`src/adapters/`) — Provide concrete implementations:
+  - `InMemoryCache` (ahash + LRU + parking_lot) and `RedisExactCache` for `ExactCache`
+  - `EmbeddedCandleRouter` and `RemoteVllmRouter` for `SlmRouter`
+- **Factory** (`src/factory.rs`) — `build_exact_cache(&config)` and `build_slm_router(&config, &http_client)` read `AppConfig.cache_backend` and `AppConfig.router_backend` at startup and return the appropriate `Box<dyn Trait>`.
+- **Configuration** (`src/config.rs`) — `CacheBackend` enum (`Memory | Redis`) and `RouterBackend` enum (`Embedded | Vllm`) with associated connection URLs, selectable via `ISARTOR__CACHE_BACKEND` and `ISARTOR__ROUTER_BACKEND` env vars.
+
+The **same binary** serves all three deployment tiers; the runtime behaviour is entirely configuration-driven.
+
+### Alternatives Considered
+
+| Alternative | Why rejected |
+| --- | --- |
+| Compile-time feature flags (`#[cfg(feature = "redis")]`) | Produces different binaries per tier; complicates CI and container builds |
+| Service mesh sidecar (Envoy filter for caching) | Adds infrastructure complexity; cache logic is domain-specific |
+| Plugin system (dynamic `.so` loading) | Over-engineered; `dyn Trait` with compile-time-known variants is simpler |
+| Runtime scripting (Lua / Wasm policy) | Unnecessary indirection; Rust trait dispatch is zero-cost |
+
+### Consequences
+
+- **Positive:** One binary, all tiers — only env vars change between Level 1 (embedded everything) and Level 3 (Redis + vLLM).
+- **Positive:** Horizontal scalability — with `cache_backend=redis`, all pods share the same cache; with `router_backend=vllm`, GPU inference scales independently.
+- **Positive:** Testability — unit tests inject mock adapters via the trait interface.
+- **Positive:** Extensibility — adding a new backend (e.g., Memcached, Triton) requires only a new adapter implementing the trait.
+- **Negative:** Minor runtime overhead from `dyn Trait` dynamic dispatch (single vtable lookup per call — negligible vs. network I/O).
+- **Negative:** Adapter skeletons (`RedisExactCache`, `RemoteVllmRouter`) are currently stubs returning `todo!()`; must be implemented before Level 3 production use.
 
 ---
 

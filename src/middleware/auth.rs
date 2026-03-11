@@ -59,8 +59,10 @@ mod tests {
 
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
-    use crate::state::{AppLlmAgent, ExactCache};
+    use crate::layer1::layer1a_cache::ExactMatchCache;
+    use crate::state::AppLlmAgent;
     use crate::vector_cache::VectorCache;
+    use std::num::NonZeroUsize;
 
     use crate::layer1::embeddings::shared_test_embedder;
 
@@ -84,6 +86,11 @@ mod tests {
             inference_engine: crate::config::InferenceEngineMode::Sidecar,
             gateway_api_key: api_key.into(),
             cache_mode: CacheMode::Exact,
+            cache_backend: crate::config::CacheBackend::Memory,
+            redis_url: "redis://127.0.0.1:6379".into(),
+            router_backend: crate::config::RouterBackend::Embedded,
+            vllm_url: "http://127.0.0.1:8000".into(),
+            vllm_model: "gemma-2-2b-it".into(),
             embedding_model: "test".into(),
             similarity_threshold: 0.85,
             cache_ttl_secs: 300,
@@ -118,7 +125,7 @@ mod tests {
 
         Arc::new(AppState {
             http_client: reqwest::Client::new(),
-            exact_cache: Arc::new(ExactCache::new(300, 100)),
+            exact_cache: Arc::new(ExactMatchCache::new(NonZeroUsize::new(100).unwrap())),
             vector_cache: Arc::new(VectorCache::new(0.85, 300, 100)),
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
