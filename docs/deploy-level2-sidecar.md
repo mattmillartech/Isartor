@@ -34,7 +34,7 @@ This guide covers deploying Isartor with a dedicated AI sidecar for generation. 
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Single Host                              │
 │                                                                 │

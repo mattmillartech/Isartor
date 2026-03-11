@@ -8,7 +8,7 @@ Isartor ships with first-class [OpenTelemetry](https://opentelemetry.io/) suppor
 
 ## Architecture
 
-```
+```text
 ┌─────────────┐                  ┌──────────────────┐
 │  Isartor    │  OTLP gRPC      │  OTel Collector   │
 │  Gateway    │─────────────────▶│  :4317            │
@@ -235,7 +235,7 @@ Access Jaeger at [`http://localhost:16686`](http://localhost:16686).
 
 A typical trace for a cache-miss, locally-resolved request:
 
-```
+```text
 isartor-gateway
   └─ HTTP POST /api/v2/chat                    [250ms]
        ├─ Layer0_AuthCheck                       [0.1ms]

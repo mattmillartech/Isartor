@@ -3,13 +3,15 @@
 Layer 1a now uses a high-performance, concurrent, bounded LRU cache (`ExactMatchCache`) implemented with `ahash`, `lru`, and `parking_lot`. This replaces the legacy async `ExactCache` (HashMap-based).
 
 **Current Implementation:**
-```
+
+```text
 ExactMatchCache (sync, LRU, ahash, parking_lot)
 ```
 
 All Layer 1a cache operations are synchronous and thread-safe. The cache is part of `AppState` and is accessed directly in the Layer 1a middleware. All legacy `ExactCache` code and references have been removed.
 
-#### Migration Notes
+## Migration Notes
+
 - Removed: `ExactCache` (async, HashMap-based)
 - Added: `ExactMatchCache` (sync, LRU, ahash, parking_lot)
 - Updated: `AppState`, `middleware/cache.rs`, and all usages to use the new cache API.

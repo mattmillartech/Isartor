@@ -20,7 +20,7 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
 
 ## Architecture
 
-```
+```text
                         ┌────────────────────┐
                         │    Ingress / ALB    │
                         │  (TLS termination)  │
