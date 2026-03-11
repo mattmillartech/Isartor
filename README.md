@@ -60,6 +60,46 @@ curl -X POST http://localhost:8080/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Calculate 2+2"}'
 ```
+## Quick Start
+
+Isartor can be installed and run in seconds using one of the following methods:
+
+### Path A: Docker (Easiest – Batteries Included)
+
+The fastest way to get started. All required ML models are baked into the image.
+
+```bash
+docker run -p 3000:3000 ghcr.io/isartor-ai/isartor:latest
+```
+
+### Path B: macOS & Linux (Binary)
+
+Install the latest release with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.sh | bash
+```
+
+### Path C: Windows (Binary)
+
+Install via PowerShell one-liner:
+
+```powershell
+irm https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.ps1 | iex
+```
+
+> **Note for Binary Installs:**
+> Unlike Docker, the raw binary requires a `config.yaml` to locate GGUF model files on your disk. See the [Configuration Guide](docs/2-ARCHITECTURE.md#configuration) for details.
+
+---
+
+Test the API with `curl`:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Calculate 2+2"}'
+```
 
 ## Local Development
 

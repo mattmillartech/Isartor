@@ -1,20 +1,48 @@
-# Isartor Quickstart: Minimalist Mode
 
-## Prerequisites
+# Isartor Quickstart
 
-- **Docker** (only requirement)
+Get started with Isartor in seconds using one of the following methods:
 
-## 1. Run Isartor in Minimalist Mode
+## Path A: Docker (Easiest – Batteries Included)
 
-This mode uses embedded SLMs and a local RAM cache. No Redis, no external GPU, no sidecars.
+The fastest way to get started. All required ML models are baked into the image.
 
 ```bash
-docker run --rm -p 8080:8080 isartor-ai/isartor:latest
+docker run -p 3000:3000 ghcr.io/isartor-ai/isartor:latest
 ```
-- The image includes Gemma-2-2b-it.gguf and Qwen2-1.5b.gguf baked in.
-- No environment variables needed for Minimalist Mode.
 
-## 2. Test the Gateway
+## Path B: macOS & Linux (Binary)
+
+Install the latest release with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.sh | bash
+```
+
+## Path C: Windows (Binary)
+
+Install via PowerShell one-liner:
+
+```powershell
+irm https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.ps1 | iex
+```
+
+> **Note for Binary Installs:**
+> Unlike Docker, the raw binary requires a `config.yaml` to locate GGUF model files on your disk. See the [Configuration Guide](2-ARCHITECTURE.md#configuration) for details.
+
+---
+
+## Test the Gateway
+
+You can test your Isartor instance with:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Calculate 2+2"}'
+```
+
+---
 
 ### Request 1: Complex Prompt (routes to OpenAI)
 
