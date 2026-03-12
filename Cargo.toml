@@ -67,6 +67,11 @@ wiremock = "0.6"
 temp-env = "0.3"
 tower = { version = "0.5", features = ["util"] }
 hyper = "1"
+criterion = { version = "0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "cache_latency"
+harness = false
 
 [profile.release]
 opt-level = "z"   # optimize for size
