@@ -1,6 +1,6 @@
 # Isartor
 
-**An ultra-lightweight, pure-Rust AI Gateway designed to slash LLM costs and latency for enterprise and agentic workloads.**
+**An ultra-lightweight, pure-Rust Smart Algorithm Gateway designed to execute local intelligence, slash LLM costs, and accelerate agentic workloads.**
 
 <p align="center">
   <img src="docs/logo.png" alt="Isartor" width="400">
@@ -12,37 +12,43 @@
 
 ---
 
-## The Problem
+## The Problem: "Dumb Pipes" for Smart Workloads
 
-Autonomous agents and enterprise AI applications haemorrhage money on cloud LLM calls. Standard API gateways are dumb pipes — they forward every request to GPT-4 or Claude regardless of complexity. Agent loops repeat identical prompts. Trivial tasks consume the same tokens as hard reasoning problems. The result: runaway costs, unnecessary latency, and data leaving your perimeter when it doesn't need to.
+Standard API gateways are "dumb pipes" — they treat AI prompts like standard HTTP traffic, blindly forwarding every request to cloud LLMs (GPT-4, Claude) regardless of complexity.
 
-## The Solution
+For autonomous agents and enterprise applications, this is a fatal flaw. Agent loops repeat identical prompts. Simple data extraction tasks consume the same expensive tokens as complex reasoning problems. The result is runaway costs, high latency, and sensitive data leaving your perimeter unnecessarily.
 
-Isartor is a **financial shield** for your LLM spend. It sits between your application and the cloud, exposes an OpenAI-compatible API, and filters every request through a local 3-layer intelligence funnel. Simple and duplicate requests are resolved in-process — only genuinely complex reasoning reaches the cloud.
+## The Solution: A Smart Algorithm Gateway
 
-It is a **100% pure-Rust**, statically compiled binary. No ONNX Runtime, no C++ toolchain, no `cmake`. One `cargo build` or `docker run` and you're live.
+Isartor replaces the dumb pipe with algorithmic intelligence at the edge. Acting as a drop-in OpenAI replacement, it intercepts incoming prompts and applies a cascade of local algorithms — from deterministic hashing to pure-Rust neural networks — to resolve requests locally.
+
+By computing intent *before* routing, Isartor acts as an impenetrable financial shield for your LLM spend.
+
+- **100% Pure-Rust Edge AI:** Statically compiled. No Python, no C++ ONNX toolchains, no dependency hell. Native tensor execution via Hugging Face `candle`.
+- **Algorithmic Deflection:** Layers 1 & 2 can resolve 60–80% of repetitive agentic traffic locally for $0.
+- **Frictionless:** One `cargo build` or `docker run` and you're live.
 
 ---
 
-## Architecture — The 3-Layer Funnel
+## The Algorithmic Funnel (Architecture)
 
-Every incoming request passes through a series of short-circuit layers. The earlier a request resolves, the less it costs.
+Every incoming request passes through a sequence of smart computing layers. Only prompts requiring genuine, complex reasoning survive the funnel to reach the cloud.
 
 ```text
-Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM Router ──► L3 Cloud LLM
-               │ hit                │ hit                  │ simple          │
-               ▼                    ▼                      ▼                 ▼
-            Response             Response              Local Response    Cloud Response
+Request ──► L1a Deterministic Hash ──► L1b Vector Search ──► L2 Neural Router ──► L3 Cloud Fallback
+                   │ hit                    │ hit                 │ simple               │
+                   ▼                        ▼                     ▼                      ▼
+                Response                 Response             Local Response         Cloud Response
 ```
 
-| Layer | What It Does | How It Works | Typical Latency |
-|:------|:-------------|:-------------|:----------------|
-| **L1a — Exact Match** | Catches duplicate requests (e.g. agent loops) | `ahash` + LRU cache with sub-millisecond lookup | < 1 ms |
-| **L1b — Semantic Cache** | Catches meaning-based duplicates ("What's the price?" ≈ "How much?") | Pure-Rust local embeddings via `candle` + `all-MiniLM-L6-v2`, brute-force cosine similarity | 1–5 ms |
-| **L2 — SLM Router** | Triages simple tasks locally without touching the cloud | Embedded Small Language Model (Qwen-1.5B via `candle` GGUF) classifies intent and resolves trivial prompts in-process | 50–200 ms |
-| **L3 — Cloud Fallback** | Forwards genuinely complex reasoning to a cloud provider | OpenAI, Anthropic, Azure OpenAI, xAI — configurable via environment variables | Network-bound |
+| Layer | Algorithm | What It Does | Typical Latency |
+|:------|:----------|:-------------|:----------------|
+| **L1a — Deterministic Hash** | `ahash` + LRU cache | Catches exact-duplicate requests (e.g. agent loops) with sub-millisecond lookup | < 1 ms |
+| **L1b — Vector Search** | `candle` BertModel (`all-MiniLM-L6-v2`) + brute-force cosine similarity | Catches meaning-based duplicates ("What's the price?" ≈ "How much?") via pure-Rust local embeddings | 1–5 ms |
+| **L2 — Neural Router** | Embedded SLM (Qwen-1.5B via `candle` GGUF) | Classifies intent and resolves trivial prompts in-process — no cloud round-trip | 50–200 ms |
+| **L3 — Cloud Fallback** | OpenAI, Anthropic, Azure OpenAI, xAI | Forwards genuinely complex reasoning to the configured cloud provider | Network-bound |
 
-Layers 1a and 1b alone can deflect **60–80% of agentic traffic** before any inference runs.
+Layers 1a and 1b alone can deflect **60–80% of agentic traffic** before any neural inference runs.
 
 ---
 
@@ -52,9 +58,9 @@ Isartor uses a **Pluggable Trait Provider** pattern (Hexagonal Architecture). Th
 
 | Component | Minimalist (Single Binary) | Enterprise (K8s) |
 |:----------|:---------------------------|:------------------|
-| **L1a Cache** | In-memory LRU (`ahash` + `parking_lot`) | Redis cluster (shared across replicas) |
-| **L1b Embeddings** | In-process `candle` BertModel | External TEI sidecar (optional) |
-| **L2 SLM Router** | Embedded `candle` GGUF inference | Remote vLLM / TGI server (GPU pool) |
+| **L1a Hash Cache** | In-memory LRU (`ahash` + `parking_lot`) | Redis cluster (shared across replicas) |
+| **L1b Vector Search** | In-process `candle` BertModel | External TEI sidecar (optional) |
+| **L2 Neural Router** | Embedded `candle` GGUF inference | Remote vLLM / TGI server (GPU pool) |
 | **L3 Cloud** | Direct to OpenAI / Anthropic | Direct to OpenAI / Anthropic |
 
 **Minimalist Mode** — zero external dependencies. Download the binary and run it.
