@@ -181,12 +181,6 @@ mod tests {
             azure_api_version: "".into(),
             enable_monitoring,
             otel_exporter_endpoint: "http://localhost:4317".into(),
-            pipeline_embedding_dim: 384,
-            pipeline_similarity_threshold: 0.92,
-            pipeline_rerank_top_k: 5,
-            pipeline_max_concurrency: 256,
-            pipeline_min_concurrency: 4,
-            pipeline_target_latency_ms: 500,
         });
 
         Arc::new(AppState {

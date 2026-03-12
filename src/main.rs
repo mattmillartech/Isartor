@@ -1,22 +1,10 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::Request, http::StatusCode, middleware as axum_mw, response::IntoResponse,
-    routing::post, Json, Router,
-};
-use bytes::Bytes;
-use http_body_util::BodyExt;
+use axum::{middleware as axum_mw, response::IntoResponse, routing::post, Json, Router};
 
 use isartor::config::AppConfig;
 use isartor::handler;
 use isartor::middleware;
-use isartor::pipeline;
-use isartor::pipeline::implementations::{
-    embedder::LlamaCppEmbedder, external_llm::RigExternalLlm,
-    intent_classifier::LlamaCppIntentClassifier, local_executor::LlamaCppLocalExecutor,
-    reranker::LlamaCppReranker, vector_store::InMemoryVectorStore,
-};
-use isartor::pipeline::{AdaptiveConcurrencyLimiter, AlgorithmSuite, ConcurrencyConfig};
 use isartor::state::AppState;
 
 #[tokio::main]
@@ -54,56 +42,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = Arc::new(AppState::new(config.clone(), text_embedder));
 
     // ------------------------------------------------------------------
-    // 3a. Build the Algorithmic Pipeline (v2) components.
-    //
-    //     The pipeline is an independent processing engine that runs
-    //     alongside the existing middleware-based funnel. It can be
-    //     accessed via /api/v2/chat.
-    // ------------------------------------------------------------------
-    let concurrency_limiter = Arc::new(AdaptiveConcurrencyLimiter::new(ConcurrencyConfig {
-        min_concurrency: config.pipeline_min_concurrency,
-        max_concurrency: config.pipeline_max_concurrency,
-        target_latency: std::time::Duration::from_millis(config.pipeline_target_latency_ms),
-        window_size: 100,
-    }));
-    let algorithm_suite = Arc::new(AlgorithmSuite {
-        embedder: Box::new(LlamaCppEmbedder::new(
-            app_state.http_client.clone(),
-            &config.embedding_sidecar.sidecar_url,
-            config.embedding_sidecar.model_name.clone(),
-            config.pipeline_embedding_dim as usize,
-        )),
-        vector_store: Box::new(InMemoryVectorStore::new(
-            config.cache_ttl_secs,
-            config.cache_max_capacity,
-        )),
-        intent_classifier: Box::new(LlamaCppIntentClassifier::new(
-            app_state.http_client.clone(),
-            &config.layer2.sidecar_url,
-            config.layer2.model_name.clone(),
-        )),
-        local_executor: Box::new(LlamaCppLocalExecutor::new(
-            app_state.http_client.clone(),
-            &config.layer2.sidecar_url,
-            config.layer2.model_name.clone(),
-        )),
-        reranker: Box::new(LlamaCppReranker::new(
-            app_state.http_client.clone(),
-            &config.layer2.sidecar_url,
-            config.layer2.model_name.clone(),
-        )),
-        external_llm: Box::new(RigExternalLlm::new(
-            app_state.llm_agent.clone(),
-            config.external_llm_model.clone(),
-        )),
-    });
-    let pipeline_cfg = Arc::new(pipeline::PipelineConfig {
-        similarity_threshold: config.pipeline_similarity_threshold,
-        rerank_top_k: config.pipeline_rerank_top_k as usize,
-    });
-
-    // ------------------------------------------------------------------
-    // 3b. Build the Axum router with the middleware "funnel".
+    // 3. Build the Axum router with the middleware "funnel".
     //
     //    Middleware layers execute in the order they are added via
     //    `.layer()`, but they wrap the inner handler, so the *last*
@@ -118,63 +57,10 @@ async fn main() -> anyhow::Result<()> {
     //      .layer(Layer 2)   ← innermost, added first
     // ------------------------------------------------------------------
     let state_for_ext = app_state.clone();
-    let limiter_for_route = concurrency_limiter.clone();
-    let suite_for_route = algorithm_suite.clone();
-    let pcfg_for_route = pipeline_cfg.clone();
-    // ------------------------------------------------------------------
-    // 3b. Build the Axum router with the middleware "funnel".
 
     // Authenticated routes — go through the full middleware pipeline.
     let authenticated = Router::new()
-        // Routes
         .route("/api/chat", post(handler::chat_handler))
-        // v2 pipeline route — the Algorithmic AI Gateway endpoint.
-        .route(
-            "/api/v2/chat",
-            post({
-                move |request: Request| {
-                    let limiter = limiter_for_route.clone();
-                    let suite = suite_for_route.clone();
-                    let pcfg = pcfg_for_route.clone();
-                    async move {
-                        // Extract the prompt from the JSON body.
-                        let body_bytes: Bytes = match request.into_body().collect().await {
-                            Ok(collected) => collected.to_bytes(),
-                            Err(_) => {
-                                return (
-                                    StatusCode::BAD_REQUEST,
-                                    Json(serde_json::json!({
-                                        "error": "Failed to read request body"
-                                    })),
-                                )
-                                    .into_response();
-                            }
-                        };
-
-                        let prompt: String =
-                            serde_json::from_slice::<serde_json::Value>(&body_bytes[..])
-                                .ok()
-                                .and_then(|v| {
-                                    v.get("prompt").and_then(|p| p.as_str()).map(String::from)
-                                })
-                                .unwrap_or_else(|| {
-                                    String::from_utf8_lossy(&body_bytes[..]).to_string()
-                                });
-
-                        let response =
-                            pipeline::execute_pipeline(prompt, &limiter, &suite, &pcfg).await;
-
-                        let status = if response.resolved_by_layer == 0 {
-                            StatusCode::SERVICE_UNAVAILABLE
-                        } else {
-                            StatusCode::OK
-                        };
-
-                        (status, Json(response)).into_response()
-                    }
-                }
-            }),
-        )
         // Layer 2 – SLM triage (innermost middleware).
         .layer(axum_mw::from_fn(
             middleware::slm_triage::slm_triage_middleware,

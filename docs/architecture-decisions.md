@@ -26,7 +26,7 @@ Implement a **sequential pipeline** with 4+ layers, each capable of short-circui
 - **Layer 3** — Cloud LLM fallback (only the hardest prompts)
 
 **Layer 2.5 (Context Optimiser):**
-Retrieves and reranks candidate documents or responses to minimize downstream token usage. Typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. Configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and instrumented as the `context_optimise` span in observability.
+Retrieves and reranks candidate documents or responses to minimize downstream token usage. Typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. Instrumented as the `context_optimise` span in observability.
 
 ### Consequences
 
@@ -137,7 +137,7 @@ Replace Ollama with **llama.cpp server** (`ghcr.io/ggml-org/llama.cpp:server`, ~
 - **Negative:** Ollama's model management UX (pull, list, delete) is lost.
 - **Negative:** Each model needs its own llama.cpp instance (no multi-model serving).
 - **Migration:** Ollama-based Compose files (`docker-compose.yml`, `docker-compose.azure.yml`) are retained for backward compatibility.
-- **Update (ADR-011):** The **slm-embedding** sidecar (port 8082) is now **optional** for the v1 middleware pipeline. Layer 1 semantic cache embeddings are generated in-process via candle (pure-Rust BertModel). The embedding sidecar is only required for the v2 algorithmic pipeline (`/api/v2/chat`).
+- **Update (ADR-011):** The **slm-embedding** sidecar (port 8082) is now **optional**. Layer 1 semantic cache embeddings are generated in-process via candle (pure-Rust BertModel).
 
 ---
 
@@ -176,38 +176,39 @@ Implement an **Additive Increase / Multiplicative Decrease (AIMD)** concurrency 
 
 - If P95 latency < target → `limit += 1` (additive increase).
 - If P95 latency > target → `limit *= 0.5` (multiplicative decrease).
-- Bounded by `ISARTOR__PIPELINE_MIN_CONCURRENCY` and `ISARTOR__PIPELINE_MAX_CONCURRENCY`.
+- Bounded by configurable min/max concurrency limits.
 
 ### Consequences
 
 - **Positive:** Self-tuning: the limit converges to the optimal value for the current load.
 - **Positive:** Protects downstream services (sidecars, cloud LLMs) from overload.
 - **Negative:** During cold start, the limit starts low and ramps up — initial requests may see 503s.
-- **Tuning:** `ISARTOR__PIPELINE_TARGET_LATENCY_MS` must be calibrated per deployment tier.
+- **Tuning:** Target latency must be calibrated per deployment tier.
 
 ---
 
-## ADR-008: Dual API Surface (v1 + v2)
+## ADR-008: Unified API Surface
 
-**Date:** 2024 · **Status:** Accepted
+**Date:** 2024 · **Status:** Superseded
 
 ### Context
 
-The original v1 API used Axum middleware for pipeline layers. As complexity grew, a purpose-built orchestrator was needed for the algorithmic pipeline.
+The original design maintained two API versions: a v1 middleware-based pipeline (`/api/chat`) and a v2 orchestrator-based pipeline (`/api/v2/chat`). Maintaining two code paths increased complexity with no clear benefit once the middleware pipeline matured.
 
 ### Decision
 
-Maintain both API versions:
+Consolidate into a single endpoint:
 
-- **v1** (`/api/chat`) — Middleware-based pipeline (original). Each layer is an Axum middleware.
-- **v2** (`/api/v2/chat`) — Orchestrator-based pipeline with explicit `PipelineContext`, trait-based components, and structured `processing_log` in responses.
+- **`/api/chat`** — Middleware-based pipeline. Each layer is an Axum middleware (auth → cache → SLM triage → handler).
+- The v2 endpoint (`/api/v2/chat`) and its `pipeline_*` configuration fields have been removed.
+- Orchestrator and trait-based pipeline components remain in `src/pipeline/` for potential future reintegration.
 
 ### Consequences
 
-- **Positive:** v1 remains available for backward compatibility.
-- **Positive:** v2's orchestrator pattern is easier to test, extend, and observe.
-- **Negative:** Two code paths to maintain until v1 is deprecated.
-- **Plan:** Deprecate v1 in a future release once v2 is battle-tested.
+- **Positive:** Single code path to maintain, test, and observe.
+- **Positive:** Simplified configuration surface — no more `PIPELINE_*` env vars.
+- **Positive:** Eliminates user confusion about which endpoint to use.
+- **Negative:** Orchestrator-based features (structured `processing_log`, explicit `PipelineContext`) are not exposed until reintegrated.
 
 ---
 

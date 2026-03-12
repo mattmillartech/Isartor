@@ -242,7 +242,7 @@ A typical trace for a cache-miss, locally-resolved request:
 
 ```text
 isartor-gateway
-  └─ HTTP POST /api/v2/chat                    [250ms]
+  └─ HTTP POST /api/chat                       [250ms]
        ├─ Layer0_AuthCheck                       [0.1ms]
        ├─ Layer0_ConcurrencyCheck                [0.01ms]
        ├─ Layer1_SemanticCache (MISS)            [5ms]

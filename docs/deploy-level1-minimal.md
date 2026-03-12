@@ -78,9 +78,6 @@ export ISARTOR__EXTERNAL_LLM_MODEL="gpt-4o-mini"
 
 # Cache mode — "both" enables exact + semantic cache. Semantic embeddings
 # are generated in-process via candle BertModel — no sidecar needed.
-
-# Layer 2.5 (Context Optimiser):
-# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 export ISARTOR__CACHE_MODE="both"
 
 # Pluggable backends — Level 1 uses the defaults (no change needed):
@@ -112,8 +109,8 @@ INFO  isartor::services::local_inference > Model loaded (1.5 GB), ready for infe
 curl http://localhost:8080/healthz
 # {"status":"ok"}
 
-# Test the pipeline
-curl -s http://localhost:8080/api/v2/chat \
+# Test the gateway
+curl -s http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
   -H "X-API-Key: my-secret-key" \
   -d '{"prompt": "Hello, how are you?"}' | jq .

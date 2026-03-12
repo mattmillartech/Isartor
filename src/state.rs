@@ -236,12 +236,6 @@ mod tests {
                 model_name: "test-embed".into(),
                 timeout_seconds: 30,
             },
-            pipeline_min_concurrency: 4,
-            pipeline_max_concurrency: 256,
-            pipeline_target_latency_ms: 500,
-            pipeline_similarity_threshold: 0.85,
-            pipeline_rerank_top_k: 5,
-            pipeline_embedding_dim: 128,
         })
     }
 

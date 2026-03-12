@@ -46,7 +46,7 @@ Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM 
 | **L1a — Exact Cache** | Fast Hashing (`ahash`) | Sub-millisecond duplicate detection. Traps infinite agent loops instantly. | < 1 ms |
 | **L1b — Semantic Cache** | Cosine Similarity (Embeddings) | Computes mathematical meaning via pure-Rust `candle` models (`all-MiniLM-L6-v2`) to catch variations ("Price?" ≈ "Cost?"). | 1–5 ms |
 | **L2 — SLM Router** | Neural Classification (LLM) | Triages intent using an embedded Small Language Model (e.g. Qwen-1.5B) to resolve simple data extraction tasks. | 50–200 ms |
-| **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. Configurable via `ISARTOR__PIPELINE_RERANK_TOP_K`. | 5–50 ms |
+| **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. | 5–50 ms |
 | **L3 — Cloud Logic** | Load Balancing & Retries | Routes surviving complex prompts to OpenAI, Anthropic, or Azure, with built-in fallback resilience. | Network-bound |
 
 Layers 1a and 1b alone can deflect **60–80% of agentic traffic** before any neural inference runs.

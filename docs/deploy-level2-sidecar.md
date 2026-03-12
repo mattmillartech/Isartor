@@ -59,11 +59,8 @@ This guide covers deploying Isartor with a dedicated AI sidecar for generation. 
 │               └─────────────────────────┘     └──────────────┘ │
 │                                                                 │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Optional: slm-embed :8082 (llama.cpp, v2 pipeline only) │  │
+│  │ Optional: slm-embed :8082 (llama.cpp)                    │  │
 │  └──────────────────────────────────────────────────────────┘  │
-
-# Layer 2.5 (Context Optimiser):
-# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -130,8 +127,8 @@ All services should show `healthy` or `running`.
 # Health check
 curl http://localhost:8080/healthz
 
-# Test v2 pipeline
-curl -s http://localhost:8080/api/v2/chat \
+# Test the gateway
+curl -s http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
   -H "X-API-Key: changeme" \
   -d '{"prompt": "What is 2+2?"}' | jq .
@@ -249,10 +246,8 @@ These variables are relevant to the sidecar architecture. For the full reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ISARTOR__CACHE_MODE` | `both` | Use `both` — in-process candle BertModel (v1) provides semantic embeddings at all tiers |
+| `ISARTOR__CACHE_MODE` | `both` | Use `both` — in-process candle BertModel provides semantic embeddings at all tiers |
 | `ISARTOR__SIMILARITY_THRESHOLD` | `0.85` | Cosine similarity threshold for cache hits |
-| `ISARTOR__PIPELINE_SIMILARITY_THRESHOLD` | `0.92` | Similarity threshold for v2 pipeline cache |
-| `ISARTOR__PIPELINE_EMBEDDING_DIM` | `384` | Must match the embedding model dimension |
 
 ### Observability
 
@@ -325,7 +320,7 @@ Before moving to Level 3, you can vertically scale Level 2:
 | **Bigger model** | Swap Phi-3-mini for Phi-3-medium or Qwen2-7B in the Compose command |
 | **More cache** | Increase `ISARTOR__CACHE_MAX_CAPACITY` and `ISARTOR__CACHE_TTL_SECS` |
 | **Faster embedding** | Use `nomic-embed-text` (768-dim) for richer semantic matching |
-| **More concurrency** | Tune `ISARTOR__PIPELINE_MAX_CONCURRENCY` and `ISARTOR__PIPELINE_TARGET_LATENCY_MS` |
+| **More concurrency** | Scale horizontally with multiple gateway replicas behind a load balancer |
 
 ---
 

@@ -65,7 +65,7 @@ flowchart TD
 
 ## Layer 2.5 — Context Optimiser
 
-Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is configurable via `ISARTOR__PIPELINE_RERANK_TOP_K` and is instrumented as the `context_optimise` span in observability.
+Layer 2.5 is responsible for retrieving and reranking candidate documents or responses to minimize downstream token usage. This layer typically implements top-K selection, reranking, or context window optimization before forwarding to the LLM. It is instrumented as the `context_optimise` span in observability.
 
 ## Mode Switching Example
 

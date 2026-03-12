@@ -66,15 +66,15 @@ export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | `ISARTOR__LOCAL_SLM_URL` | `String` | `http://localhost:11434/api/generate` | URL of the local SLM for v1 middleware triage |
 | `ISARTOR__LOCAL_SLM_MODEL` | `String` | `llama3` | Model name for v1 middleware requests |
 
-### Embedding Sidecar (v2 Pipeline Only)
+### Embedding Sidecar
 
-> **Note:** The v1 middleware pipeline (`/api/chat`) uses **in-process candle BertModel** (sentence-transformers/all-MiniLM-L6-v2) for Layer 1 embeddings — no sidecar required. These variables are only used by the v2 algorithmic pipeline (`/api/v2/chat`).
+> **Note:** The v1 middleware pipeline (`/api/chat`) uses **in-process candle BertModel** (sentence-transformers/all-MiniLM-L6-v2) for Layer 1 embeddings — no sidecar required. These variables are only used if a separate embedding sidecar is deployed.
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) — v2 pipeline only |
-| `ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name — v2 pipeline only |
-| `ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls — v2 pipeline only |
+| `ISARTOR__EMBEDDING_SIDECAR__SIDECAR_URL` | `String` | `http://127.0.0.1:8082` | Base URL of the embedding sidecar (`/v1/embeddings`) |
+| `ISARTOR__EMBEDDING_SIDECAR__MODEL_NAME` | `String` | `all-minilm` | Embedding model name |
+| `ISARTOR__EMBEDDING_SIDECAR__TIMEOUT_SECONDS` | `u64` | `10` | HTTP request timeout for embedding calls |
 
 ### Layer 3 — External Cloud LLM
 
@@ -99,25 +99,6 @@ export ISARTOR__LAYER2__SIDECAR_URL="http://127.0.0.1:8081"
 | `ISARTOR__ENABLE_MONITORING` | `bool` | `false` | Enable OpenTelemetry trace and metric export |
 | `ISARTOR__OTEL_EXPORTER_ENDPOINT` | `String` | `http://localhost:4317` | OTel Collector gRPC endpoint |
 
-
-### Layer 2.5 — Context Optimiser
-
-Layer 2.5 retrieves and reranks candidate documents or responses to minimize downstream token usage. It is controlled by the following variable:
-
-| Variable | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ISARTOR__PIPELINE_RERANK_TOP_K` | `u64` | `5` | Number of top-K documents to keep after reranking (Layer 2.5) |
-
-### Pipeline v2 — Algorithmic Gateway Tuning
-
-| Variable | Type | Default | Description |
-| --- | --- | --- | --- |
-| `ISARTOR__PIPELINE_EMBEDDING_DIM` | `u64` | `384` | Embedding vector dimension (must match model: 384 for MiniLM, 768 for nomic-embed-text, 1024 for mxbai-embed-large) |
-| `ISARTOR__PIPELINE_SIMILARITY_THRESHOLD` | `f64` | `0.92` | Cosine similarity threshold for the v2 pipeline semantic cache |
-| `ISARTOR__PIPELINE_RERANK_TOP_K` | `u64` | `5` | Number of top-K documents to keep after reranking (Layer 2.5) |
-| `ISARTOR__PIPELINE_MAX_CONCURRENCY` | `u64` | `256` | Maximum concurrency limit (ceiling) for the adaptive limiter |
-| `ISARTOR__PIPELINE_MIN_CONCURRENCY` | `u64` | `4` | Minimum concurrency limit (floor) for the adaptive limiter |
-| `ISARTOR__PIPELINE_TARGET_LATENCY_MS` | `u64` | `500` | Target P95 latency in ms for the adaptive concurrency algorithm (AIMD) |
 
 ### Embedded Classifier (Compiled Defaults)
 
@@ -186,14 +167,6 @@ external_llm_api_key = ""  # Prefer env var for secrets
 # Observability
 enable_monitoring = true
 otel_exporter_endpoint = "http://localhost:4317"
-
-# Pipeline v2
-pipeline_embedding_dim = 384
-pipeline_similarity_threshold = 0.92
-pipeline_rerank_top_k = 5
-pipeline_max_concurrency = 256
-pipeline_min_concurrency = 4
-pipeline_target_latency_ms = 500
 ```
 
 ---
@@ -209,9 +182,6 @@ ISARTOR__ROUTER_BACKEND=embedded       # In-process Candle SLM, no external depe
 ISARTOR__CACHE_TTL_SECS=300
 ISARTOR__CACHE_MAX_CAPACITY=5000       # Smaller memory footprint
 ISARTOR__ENABLE_MONITORING=false       # No collector running
-ISARTOR__PIPELINE_MAX_CONCURRENCY=64   # Single-machine limits
-ISARTOR__PIPELINE_MIN_CONCURRENCY=2
-ISARTOR__PIPELINE_TARGET_LATENCY_MS=1000
 ```
 
 ### Level 2 — Sidecar (Docker Compose)
@@ -224,9 +194,6 @@ ISARTOR__CACHE_TTL_SECS=300
 ISARTOR__CACHE_MAX_CAPACITY=10000
 ISARTOR__ENABLE_MONITORING=true
 ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
-ISARTOR__PIPELINE_MAX_CONCURRENCY=256
-ISARTOR__PIPELINE_MIN_CONCURRENCY=4
-ISARTOR__PIPELINE_TARGET_LATENCY_MS=500
 ```
 
 ### Level 3 — Enterprise (Kubernetes)
@@ -242,9 +209,6 @@ ISARTOR__CACHE_TTL_SECS=600            # Longer TTL, more cache value
 ISARTOR__CACHE_MAX_CAPACITY=100000     # Large cache for high traffic
 ISARTOR__ENABLE_MONITORING=true
 ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector.isartor:4317
-ISARTOR__PIPELINE_MAX_CONCURRENCY=512  # Higher concurrency ceiling
-ISARTOR__PIPELINE_MIN_CONCURRENCY=8
-ISARTOR__PIPELINE_TARGET_LATENCY_MS=300  # Tighter latency target
 ```
 
 > **Scalability:** With `cache_backend=redis`, every gateway replica shares the same exact-match cache, ensuring cache hits are consistent regardless of which pod serves the request. With `router_backend=vllm`, the SLM classification workload is offloaded to a GPU-backed vLLM cluster that can be independently scaled (more GPU replicas = higher throughput). This allows the stateless Isartor gateway pods to scale horizontally to hundreds of replicas without contention.

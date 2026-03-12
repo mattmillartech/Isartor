@@ -14,8 +14,7 @@
 #   docker compose -f docker-compose.full.yml up --build
 #
 # Endpoints:
-#   Gateway (v1):  http://localhost:8080/api/chat
-#   Gateway (v2):  http://localhost:8080/api/v2/chat
+#   Gateway:       http://localhost:8080/api/chat
 #   Health check:  http://localhost:8080/healthz
 #   Jaeger UI:     http://localhost:16686
 #   Tempo API:     http://localhost:3200
@@ -156,13 +155,6 @@ services:
       # ── Observability ────────────────────────────────────────────
       ISARTOR__ENABLE_MONITORING: "true"
       ISARTOR__OTEL_EXPORTER_ENDPOINT: "http://otel-collector:4317"
-      # ── Pipeline v2 Tuning ──────────────────────────────────────
-      ISARTOR__PIPELINE_EMBEDDING_DIM: "384"
-      ISARTOR__PIPELINE_SIMILARITY_THRESHOLD: "0.92"
-      ISARTOR__PIPELINE_RERANK_TOP_K: "5"
-      ISARTOR__PIPELINE_MAX_CONCURRENCY: "256"
-      ISARTOR__PIPELINE_MIN_CONCURRENCY: "4"
-      ISARTOR__PIPELINE_TARGET_LATENCY_MS: "500"
     env_file:
       - path: .env
         required: false

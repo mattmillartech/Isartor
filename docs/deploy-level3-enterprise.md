@@ -45,13 +45,10 @@ This guide covers deploying Isartor on Kubernetes with Helm, horizontal pod auto
      ┌────────▼───────┐  ┌────────▼───────┐   ┌────────▼───────┐
   │ Inference Pool  │  │ Embedding Pool  │   │ Cloud LLM      │
   │ (vLLM / TGI)   │  │ (TEI / llama)   │   │ (OpenAI / etc) │
-  │                 │  │ v2 pipeline only │   │ (Layer 3 only)  │
+  │                 │  │                 │   │ (Layer 3 only)  │
   │ GPU Nodes       │  │ CPU/GPU Nodes   │   └────────────────┘
   │ HPA on GPU util │  │ HPA on RPS      │
   └─────────────────┘  └─────────────────┘
-
-# Layer 2.5 (Context Optimiser):
-# Retrieves and reranks candidate documents or responses to minimize downstream token usage. Configurable via ISARTOR__PIPELINE_RERANK_TOP_K.
 ```
 
 ### Component Summary
@@ -193,19 +190,6 @@ spec:
               value: "true"
             - name: ISARTOR__OTEL_EXPORTER_ENDPOINT
               value: "http://otel-collector.isartor:4317"
-            # Pipeline v2 tuning
-            - name: ISARTOR__PIPELINE_EMBEDDING_DIM
-              value: "384"
-            - name: ISARTOR__PIPELINE_SIMILARITY_THRESHOLD
-              value: "0.92"
-            - name: ISARTOR__PIPELINE_RERANK_TOP_K
-              value: "5"
-            - name: ISARTOR__PIPELINE_MAX_CONCURRENCY
-              value: "512"
-            - name: ISARTOR__PIPELINE_MIN_CONCURRENCY
-              value: "8"
-            - name: ISARTOR__PIPELINE_TARGET_LATENCY_MS
-              value: "300"
           resources:
             requests:
               cpu: "250m"
@@ -362,9 +346,9 @@ containers:
 
 ---
 
-## Step 5: Embedding Pool (TEI) — v2 Pipeline Only
+## Step 5: Embedding Pool (TEI) — Optional
 
-> **Note:** The v1 middleware pipeline (`/api/chat`) generates Layer 1 embeddings in-process via candle BertModel. This external embedding pool is only needed if you use the v2 algorithmic pipeline (`/api/v2/chat`).
+> **Note:** The gateway generates Layer 1 embeddings in-process via candle BertModel. This external embedding pool is optional for high-throughput deployments that want to offload embedding generation.
 
 [Text Embeddings Inference (TEI)](https://github.com/huggingface/text-embeddings-inference) provides optimised embedding generation.
 
@@ -641,7 +625,7 @@ With `ISARTOR__ROUTER_BACKEND=vllm`:
 | Gateway replicas | HPA `minReplicas` / `maxReplicas` | CPU utilisation, request rate |
 | Inference replicas | HPA on custom GPU metrics | GPU utilisation, queue depth |
 | Cache capacity | `ISARTOR__CACHE_MAX_CAPACITY` | Cache hit rate, memory usage |
-| Concurrency | `ISARTOR__PIPELINE_MAX_CONCURRENCY` | P95 latency, AIMD backoff |
+| Concurrency | HPA + replica scaling | P95 latency, request rate |
 | Redis | Redis Cluster nodes | Key count, memory, eviction rate |
 
 ---

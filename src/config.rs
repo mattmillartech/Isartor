@@ -199,26 +199,6 @@ pub struct AppConfig {
     // ── Observability ───────────────────────────────────────────────
     pub enable_monitoring: bool,
     pub otel_exporter_endpoint: String,
-
-    // ── Pipeline v2 — Algorithmic Gateway ────────────────────────
-    /// Embedding model dimension (must match the model served by the sidecar).
-    /// Common values: 384 (all-minilm), 768 (nomic-embed-text), 1024 (mxbai-embed-large).
-    pub pipeline_embedding_dim: u64,
-
-    /// Cosine similarity threshold for the pipeline's semantic cache (Layer 1).
-    pub pipeline_similarity_threshold: f64,
-
-    /// Number of top-K documents to keep after reranking (Layer 2.5).
-    pub pipeline_rerank_top_k: u64,
-
-    /// Maximum concurrency limit (ceiling) for the adaptive limiter (Layer 0).
-    pub pipeline_max_concurrency: u64,
-
-    /// Minimum concurrency limit (floor) for the adaptive limiter (Layer 0).
-    pub pipeline_min_concurrency: u64,
-
-    /// Target P95 latency in milliseconds for the adaptive concurrency algorithm.
-    pub pipeline_target_latency_ms: u64,
 }
 
 impl AppConfig {
@@ -269,14 +249,7 @@ impl AppConfig {
             // Observability
             .set_default("enable_monitoring", false)?
             .set_default("otel_exporter_endpoint", "http://localhost:4317")?
-            // Pipeline v2
-            .set_default("pipeline_embedding_dim", 384_i64)?
-            .set_default("pipeline_similarity_threshold", 0.92)?
-            .set_default("pipeline_rerank_top_k", 5_i64)?
-            .set_default("pipeline_max_concurrency", 256_i64)?
-            .set_default("pipeline_min_concurrency", 4_i64)?
-            .set_default("pipeline_target_latency_ms", 500_i64)?
-            // Optional config file -------------------------------------
+            // Optional config file --------------------------------------
             .add_source(config::File::with_name("isartor").required(false))
             // Environment overrides (ISARTOR__ prefix) -----------------
             // The `config` crate strips the prefix + prefix_separator,
@@ -390,12 +363,6 @@ mod tests {
                 assert_eq!(config.llm_provider, "openai");
                 assert_eq!(config.external_llm_model, "gpt-4o-mini");
                 assert!(!config.enable_monitoring);
-                assert_eq!(config.pipeline_embedding_dim, 384);
-                assert!((config.pipeline_similarity_threshold - 0.92).abs() < 1e-9);
-                assert_eq!(config.pipeline_rerank_top_k, 5);
-                assert_eq!(config.pipeline_max_concurrency, 256);
-                assert_eq!(config.pipeline_min_concurrency, 4);
-                assert_eq!(config.pipeline_target_latency_ms, 500);
             },
         );
     }
@@ -463,18 +430,6 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
-            .unwrap()
-            .set_default("pipeline_embedding_dim", 384_i64)
-            .unwrap()
-            .set_default("pipeline_similarity_threshold", 0.92)
-            .unwrap()
-            .set_default("pipeline_rerank_top_k", 5_i64)
-            .unwrap()
-            .set_default("pipeline_max_concurrency", 256_i64)
-            .unwrap()
-            .set_default("pipeline_min_concurrency", 4_i64)
-            .unwrap()
-            .set_default("pipeline_target_latency_ms", 500_i64)
             .unwrap()
             .set_default("inference_engine", "sidecar")
             .unwrap()
@@ -564,18 +519,6 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
-            .unwrap()
-            .set_default("pipeline_embedding_dim", 384_i64)
-            .unwrap()
-            .set_default("pipeline_similarity_threshold", 0.92)
-            .unwrap()
-            .set_default("pipeline_rerank_top_k", 5_i64)
-            .unwrap()
-            .set_default("pipeline_max_concurrency", 256_i64)
-            .unwrap()
-            .set_default("pipeline_min_concurrency", 4_i64)
-            .unwrap()
-            .set_default("pipeline_target_latency_ms", 500_i64)
             .unwrap()
             .set_override("inference_engine", "sidecar")
             .unwrap()
@@ -671,18 +614,6 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
-            .unwrap()
-            .set_default("pipeline_embedding_dim", 384_i64)
-            .unwrap()
-            .set_default("pipeline_similarity_threshold", 0.92)
-            .unwrap()
-            .set_default("pipeline_rerank_top_k", 5_i64)
-            .unwrap()
-            .set_default("pipeline_max_concurrency", 256_i64)
-            .unwrap()
-            .set_default("pipeline_min_concurrency", 4_i64)
-            .unwrap()
-            .set_default("pipeline_target_latency_ms", 500_i64)
             .unwrap()
             // Set inference_engine to "embedded" — the key test.
             .set_override("inference_engine", "embedded")

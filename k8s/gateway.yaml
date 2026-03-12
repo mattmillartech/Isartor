@@ -70,14 +70,6 @@ data:
   ISARTOR_ENABLE_MONITORING: "true"
   ISARTOR_OTEL_EXPORTER_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
 
-  # ── Pipeline v2 Tuning ─────────────────────────────────────────
-  ISARTOR_PIPELINE_EMBEDDING_DIM: "384"
-  ISARTOR_PIPELINE_SIMILARITY_THRESHOLD: "0.92"
-  ISARTOR_PIPELINE_RERANK_TOP_K: "5"
-  ISARTOR_PIPELINE_MAX_CONCURRENCY: "512"
-  ISARTOR_PIPELINE_MIN_CONCURRENCY: "8"
-  ISARTOR_PIPELINE_TARGET_LATENCY_MS: "300"
-
 ---
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Secret — Sensitive credentials (skeleton — fill before applying)
