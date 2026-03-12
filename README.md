@@ -167,6 +167,8 @@ See [docs/6-OBSERVABILITY.md](docs/6-OBSERVABILITY.md) for the full span and met
 | [Integrations](docs/4-INTEGRATIONS.md) | OpenAI SDK, LangChain, autonomous agents |
 | [Configuration Reference](docs/5-CONFIGURATION-REF.md) | Every environment variable and config key |
 | [Observability](docs/6-OBSERVABILITY.md) | OpenTelemetry spans, metrics, Grafana dashboards |
+| [Performance Tuning](docs/PERFORMANCE-TUNING.md) | Deflection measurement, config tuning, SLO/SLA templates |
+| [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues, diagnostic steps, FAQ |
 
 ---
 
