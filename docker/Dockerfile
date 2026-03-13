@@ -3,8 +3,9 @@ FROM rust:latest AS builder
 
 ARG TARGETARCH
 
-# Install musl tools for static linking.
-RUN apt-get update && apt-get install -y musl-tools \
+# Install musl tools, cmake, and g++ for native-code crates
+# (tokenizers requires cmake + C++ compiler to build from source).
+RUN apt-get update && apt-get install -y musl-tools cmake g++ \
     && if [ "$TARGETARCH" = "arm64" ]; then \
          rustup target add aarch64-unknown-linux-musl; \
        else \
@@ -12,7 +13,9 @@ RUN apt-get update && apt-get install -y musl-tools \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CC_aarch64_unknown_linux_musl=musl-gcc \
+ENV CXX_aarch64_unknown_linux_musl=g++ \
+    CXX_x86_64_unknown_linux_musl=g++ \
+    CC_aarch64_unknown_linux_musl=musl-gcc \
     CC_x86_64_unknown_linux_musl=musl-gcc
 
 WORKDIR /build
