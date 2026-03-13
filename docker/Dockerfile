@@ -18,11 +18,14 @@ ENV CC_aarch64_unknown_linux_musl=musl-gcc \
 WORKDIR /build
 
 # Cache dependencies in a separate layer.
+# Create stub src/main.rs and benches/ so Cargo.toml parses cleanly.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+RUN mkdir -p src benches \
+    && echo 'fn main() {}' > src/main.rs \
+    && echo 'fn main() {}' > benches/cache_latency.rs \
     && if [ "$TARGETARCH" = "arm64" ]; then TARGET=aarch64-unknown-linux-musl; else TARGET=x86_64-unknown-linux-musl; fi \
     && cargo build --release --target $TARGET --no-default-features \
-    && rm -rf src
+    && rm -rf src benches
 
 # Build the real binary (without embedded-inference / candle ML crates).
 COPY src/ src/
