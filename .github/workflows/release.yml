@@ -43,6 +43,7 @@ jobs:
           cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build release binary
+        shell: bash
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
             cross build --release --target ${{ matrix.target }}
@@ -52,6 +53,7 @@ jobs:
 
       - name: Get version from tag
         id: version
+        shell: bash
         run: |
           echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
