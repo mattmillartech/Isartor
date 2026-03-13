@@ -32,7 +32,9 @@ RUN mkdir -p src benches \
 
 # Build the real binary (without embedded-inference / candle ML crates).
 COPY src/ src/
-RUN touch src/main.rs \
+RUN mkdir -p benches \
+    && echo 'fn main() {}' > benches/cache_latency.rs \
+    && touch src/main.rs \
     && if [ "$TARGETARCH" = "arm64" ]; then TARGET=aarch64-unknown-linux-musl; else TARGET=x86_64-unknown-linux-musl; fi \
     && cargo build --release --target $TARGET --no-default-features \
     && cp target/$TARGET/release/isartor /build/isartor-bin
