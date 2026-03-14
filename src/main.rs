@@ -8,6 +8,7 @@ use isartor::config::AppConfig;
 use isartor::handler;
 use isartor::health::{self, DemoModeFlag};
 use isartor::middleware;
+
 #[derive(Parser)]
 #[command(
     name = "isartor",
