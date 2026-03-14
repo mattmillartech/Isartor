@@ -31,15 +31,16 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // ── Handle `isartor init` ────────────────────────────────────
-    if let Some(Commands::Init) = cli.command {
-        isartor::first_run::write_config_scaffold()?;
-        return Ok(());
-    }
-
-    // ── Handle `isartor demo` ────────────────────────────────────
-    if let Some(Commands::Demo) = cli.command {
-        return run_standalone_demo().await;
+    // ── Handle `isartor init` / `isartor demo` ───────────────────
+    match cli.command {
+        Some(Commands::Init) => {
+            isartor::first_run::write_config_scaffold()?;
+            return Ok(());
+        }
+        Some(Commands::Demo) => {
+            return run_standalone_demo().await;
+        }
+        None => {}
     }
 
     // ------------------------------------------------------------------
