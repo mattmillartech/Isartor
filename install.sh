@@ -50,7 +50,8 @@ ARCHIVE="${BIN_NAME}-${TAG}-${TARGET}.${EXTENSION}"
 DOWNLOAD_URL="https://github.com/$REPO/releases/download/${TAG}/${ARCHIVE}"
 
 echo "Downloading $ARCHIVE from $DOWNLOAD_URL ..."
-TMP_DIR="$(mktemp -d)"
+TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t isartor)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/$ARCHIVE"
 
 echo "Extracting..."
