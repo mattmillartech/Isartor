@@ -12,52 +12,85 @@
 # ============================================================================
 
 # ── Stage 1: Builder ────────────────────────────────────────────────────────
+
+# --- Multi-arch static build for amd64/arm64 ---
+ARG TARGETARCH
 FROM rust:1.85-bookworm AS builder
 
-# Install the musl target + toolchain for fully-static linking.
-# g++ is needed for C++ native-code crates (esaxx-rs, onig_sys, etc.).
-RUN rustup target add x86_64-unknown-linux-musl \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends musl-tools cmake g++ \
-    && rm -rf /var/lib/apt/lists/*
+# Map Docker TARGETARCH to Rust musl target triple
+ARG TARGETARCH
+ENV RUST_MUSL_TARGET=""
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
+        else \
+            echo "Unsupported arch: $TARGETARCH" && exit 1; \
+        fi && \
+        rustup target add $RUST_MUSL_TARGET && \
+        apt-get update && apt-get install -y --no-install-recommends musl-tools cmake g++ && \
+        rm -rf /var/lib/apt/lists/*
 
-# Tell cc-rs to use the host g++ for musl C++ builds.
+# Set up musl env vars for both targets
 ENV CXX_x86_64_unknown_linux_musl=g++ \
-    CC_x86_64_unknown_linux_musl=musl-gcc
+        CC_x86_64_unknown_linux_musl=musl-gcc \
+        CXX_aarch64_unknown_linux_musl=g++ \
+        CC_aarch64_unknown_linux_musl=musl-gcc
 
-# Force static CRT linking for the entire build.
 ENV RUSTFLAGS="-C target-feature=+crt-static"
 
 WORKDIR /build
 
-# ── Dependency caching layer ────────────────────────────────────────────────
-# Copy only the manifests first so that dependency compilation is cached
-# independently of source changes.
+# Dependency caching layer
 COPY Cargo.toml Cargo.lock* ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs \
-    && cargo build --release --target x86_64-unknown-linux-musl \
-    && rm -rf src
+RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
+        if [ "$TARGETARCH" = "amd64" ]; then \
+            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
+        fi && \
+        cargo build --release --target $RUST_MUSL_TARGET && rm -rf src
 
-# ── Application build ──────────────────────────────────────────────────────
+# Application build
 COPY src/ src/
-RUN touch src/main.rs \
-    && cargo build --release --target x86_64-unknown-linux-musl
+RUN touch src/main.rs && \
+        if [ "$TARGETARCH" = "amd64" ]; then \
+            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
+        fi && \
+        cargo build --release --target $RUST_MUSL_TARGET
 
-# Verify the binary is truly static.
-RUN file target/x86_64-unknown-linux-musl/release/isartor \
-    | grep -q "statically linked" \
-    && echo "✅ Binary is statically linked" \
-    || (echo "❌ Binary is NOT statically linked" && exit 1)
+# Verify the binary is truly static
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
+        fi && \
+        file target/$RUST_MUSL_TARGET/release/isartor | grep -q "statically linked" && \
+        echo "✅ Binary is statically linked" || (echo "❌ Binary is NOT statically linked" && exit 1)
 
-# ── Stage 2: Minimal runtime ───────────────────────────────────────────────
+# --- Minimal runtime ---
 FROM gcr.io/distroless/static-debian12
 
 LABEL org.opencontainers.image.title="isartor"
 LABEL org.opencontainers.image.description="Isartor AI Gateway — Level 1 minimal image"
 
-COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/isartor /isartor
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
+        fi && \
+        echo "Using target: $RUST_MUSL_TARGET"
+COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/isartor /isartor-amd64
+COPY --from=builder /build/target/aarch64-unknown-linux-musl/release/isartor /isartor-arm64
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+            mv /isartor-amd64 /isartor; \
+        elif [ "$TARGETARCH" = "arm64" ]; then \
+            mv /isartor-arm64 /isartor; \
+        fi
 
-# Default configuration — override at deploy time via env vars or config file.
 ENV ISARTOR_HOST_PORT=0.0.0.0:8080
 EXPOSE 8080
 
