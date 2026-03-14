@@ -38,7 +38,7 @@ jobs:
       # ── Start Isartor and run harness ──────────────────────────────────────
       - name: Start Isartor server
         run: |
-          ./target/release/isartor &
+          GATEWAY_API_KEY="" ./target/release/isartor &
           echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
           # Wait until the server is accepting connections (up to 30 s)
           for i in $(seq 1 30); do
