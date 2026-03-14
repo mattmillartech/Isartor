@@ -131,6 +131,19 @@ def run_benchmark(
     for prompt in prompts:
         if dry_run:
             layer, latency_ms = _simulate_response(prompt)
+            # Normalise/validate simulated layer values.
+            if layer not in LAYERS and layer != "error":
+                results["error"] += 1
+                print(
+                    f"  [warn] unexpected simulated layer value: {layer!r}; "
+                    "counting as error and excluding from latency stats.",
+                    file=sys.stderr,
+                )
+                continue
+            if layer == "error":
+                results["error"] += 1
+                # Do not include error responses in latency statistics.
+                continue
             results[layer] = results.get(layer, 0) + 1
             layer_latencies[layer].append(latency_ms)
             all_latencies.append(latency_ms)
@@ -144,10 +157,27 @@ def run_benchmark(
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
-                layer = resp.headers.get("X-Isartor-Layer", "l3")
+                raw_layer = resp.headers.get("X-Isartor-Layer", "l3")
                 latency_ms = (time.perf_counter() - start) * 1000
+                # Normalise/validate header value. Map unknown values to "error"
+                # and exclude them from latency statistics to keep summaries
+                # consistent with the rendered table and deflection metrics.
+                if raw_layer not in LAYERS and raw_layer != "error":
+                    results["error"] += 1
+                    print(
+                        "  [warn] unexpected X-Isartor-Layer header value "
+                        f"{raw_layer!r}; counting as error and excluding "
+                        "from latency stats.",
+                        file=sys.stderr,
+                    )
+                    continue
+                if raw_layer == "error":
+                    results["error"] += 1
+                    # Do not include error responses in latency statistics.
+                    continue
+                layer = raw_layer
                 results[layer] = results.get(layer, 0) + 1
-                layer_latencies.setdefault(layer, []).append(latency_ms)
+                layer_latencies[layer].append(latency_ms)
                 all_latencies.append(latency_ms)
         except urllib.error.URLError as exc:
             results["error"] += 1
