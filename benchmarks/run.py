@@ -70,6 +70,22 @@ def run_benchmark(url: str, prompts: list[str], label: str) -> dict:
             print(f"  [warn] unexpected error: {exc}", file=sys.stderr)
 
     total = len(prompts)
+    if total == 0:
+        print(f"\n── {label} ──")
+        print("  No prompts to run; skipping benchmark.")
+        p50 = 0.0
+        p95 = 0.0
+        return {
+            "total_requests": 0,
+            "deflection_rate": 0.0,
+            "l1a_rate": 0.0,
+            "l1b_rate": 0.0,
+            "l2_rate": 0.0,
+            "l3_rate": 0.0,
+            "error_count": 0,
+            "p50_ms": round(p50, 2),
+            "p95_ms": round(p95, 2),
+        }
     deflected = results["l1a"] + results["l1b"] + results["l2"]
 
     print(f"\n── {label} ──")
