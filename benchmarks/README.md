@@ -7,16 +7,23 @@ measuring Isartor's deflection rate and latency characteristics.
 
 ```bash
 # 1. Start the Isartor server (requires a running instance)
-docker run -p 8080:8080 ghcr.io/isartor-ai/isartor:latest
-# or: cargo run --release
+#    Configure a known API key used for the X-API-Key header (defaults to "changeme").
+docker run -p 8080:8080 \
+    -e ISARTOR__GATEWAY_API_KEY=changeme \
+    ghcr.io/isartor-ai/isartor:latest
+# or (from source):
+ISARTOR__GATEWAY_API_KEY=changeme cargo run --release
 
-# 2. Run both built-in fixtures and save results (make shortcut)
+# 2. Ensure the benchmark harness uses the same API key (for the X-API-Key header)
+export ISARTOR__GATEWAY_API_KEY=changeme
+
+# 3. Run both built-in fixtures and save results (make shortcut)
 make benchmark
 
-# 3. Run without a server (dry-run / smoke-test)
+# 4. Run without a server (dry-run / smoke-test)
 make benchmark-dry-run
 
-# 4. Run a single fixture with a custom request limit
+# 5. Run a single fixture with a custom request limit
 python3 benchmarks/run.py \
     --url http://localhost:8080 \
     --input benchmarks/fixtures/faq_loop.jsonl \
@@ -191,8 +198,12 @@ git clone https://github.com/isartor-ai/Isartor.git && cd Isartor
 cargo build --release
 
 # Start Isartor with default settings (exact + semantic cache enabled)
-ISARTOR__CACHE_MODE=both ./target/release/isartor &
+# and a known gateway API key (used for the X-API-Key header).
+ISARTOR__CACHE_MODE=both ISARTOR__GATEWAY_API_KEY=changeme ./target/release/isartor &
 sleep 5  # wait for the server to start
+
+# Ensure the benchmark harness uses the same API key
+export ISARTOR__GATEWAY_API_KEY=changeme
 
 # Run the full benchmark suite
 make benchmark
