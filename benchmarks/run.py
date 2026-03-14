@@ -15,8 +15,10 @@ Usage:
     # Dry-run (no server required — uses simulated responses for CI):
     python benchmarks/run.py --all --dry-run
 
-    # Honour ISARTOR_URL environment variable:
-    ISARTOR_URL=http://localhost:3000 python benchmarks/run.py --all
+    # Honour environment variables:
+    ISARTOR_URL=http://localhost:3000 \\
+    ISARTOR_API_KEY=changeme \\
+    python benchmarks/run.py --all
 """
 
 import argparse
@@ -108,6 +110,7 @@ def run_benchmark(
     label: str,
     *,
     dry_run: bool = False,
+    api_key: str = "changeme",
 ) -> dict:
     """
     Send each prompt to ``url/api/chat`` and collect per-request statistics.
@@ -121,6 +124,9 @@ def run_benchmark(
     prompts:  List of prompt strings to replay.
     label:    Human-readable name used in printed output.
     dry_run:  When *True*, requests are simulated locally — no server needed.
+    api_key:  Value for the ``X-API-Key`` header.  Must match the server's
+              ``gateway_api_key`` setting (default: ``"changeme"``, which is
+              the server's own config default from ``src/config.rs``).
     """
     results: dict[str, int] = {"l1a": 0, "l1b": 0, "l2": 0, "l3": 0, "error": 0}
     # Per-layer latency lists for per-layer p50 in the table
@@ -150,10 +156,13 @@ def run_benchmark(
             continue
 
         start = time.perf_counter()
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if api_key:
+            headers["X-API-Key"] = api_key
         req = urllib.request.Request(
             f"{url}/api/chat",
             data=json.dumps({"prompt": prompt}).encode(),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
@@ -179,6 +188,16 @@ def run_benchmark(
                 results[layer] = results.get(layer, 0) + 1
                 layer_latencies[layer].append(latency_ms)
                 all_latencies.append(latency_ms)
+        except urllib.error.HTTPError as exc:
+            results["error"] += 1
+            if exc.code == 401:
+                print(
+                    "  [warn] 401 Unauthorized — set --api-key / $ISARTOR_API_KEY "
+                    "to match the server's gateway_api_key (default: 'changeme')",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"  [warn] HTTP {exc.code}: {exc}", file=sys.stderr)
         except urllib.error.URLError as exc:
             results["error"] += 1
             print(f"  [warn] request failed: {exc}", file=sys.stderr)
@@ -238,6 +257,11 @@ def run_benchmark(
         p50, p95, p99, deflection_pct, cost_per_req,
     ))
 
+    # ── Per-layer p50 latencies (for JSON output and PR comment table) ────────
+    def layer_p50_val(layer: str) -> float | None:
+        lats = layer_latencies.get(layer, [])
+        return round(statistics.median(lats), 2) if lats else None
+
     return {
         "total_requests": total,
         "deflection_rate": round(deflected / total, 4),
@@ -253,6 +277,10 @@ def run_benchmark(
         "p50_ms": round(p50, 2),
         "p95_ms": round(p95, 2),
         "p99_ms": round(p99, 2),
+        "l1a_p50_ms": layer_p50_val("l1a"),
+        "l1b_p50_ms": layer_p50_val("l1b"),
+        "l2_p50_ms": layer_p50_val("l2"),
+        "l3_p50_ms": layer_p50_val("l3"),
         "tokens_saved": tokens_saved,
         "cost_saved_usd": round(total_cost_saved, 6),
         "cost_per_req_usd": round(cost_per_req, 8),
@@ -275,6 +303,10 @@ def _empty_result() -> dict:
         "p50_ms": 0.0,
         "p95_ms": 0.0,
         "p99_ms": 0.0,
+        "l1a_p50_ms": None,
+        "l1b_p50_ms": None,
+        "l2_p50_ms": None,
+        "l3_p50_ms": None,
         "tokens_saved": 0,
         "cost_saved_usd": 0.0,
         "cost_per_req_usd": 0.0,
@@ -367,12 +399,25 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     default_url = os.environ.get("ISARTOR_URL", "http://localhost:8080")
+    # The server's gateway_api_key defaults to "changeme" (src/config.rs).
+    # $ISARTOR_API_KEY lets CI and local runs override without touching argv.
+    default_api_key = os.environ.get("ISARTOR_API_KEY", "changeme")
     parser.add_argument(
         "--url",
         default=default_url,
         help=(
             "Base URL of the running Isartor instance "
             "(default: $ISARTOR_URL or http://localhost:8080)"
+        ),
+    )
+    parser.add_argument(
+        "--api-key",
+        default=default_api_key,
+        dest="api_key",
+        help=(
+            "Value for the X-API-Key header sent with every request. "
+            "Must match the server's gateway_api_key setting "
+            "(default: $ISARTOR_API_KEY or 'changeme')"
         ),
     )
     parser.add_argument(
@@ -429,7 +474,7 @@ def main() -> None:
             prompts = load_prompts(path)
             print(f"\nLoaded {len(prompts)} prompts from {path.name}")
             fixture_results[name] = run_benchmark(
-                args.url, prompts, name, dry_run=args.dry_run
+                args.url, prompts, name, dry_run=args.dry_run, api_key=args.api_key
             )
         write_results(fixture_results, Path(args.output))
 
@@ -443,7 +488,7 @@ def main() -> None:
             prompts = prompts[: args.requests]
         label = input_path.stem
         fixture_results[label] = run_benchmark(
-            args.url, prompts, label, dry_run=args.dry_run
+            args.url, prompts, label, dry_run=args.dry_run, api_key=args.api_key
         )
 
 

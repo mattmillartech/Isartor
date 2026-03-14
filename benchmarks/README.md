@@ -40,7 +40,7 @@ python3 benchmarks/run.py \
 | File | Prompts | Description |
 |------|---------|-------------|
 | `fixtures/faq_loop.jsonl` | 1,000 | Simulates a repetitive FAQ / agent-loop workload. Covers returns, shipping, billing, account management, and more — all with semantic rephrasings. Designed to stress L1a (exact cache) and L1b (semantic cache). |
-| `fixtures/diverse_tasks.jsonl` | 500 | Genuine variety: code generation, summarisation, Q&A, data extraction, and creative writing. Represents realistic lower-deflection traffic. |
+| `fixtures/diverse_tasks.jsonl` | 500 | Genuine variety: code generation, summarisation, Q&A, data extraction, and creative writing. Represents a realistic mixed-workload with lower deflection than the FAQ loop corpus. |
 
 Each file is in [JSONL](https://jsonlines.org/) format — one JSON object per line:
 
@@ -52,8 +52,8 @@ Each file is in [JSONL](https://jsonlines.org/) format — one JSON object per l
 ## CLI Reference
 
 ```
-usage: run.py [-h] [--url URL] [--input INPUT] [--requests REQUESTS] [--all]
-              [--output OUTPUT] [--dry-run]
+usage: run.py [-h] [--url URL] [--api-key KEY] [--input INPUT]
+              [--requests REQUESTS] [--all] [--output OUTPUT] [--dry-run]
 
 Isartor Benchmark Harness
 
@@ -61,6 +61,9 @@ options:
   -h, --help           show this help message and exit
   --url URL            Base URL of the running Isartor instance
                        (default: $ISARTOR_URL or http://localhost:8080)
+  --api-key KEY        Value for the X-API-Key header; must match the server's
+                       gateway_api_key setting
+                       (default: $ISARTOR_API_KEY or 'changeme')
   --input INPUT        Path to a JSONL fixture file to benchmark
   --requests REQUESTS  Limit the number of prompts to send (0 = all)
   --all                Run all built-in fixtures and write results
@@ -70,10 +73,12 @@ options:
                        Useful for CI validation and smoke-testing.
 ```
 
-The `--url` flag also honours the `ISARTOR_URL` environment variable:
+Both `--url` and `--api-key` honour environment variables:
 
 ```bash
-ISARTOR_URL=http://localhost:3000 python3 benchmarks/run.py --all
+ISARTOR_URL=http://localhost:3000 \
+ISARTOR_API_KEY=mysecret \
+python3 benchmarks/run.py --all
 ```
 
 ## Understanding the Output
@@ -82,14 +87,14 @@ ISARTOR_URL=http://localhost:3000 python3 benchmarks/run.py --all
 -- faq_loop --
   Total requests : 1000
   L1a (exact)    :   412  (41.2%)
-  L1b (semantic) :  189   (18.9%)
-  L2  (SLM)      :    0   ( 0.0%)
+  L1b (semantic) :   189  (18.9%)
+  L2  (SLM)      :     0  ( 0.0%)
   L3  (cloud)    :   399  (39.9%)
   Errors         :     0
   Deflection rate: 60.1%
   P50 latency    :  0.3 ms
-  P95 latency    :  8.5 ms
-  P99 latency    :  9.1 ms
+  P95 latency    :  820.0 ms
+  P99 latency    :  950.0 ms
   Cost saved     : $0.1503  ($0.000150/req)
 
 ### faq_loop
@@ -98,13 +103,19 @@ ISARTOR_URL=http://localhost:3000 python3 benchmarks/run.py --all
 |--------------------|--------|--------------|-------------------|
 | L1a (exact)        |    412 |       41.2%  |            0.3 ms |
 | L1b (semantic)     |    189 |       18.9%  |            3.1 ms |
-| L2  (SLM)          |      0 |        0.0%  |               -   |
-| L3  (cloud)        |    399 |       39.9%  |            8.2 ms |
+| L2  (SLM)          |      0 |        0.0%  |                 - |
+| L3  (cloud)        |    399 |       39.9%  |          820.0 ms |
 | **Total deflected**| **601** | **60.1%** | |
 | **Cost saved**     |        |              | **$0.000150/req** |
 
-> Overall latency — P50: 0.3 ms | P95: 8.5 ms | P99: 9.1 ms
+> Overall latency — P50: 0.3 ms | P95: 820.0 ms | P99: 950.0 ms
 ```
+
+> **Note:** Overall P50 is sub-millisecond because >60% of requests are served
+> from cache (L1a/L1b). P95 and P99 reflect cloud-latency once those
+> percentiles fall into the L3 (cloud) bucket.
+> Cost formula: `601 deflected × 50 tokens × $0.000005/token = $0.1503 total saved`.
+> Divided across all 1,000 requests → `$0.1503 ÷ 1000 = $0.000150/req` (the per-request figure shown in the table).
 
 - **L1a (exact)** — request matched an exact (SHA-256) cache entry
 - **L1b (semantic)** — request matched a semantically similar cached entry (cosine similarity)
@@ -144,26 +155,30 @@ After `--all` is used, results are written to `benchmarks/results/latest.json`:
 {
   "timestamp": "2025-01-15T10:23:00Z",
   "isartor_version": "0.1.0",
-  "hardware": "4-core CPU, 8GB RAM, no GPU",
+  "hardware": "4-core x86_64, 8 GB RAM, no GPU",
   "fixtures": {
     "faq_loop": {
       "total_requests": 1000,
-      "deflection_rate": 0.71,
-      "l1a_hits": 412,
-      "l1b_hits": 189,
-      "l2_hits": 109,
-      "l3_hits": 290,
-      "l1a_rate": 0.412,
-      "l1b_rate": 0.189,
-      "l2_rate": 0.109,
-      "l3_rate": 0.290,
+      "deflection_rate": 0.712,
+      "l1a_hits": 423,
+      "l1b_hits": 214,
+      "l2_hits": 75,
+      "l3_hits": 288,
+      "l1a_rate": 0.423,
+      "l1b_rate": 0.214,
+      "l2_rate": 0.075,
+      "l3_rate": 0.288,
       "error_count": 0,
-      "p50_ms": 1.2,
-      "p95_ms": 4.8,
-      "p99_ms": 9.1,
-      "tokens_saved": 35500,
-      "cost_saved_usd": 0.1775,
-      "cost_per_req_usd": 0.0001775
+      "p50_ms": 0.4,
+      "p95_ms": 820.0,
+      "p99_ms": 950.0,
+      "l1a_p50_ms": 0.35,
+      "l1b_p50_ms": 3.1,
+      "l2_p50_ms": 130.0,
+      "l3_p50_ms": 820.0,
+      "tokens_saved": 35600,
+      "cost_saved_usd": 0.178,
+      "cost_per_req_usd": 0.000178
     },
     "diverse_tasks": {
       "total_requests": 500,
@@ -177,9 +192,13 @@ After `--all` is used, results are written to `benchmarks/results/latest.json`:
       "l2_rate": 0.0,
       "l3_rate": 0.62,
       "error_count": 0,
-      "p50_ms": 2.1,
-      "p95_ms": 6.3,
-      "p99_ms": 11.4,
+      "p50_ms": 820.0,
+      "p95_ms": 1050.0,
+      "p99_ms": 1200.0,
+      "l1a_p50_ms": 0.35,
+      "l1b_p50_ms": 3.2,
+      "l2_p50_ms": null,
+      "l3_p50_ms": 820.0,
       "tokens_saved": 9500,
       "cost_saved_usd": 0.0475,
       "cost_per_req_usd": 0.000095
@@ -197,18 +216,24 @@ Any engineer can reproduce results in under 10 minutes:
 git clone https://github.com/isartor-ai/Isartor.git && cd Isartor
 cargo build --release
 
-# Start Isartor with default settings (exact + semantic cache enabled)
-# and a known gateway API key (used for the X-API-Key header).
-ISARTOR__CACHE_MODE=both ISARTOR__GATEWAY_API_KEY=changeme ./target/release/isartor &
+# Start Isartor with default settings (exact + semantic cache enabled).
+# The gateway_api_key defaults to "changeme"; the harness will use the
+# same value via $ISARTOR_API_KEY so authentication passes automatically.
+ISARTOR__CACHE_MODE=both ./target/release/isartor &
 sleep 5  # wait for the server to start
 
-# Ensure the benchmark harness uses the same API key
-export ISARTOR__GATEWAY_API_KEY=changeme
-
-# Run the full benchmark suite
+# Run the full benchmark suite (ISARTOR_API_KEY defaults to 'changeme')
 make benchmark
 # or equivalently:
-# python3 benchmarks/run.py --url http://localhost:8080 --all
+# ISARTOR_API_KEY=changeme python3 benchmarks/run.py --url http://localhost:8080 --all
+```
+
+If you have configured a custom API key, export it before running:
+
+```bash
+export ISARTOR_GATEWAY_API_KEY=your-secret-key   # server
+export ISARTOR_API_KEY=your-secret-key            # harness
+make benchmark
 ```
 
 Hardware: 4-core CPU, 8 GB RAM, no GPU. Results will vary based on hardware

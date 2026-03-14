@@ -38,7 +38,9 @@ jobs:
       # ── Start Isartor and run harness ──────────────────────────────────────
       - name: Start Isartor server
         run: |
-          GATEWAY_API_KEY="" ./target/release/isartor &
+          # Use a well-known key so the harness can authenticate.
+          # The server reads ISARTOR_GATEWAY_API_KEY (prefix + separator from config.rs).
+          ISARTOR_GATEWAY_API_KEY=benchmark-key ./target/release/isartor &
           echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
           # Wait until the server is accepting connections (up to 30 s)
           for i in $(seq 1 30); do
@@ -53,8 +55,11 @@ jobs:
         id: bench
         env:
           ISARTOR_URL: http://localhost:8080
+          ISARTOR_API_KEY: benchmark-key
         run: |
-          python3 benchmarks/run.py --all --url "$ISARTOR_URL" \
+          python3 benchmarks/run.py --all \
+            --url "$ISARTOR_URL" \
+            --api-key "$ISARTOR_API_KEY" \
             --output benchmarks/results/ci_run.json \
             2>&1 | tee /tmp/bench_output.txt
           echo "bench_output<<EOF" >> "$GITHUB_OUTPUT"
@@ -94,11 +99,10 @@ jobs:
               body += `### ${name}\n\n`;
               body += `| Layer              | Hits   | % of Traffic | Avg Latency (p50) |\n`;
               body += `|--------------------|--------|--------------|-------------------|\n`;
-              const total = r.total_requests;
-              body += `| L1a (exact)        | ${r.l1a_hits} | ${pct(r.l1a_rate)} | - |\n`;
-              body += `| L1b (semantic)     | ${r.l1b_hits} | ${pct(r.l1b_rate)} | - |\n`;
-              body += `| L2  (SLM)          | ${r.l2_hits}  | ${pct(r.l2_rate)}  | - |\n`;
-              body += `| L3  (cloud)        | ${r.l3_hits}  | ${pct(r.l3_rate)}  | - |\n`;
+              body += `| L1a (exact)        | ${r.l1a_hits} | ${pct(r.l1a_rate)} | ${ms(r.l1a_p50_ms)} |\n`;
+              body += `| L1b (semantic)     | ${r.l1b_hits} | ${pct(r.l1b_rate)} | ${ms(r.l1b_p50_ms)} |\n`;
+              body += `| L2  (SLM)          | ${r.l2_hits}  | ${pct(r.l2_rate)}  | ${ms(r.l2_p50_ms)} |\n`;
+              body += `| L3  (cloud)        | ${r.l3_hits}  | ${pct(r.l3_rate)}  | ${ms(r.l3_p50_ms)} |\n`;
               const deflHits = r.l1a_hits + r.l1b_hits + r.l2_hits;
               body += `| **Total deflected**| **${deflHits}** | **${pct(r.deflection_rate)}** | |\n`;
               body += `| **Cost saved**     |        |              | **$${r.cost_per_req_usd.toFixed(6)}/req** |\n`;
