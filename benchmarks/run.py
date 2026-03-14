@@ -120,7 +120,6 @@ def hardware_summary() -> str:
     """Best-effort hardware description for the results file."""
     try:
         cpu_count = os.cpu_count() or 0
-        import shutil
 
         mem_gb = "unknown"
         if platform.system() == "Linux":
@@ -133,10 +132,7 @@ def hardware_summary() -> str:
                             break
             except OSError:
                 pass
-        return (
-            f"{cpu_count}-core {platform.processor() or platform.machine()}, "
-            f"{mem_gb} RAM, no GPU"
-        )
+        return f"{cpu_count}-core {platform.processor() or platform.machine()}, {mem_gb} RAM, no GPU"
     except Exception:  # noqa: BLE001
         return "unknown hardware"
 
