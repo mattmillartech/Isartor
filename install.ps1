@@ -36,9 +36,15 @@ if (-Not (Test-Path $InstallDir)) {
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 }
 
-$ExtractedBin = Join-Path $TmpDir "isartor.exe"
+$ExtractedBin = Get-ChildItem -Path $TmpDir -Recurse -Filter $BinName -File | Select-Object -First 1
+if (-not $ExtractedBin) {
+    Write-Error "Could not find $BinName in the extracted archive."
+    Remove-Item -Recurse -Force $TmpDir
+    exit 1
+}
+
 $DestPath = Join-Path $InstallDir $BinName
-Copy-Item -Path $ExtractedBin -Destination $DestPath -Force
+Copy-Item -Path $ExtractedBin.FullName -Destination $DestPath -Force
 
 Remove-Item -Recurse -Force $TmpDir
 
