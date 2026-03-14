@@ -116,16 +116,22 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
     );
 
     // ── Attach observability headers ─────────────────────────────
-    // X-Isartor-Layer: which layer resolved the request (l1a/l1b/l2/l3)
+    // X-Isartor-Layer: which layer resolved the request (l0/l1a/l1b/l2/l3)
     // X-Isartor-Deflected: true when the request was resolved without
     //                      reaching the cloud LLM
     let layer_header_value = match final_layer {
         FinalLayer::ExactCache => "l1a",
         FinalLayer::SemanticCache => "l1b",
         FinalLayer::Slm => "l2",
-        FinalLayer::Cloud | FinalLayer::AuthBlocked => "l3",
+        FinalLayer::Cloud => "l3",
+        FinalLayer::AuthBlocked => "l0",
     };
-    let deflected_header_value = if resolved_early { "true" } else { "false" };
+    let deflected_header_value =
+        if resolved_early || matches!(final_layer, FinalLayer::AuthBlocked) {
+            "true"
+        } else {
+            "false"
+        };
 
     let mut response = response;
     response.headers_mut().insert(
