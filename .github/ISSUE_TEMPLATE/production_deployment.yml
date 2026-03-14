@@ -1,0 +1,38 @@
+name: Production Deployment Report
+description: Share your deployment for the community
+labels: ["deployment", "community"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        🎉 Awesome — you're running Isartor in production!
+        Sharing your setup helps the community and helps us
+        improve the project. All fields are optional.
+  - type: input
+    id: scale
+    attributes:
+      label: Daily request volume (approximate)
+      placeholder: "e.g. 10,000 requests/day"
+  - type: input
+    id: deflection
+    attributes:
+      label: Deflection rate you're seeing
+      placeholder: "e.g. 45%"
+  - type: dropdown
+    id: deployment_mode
+    attributes:
+      label: Deployment mode
+      options:
+        - Single binary (minimalist)
+        - Docker
+        - Kubernetes
+        - Docker Compose
+  - type: textarea
+    id: stack
+    attributes:
+      label: Your stack
+      placeholder: "What are you using Isartor with? LangChain, AutoGen, custom agent?"
+  - type: textarea
+    id: learnings
+    attributes:
+      label: Anything the community should know?

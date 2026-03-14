@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest something new
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: "I'm frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe the solution you'd like
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who is this for?
+      options:
+        - Individual developer
+        - Small team (2–10 engineers)
+        - Enterprise / large org
+        - Security / compliance team
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered

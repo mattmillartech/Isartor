@@ -187,6 +187,7 @@ See [docs/6-OBSERVABILITY.md](docs/6-OBSERVABILITY.md) for the full span and met
 | [Observability](docs/6-OBSERVABILITY.md) | OpenTelemetry spans, metrics, Grafana dashboards |
 | [Performance Tuning](docs/PERFORMANCE-TUNING.md) | Deflection measurement, config tuning, SLO/SLA templates |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues, diagnostic steps, FAQ |
+| [Governance](GOVERNANCE.md) | Project independence, license stability, decision making |
 
 ---
 
