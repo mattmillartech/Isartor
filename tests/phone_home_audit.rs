@@ -348,9 +348,6 @@ async fn offline_mode_cache_hits_still_succeed() {
 /// on the "forbidden" mock server and the test would fail.
 #[tokio::test]
 async fn wiremock_only_configured_l3_url_receives_requests() {
-    // "Allowed" mock — the configured L3 endpoint.
-    let allowed_server = MockServer::start().await;
-
     // "Forbidden" mock — simulates an unexpected phone-home target.
     // Any request to this server = test failure.
     let forbidden_server = MockServer::start().await;
@@ -386,6 +383,5 @@ async fn wiremock_only_configured_l3_url_receives_requests() {
 
     // The forbidden server must have received exactly 0 requests.
     // wiremock's expect(0) enforces this on drop.
-    allowed_server.verify().await; // no-op since we registered no mocks here
     forbidden_server.verify().await; // asserts 0 requests to the forbidden server
 }

@@ -84,13 +84,13 @@ Complete these steps before deploying Isartor in an air-gapped environment:
 ## Connecting to an Internal LLM
 
 In this configuration Isartor acts as a fully air-gapped deflection layer in
-front of an internal LLM. 100 % of traffic stays inside the perimeter: L1a
+front of an internal LLM. 100% of traffic stays inside the perimeter: L1a
 and L1b handle cached / semantically similar prompts locally, and only genuine
 cache misses are forwarded to your self-hosted model over the internal network.
 
 ```bash
 # Route L3 to a self-hosted vLLM instance on the internal network.
-export ISARTOR__L3_BASE_URL=http://vllm.internal.corp:8000/v1
+export ISARTOR__EXTERNAL_LLM_URL=http://vllm.internal.corp:8000/v1
 export ISARTOR__LLM_PROVIDER=openai          # vLLM exposes an OpenAI-compat API
 export ISARTOR__EXTERNAL_LLM_MODEL=meta-llama/Llama-3-8B-Instruct
 
@@ -101,9 +101,8 @@ export ISARTOR__OFFLINE_MODE=true
 isartor
 ```
 
-> **Note:** `ISARTOR__L3_BASE_URL` sets `ISARTOR__EXTERNAL_LLM_URL` for the
-> current release. Use the latter key if the former is not yet available in
-> your installed version.
+> **Note:** `ISARTOR__EXTERNAL_LLM_URL` sets the L3 endpoint URL. Point it
+> at your internal vLLM or TGI server.
 
 With this configuration:
 

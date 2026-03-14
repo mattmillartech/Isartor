@@ -16,7 +16,7 @@ during the proof-of-concept. Three unexpected domains light up:
 - `registry.vendor.io` — model version checks
 
 The FedRAMP audit fails. The project is cancelled. Six months of engineering
-work discarded because nobody read the gateway's egress behaviour carefully
+work discarded because nobody read the gateway's egress behavior carefully
 enough before the evaluation began.
 
 This is not a hypothetical. It happens routinely in regulated environments.

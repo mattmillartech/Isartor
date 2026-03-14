@@ -291,10 +291,7 @@ async fn run_connectivity_check() -> anyhow::Result<()> {
     let otel_configured = config.enable_monitoring;
 
     let redis_configured = config.cache_backend == isartor::config::CacheBackend::Redis;
-    let is_redis_internal = config.redis_url.contains(".svc")
-        || config.redis_url.contains(".local")
-        || config.redis_url.contains("localhost")
-        || config.redis_url.contains("127.0.0.1");
+    let is_redis_internal = isartor::core::is_internal_endpoint(&config.redis_url);
 
     let air_gap_ok = !l3_configured || config.offline_mode;
 
@@ -329,10 +326,7 @@ async fn run_connectivity_check() -> anyhow::Result<()> {
         let status = if otel_configured { "[CONFIGURED]" } else { "[NOT CONFIGURED]" };
         println!("  → {}  {}", config.otel_exporter_endpoint, status);
         if config.offline_mode && otel_configured {
-            let is_ext = !config.otel_exporter_endpoint.contains("localhost")
-                && !config.otel_exporter_endpoint.contains("127.0.0.1")
-                && !config.otel_exporter_endpoint.contains(".svc")
-                && !config.otel_exporter_endpoint.contains(".local");
+            let is_ext = !isartor::core::is_internal_endpoint(&config.otel_exporter_endpoint);
             if is_ext {
                 println!("    (BLOCKED — offline mode: external OTel endpoint suppressed)");
             }

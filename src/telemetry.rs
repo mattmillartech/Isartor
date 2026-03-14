@@ -70,13 +70,7 @@ pub fn init_telemetry(config: &Arc<AppConfig>) -> anyhow::Result<OtelGuard> {
 
     // ── Offline mode: disable OTel exporter to prevent phone-home ───
     if config.offline_mode {
-        // Check whether the configured endpoint looks external (not localhost/127/internal).
-        let endpoint = &config.otel_exporter_endpoint;
-        let is_external = !endpoint.contains("localhost")
-            && !endpoint.contains("127.0.0.1")
-            && !endpoint.contains("::1")
-            && !endpoint.contains(".svc")
-            && !endpoint.contains(".local");
+        let is_external = !crate::core::is_internal_endpoint(&config.otel_exporter_endpoint);
 
         if is_external {
             // Fall back to console-only: an external OTel push would be a
@@ -87,7 +81,7 @@ pub fn init_telemetry(config: &Arc<AppConfig>) -> anyhow::Result<OtelGuard> {
                 .init();
 
             tracing::warn!(
-                otel.endpoint = %endpoint,
+                otel.endpoint = %config.otel_exporter_endpoint,
                 "Telemetry: OTel exporter DISABLED (offline mode — \
                  external endpoint would escape the perimeter). \
                  Set ISARTOR__OTEL_EXPORTER_ENDPOINT to an internal \
