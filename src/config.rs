@@ -173,7 +173,8 @@ pub struct AppConfig {
     pub embedding_sidecar: EmbeddingSidecarSettings,
 
     // ── Layer 3 — External LLM ──────────────────────────────────────
-    /// LLM provider: "openai", "azure", "anthropic", or "xai".
+    /// LLM provider: "openai", "azure", "anthropic", "xai", "gemini",
+    /// "mistral", "groq", or "deepseek".
     pub llm_provider: String,
 
     /// Base URL for the external LLM API.
@@ -181,6 +182,10 @@ pub struct AppConfig {
     ///   - Azure:     https://<resource>.openai.azure.com
     ///   - Anthropic: https://api.anthropic.com/v1/messages
     ///   - xAI:       https://api.x.ai/v1/chat/completions
+    ///   - Gemini:    https://generativelanguage.googleapis.com
+    ///   - Mistral:   https://api.mistral.ai/v1/chat/completions
+    ///   - Groq:      https://api.groq.com/openai/v1
+    ///   - DeepSeek:  https://api.deepseek.com
     pub external_llm_url: String,
 
     /// Model name to request from the external LLM.

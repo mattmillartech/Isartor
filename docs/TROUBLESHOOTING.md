@@ -319,6 +319,18 @@ export ISARTOR__EXTERNAL_LLM_URL=https://api.anthropic.com/v1/messages
 # xAI
 export ISARTOR__LLM_PROVIDER=xai
 export ISARTOR__EXTERNAL_LLM_URL=https://api.x.ai/v1/chat/completions
+
+# Google Gemini
+export ISARTOR__LLM_PROVIDER=gemini
+
+# Mistral AI
+export ISARTOR__LLM_PROVIDER=mistral
+
+# Groq
+export ISARTOR__LLM_PROVIDER=groq
+
+# DeepSeek
+export ISARTOR__LLM_PROVIDER=deepseek
 ```
 
 ---

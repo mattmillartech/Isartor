@@ -5,7 +5,7 @@ use std::time::Duration;
 use rig::agent::Agent;
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
-use rig::providers::{anthropic, azure, openai, xai};
+use rig::providers::{anthropic, azure, deepseek, gemini, groq, mistral, openai, xai};
 
 use crate::clients::slm::SlmClient;
 use crate::config::AppConfig;
@@ -109,6 +109,38 @@ impl AppState {
                     .expect("Failed to initialize xAI client");
                 Arc::new(RigAgent {
                     name: "xai",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
+            }
+            "gemini" => {
+                let client = gemini::Client::new(&config.external_llm_api_key)
+                    .expect("Failed to initialize Gemini client");
+                Arc::new(RigAgent {
+                    name: "gemini",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
+            }
+            "mistral" => {
+                let client = mistral::Client::new(&config.external_llm_api_key)
+                    .expect("Failed to initialize Mistral client");
+                Arc::new(RigAgent {
+                    name: "mistral",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
+            }
+            "groq" => {
+                let client = groq::Client::new(&config.external_llm_api_key)
+                    .expect("Failed to initialize Groq client");
+                Arc::new(RigAgent {
+                    name: "groq",
+                    agent: client.agent(&config.external_llm_model).build(),
+                })
+            }
+            "deepseek" => {
+                let client = deepseek::Client::new(&config.external_llm_api_key)
+                    .expect("Failed to initialize DeepSeek client");
+                Arc::new(RigAgent {
+                    name: "deepseek",
                     agent: client.agent(&config.external_llm_model).build(),
                 })
             }
@@ -270,6 +302,30 @@ mod tests {
     async fn app_state_new_azure_provider() {
         let state = AppState::new(make_test_config("azure"), shared_test_embedder());
         assert_eq!(state.llm_agent.provider_name(), "azure");
+    }
+
+    #[tokio::test]
+    async fn app_state_new_gemini_provider() {
+        let state = AppState::new(make_test_config("gemini"), shared_test_embedder());
+        assert_eq!(state.llm_agent.provider_name(), "gemini");
+    }
+
+    #[tokio::test]
+    async fn app_state_new_mistral_provider() {
+        let state = AppState::new(make_test_config("mistral"), shared_test_embedder());
+        assert_eq!(state.llm_agent.provider_name(), "mistral");
+    }
+
+    #[tokio::test]
+    async fn app_state_new_groq_provider() {
+        let state = AppState::new(make_test_config("groq"), shared_test_embedder());
+        assert_eq!(state.llm_agent.provider_name(), "groq");
+    }
+
+    #[tokio::test]
+    async fn app_state_new_deepseek_provider() {
+        let state = AppState::new(make_test_config("deepseek"), shared_test_embedder());
+        assert_eq!(state.llm_agent.provider_name(), "deepseek");
     }
 
     #[tokio::test]
