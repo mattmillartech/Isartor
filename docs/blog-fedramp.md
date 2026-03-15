@@ -95,13 +95,13 @@ available in the container image (or on a mounted volume) before the gateway
 starts. This is non-negotiable for environments where the deployment system
 has no outbound internet access at all.
 
-Isartor meets all three requirements. The binary is compiled with Rust's
+Isartor is designed to meet all three requirements. The binary is compiled with Rust's
 `--target x86_64-unknown-linux-musl` producing a fully static binary with
 zero shared library dependencies. Licence validation uses HMAC offline
-verification. The `latest-airgapped` Docker image pre-bundles all embedding
-models at build time — no internet access is required after the image is
-transferred to the air-gapped environment.
-
+verification. The `latest-airgapped` Docker image is built to pre-bundle (or
+pre-cache) all embedding models so that, once the image is transferred to the
+air-gapped environment and `ISARTOR__OFFLINE_MODE=true` is set, no additional
+model downloads or outbound internet access are required at runtime.
 ---
 
 ## The Configuration
