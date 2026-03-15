@@ -354,11 +354,11 @@ async fn run_connectivity_check() -> anyhow::Result<()> {
 
     println!();
     println!(
-        "Zero hidden telemetry connections: {} VERIFIED",
+        "Offline mode: {}",
         if air_gap_ok {
-            "✓"
+            "enabled (no external connections expected based on config)"
         } else {
-            "⚠ (L3 enabled — set ISARTOR__OFFLINE_MODE=true to block)"
+            "disabled (L3 egress may be enabled — set ISARTOR__OFFLINE_MODE=true to block)"
         }
     );
     println!(
