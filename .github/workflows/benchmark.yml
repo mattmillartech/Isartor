@@ -37,11 +37,19 @@ jobs:
 
       # ── Start Isartor and run harness ──────────────────────────────────────
       - name: Start Isartor server
+        env:
+          # Gateway auth — known key used by the harness below.
+          ISARTOR__GATEWAY_API_KEY: benchmark-key
+          # Azure OpenAI backend for L3 (cloud) requests.
+          # Credentials are stored as repository secrets; the job skips L3 if unset.
+          ISARTOR__LLM_PROVIDER: azure
+          ISARTOR__EXTERNAL_LLM_URL: https://diggafoundry.openai.azure.com
+          ISARTOR__EXTERNAL_LLM_MODEL: gpt-4o-mini
+          ISARTOR__EXTERNAL_LLM_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          ISARTOR__AZURE_DEPLOYMENT_ID: gpt-4o-mini
+          ISARTOR__AZURE_API_VERSION: "2024-08-01-preview"
         run: |
-          # Use a well-known key so the harness can authenticate.
-          # The config crate uses prefix "ISARTOR" + separator "__", so the correct
-          # env var is ISARTOR__GATEWAY_API_KEY (double underscore).
-          ISARTOR__GATEWAY_API_KEY=benchmark-key ./target/release/isartor &
+          ./target/release/isartor &
           echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
           # Wait until the server is accepting connections (up to 30 s)
           for i in $(seq 1 30); do

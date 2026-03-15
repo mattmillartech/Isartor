@@ -219,7 +219,14 @@ cargo build --release
 # Start Isartor with default settings (exact + semantic cache enabled).
 # The gateway_api_key defaults to "changeme"; the harness will use the
 # same value via $ISARTOR_API_KEY so authentication passes automatically.
-ISARTOR__CACHE_MODE=both ./target/release/isartor &
+# For L3 (cloud) requests, configure an Azure OpenAI backend:
+ISARTOR__CACHE_MODE=both \
+ISARTOR__LLM_PROVIDER=azure \
+ISARTOR__EXTERNAL_LLM_URL=https://<resource>.openai.azure.com \
+ISARTOR__EXTERNAL_LLM_API_KEY=<your-azure-key> \
+ISARTOR__AZURE_DEPLOYMENT_ID=gpt-4o-mini \
+ISARTOR__AZURE_API_VERSION=2024-08-01-preview \
+./target/release/isartor &
 sleep 5  # wait for the server to start
 
 # Run the full benchmark suite (ISARTOR_API_KEY defaults to 'changeme')
@@ -252,3 +259,16 @@ targeting `main`. It:
 
 A `validate-harness` job also runs in dry-run mode on every push to confirm
 the harness itself is functioning correctly without requiring a live server.
+
+### Required repository secret
+
+The CI workflow routes L3 (cloud) requests through Azure OpenAI. Add the
+following secret to your repository (**Settings → Secrets and variables →
+Actions → New repository secret**):
+
+| Secret name            | Value                  |
+|------------------------|------------------------|
+| `AZURE_OPENAI_API_KEY` | Your Azure OpenAI key  |
+
+Without this secret the server cannot reach the Azure backend and L3 requests
+will return 502 errors. L1a/L1b cache-hit rows are unaffected.
