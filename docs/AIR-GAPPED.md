@@ -28,9 +28,11 @@ Complete these steps before deploying Isartor in an air-gapped environment:
    docker pull ghcr.io/isartor-ai/isartor:latest-airgapped
    ```
 
-   This image has all L1b embedding models pre-bundled — no internet access
-   is required after the image is transferred to your environment.
-   See [Image Size Comparison](#image-size-comparison) for size details.
+   This image includes local copies of the L1b embedding models to minimize
+   or avoid external downloads during normal operation in most setups.
+   See [Image Size Comparison](#image-size-comparison) for size details and
+   be sure to follow any additional configuration steps required by your
+   environment to operate fully offline.
 
 2. **Transfer to your air-gapped environment** via your organisation's
    approved media transfer process (USB, air-gap data diode, etc.).
