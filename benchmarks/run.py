@@ -111,6 +111,7 @@ def run_benchmark(
     *,
     dry_run: bool = False,
     api_key: str = "changeme",
+    timeout: float = 120.0,
 ) -> dict:
     """
     Send each prompt to ``url/api/chat`` and collect per-request statistics.
@@ -127,6 +128,9 @@ def run_benchmark(
     api_key:  Value for the ``X-API-Key`` header.  Must match the server's
               ``gateway_api_key`` setting (default: ``"changeme"``, which is
               the server's own config default from ``src/config.rs``).
+    timeout:  Per-request timeout in seconds (default: 120).  Azure OpenAI
+              L3 calls can take 20–60 s on cold starts, so 120 s gives ample
+              headroom while still catching genuine hangs.
     """
     results: dict[str, int] = {"l1a": 0, "l1b": 0, "l2": 0, "l3": 0, "error": 0}
     # Per-layer latency lists for per-layer p50 in the table
@@ -165,7 +169,7 @@ def run_benchmark(
             headers=headers,
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw_layer = resp.headers.get("X-Isartor-Layer", "l3")
                 latency_ms = (time.perf_counter() - start) * 1000
                 # Normalise/validate header value. Map unknown values to "error"
@@ -442,6 +446,15 @@ def main() -> None:
         help="Path for the results JSON file (default: benchmarks/results/latest.json)",
     )
     parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("ISARTOR_TIMEOUT", "120")),
+        help=(
+            "Per-request timeout in seconds "
+            "(default: $ISARTOR_TIMEOUT or 120)"
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         dest="dry_run",
@@ -474,7 +487,8 @@ def main() -> None:
             prompts = load_prompts(path)
             print(f"\nLoaded {len(prompts)} prompts from {path.name}")
             fixture_results[name] = run_benchmark(
-                args.url, prompts, name, dry_run=args.dry_run, api_key=args.api_key
+                args.url, prompts, name, dry_run=args.dry_run, api_key=args.api_key,
+                timeout=args.timeout,
             )
         write_results(fixture_results, Path(args.output))
 
@@ -488,7 +502,8 @@ def main() -> None:
             prompts = prompts[: args.requests]
         label = input_path.stem
         fixture_results[label] = run_benchmark(
-            args.url, prompts, label, dry_run=args.dry_run, api_key=args.api_key
+            args.url, prompts, label, dry_run=args.dry_run, api_key=args.api_key,
+            timeout=args.timeout,
         )
 
 

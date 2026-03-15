@@ -62,6 +62,7 @@ jobs:
 
       - name: Run benchmark suite
         id: bench
+        timeout-minutes: 30
         env:
           ISARTOR_URL: http://localhost:8080
           ISARTOR_API_KEY: benchmark-key
@@ -69,6 +70,7 @@ jobs:
           python3 benchmarks/run.py --all \
             --url "$ISARTOR_URL" \
             --api-key "$ISARTOR_API_KEY" \
+            --timeout 120 \
             --output benchmarks/results/ci_run.json \
             2>&1 | tee /tmp/bench_output.txt
           echo "bench_output<<EOF" >> "$GITHUB_OUTPUT"
