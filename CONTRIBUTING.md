@@ -1,66 +1,45 @@
 # Contributing to Isartor
 
-First off, thank you for considering contributing to Isartor! It's people like you that make Isartor such a great tool for the AI community.
+Thanks for your interest in contributing. Isartor is maintained
+by one developer as a side project. Here's how to make your
+contribution land quickly.
 
-We welcome all kinds of contributions, whether it's:
-- ✨ Implementing new features or Deflection Stack layers.
-- 🐛 Reporting or fixing bugs.
-- 📝 Improving documentation (including this guide!).
-- 🧪 Adding unit or integration tests.
-- 💡 Proposing new architectural ideas.
+## Before You Open a PR
 
-## 🛠️ Prerequisites
+1. **Check existing issues** — your idea may already be tracked
+2. **Open an issue first** for any non-trivial change
+3. **One PR per issue** — keep scope tight
 
-To build and test Isartor locally, you will need the following tools:
+## Development Setup
 
-1.  **Rust Toolchain**: Install via [rustup.rs](https://rustup.rs/). We track the latest stable release.
-2.  **CMake**: Required for building some of the ML backends (ort-sys, candle-core).
-3.  **Docker & Docker Compose**: Essential for running integration tests, sidecars (llama.cpp), and the observability stack (Prometheus/Grafana).
-4.  **Git**: For version control.
+```bash
+git clone https://github.com/isartor-ai/Isartor.git
+cd Isartor
+cargo build
+cargo test
+```
 
-## 🚀 Development Workflow
+Requirements: Rust 1.75+, Docker (for integration tests)
 
-The standard way to contribute is:
+## PR Checklist
 
-1.  **Fork the repository** on GitHub.
-2.  **Clone your fork** locally:
-    ```bash
-    git clone https://github.com/your-username/Isartor.git
-    cd Isartor
-    ```
-3.  **Create a feature branch**:
-    ```bash
-    git checkout -b feat/your-awesome-feature
-    ```
-4.  **Make your changes**. Ensure your code adheres to our [Coding Standards](#coding-standards).
-5.  **Run the tests**:
-    ```bash
-    cargo test
-    ```
-6.  **Run the linter and formatter**:
-    We use strict CI checks. Save yourself some time by running these locally:
-    ```bash
-    cargo fmt --all
-    cargo clippy --all-targets --all-features -- -D warnings
-    ```
-7.  **Commit your changes**. We prefer descriptive, conventional commit messages (e.g., `feat: ...`, `fix: ...`, `docs: ...`).
-8.  **Push to your fork** and **submit a Pull Request** against the `main` branch.
+- [ ] `cargo test` passes
+- [ ] `cargo clippy` has no new warnings
+- [ ] `cargo fmt` applied
+- [ ] PR description explains WHY, not just WHAT
 
-## 📏 Coding Standards
+## What Gets Merged Quickly
 
-- **Idiomatic Rust**: We strive for clean, "idiomatic" Rust. When in doubt, follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/).
-- **Formatting**: Always run `cargo fmt` before committing. We use the default `rustfmt` settings.
-- **Linting**: We take Clippy warnings seriously. All PRs must pass `cargo clippy` with no warnings.
-- **Documentation**: Public modules, structs, and functions should be documented with doc comments (`///`).
+- Bug fixes with a test that reproduces the bug
+- Documentation improvements
+- Performance improvements with benchmark evidence
 
-## 💬 Community & Communication
+## What Takes Longer
 
-Have a big idea or a complex question? We'd love to discuss it before you spend hours on a PR!
+- New features (needs design discussion in an issue first)
+- Changes to the deflection layer logic
 
-- **Discord**: Join our [Discord Server](https://discord.gg/placeholder) for real-time discussion.
-- **Matrix**: You can also find us on Matrix at [#isartor:matrix.org](https://matrix.to/#/#isartor:matrix.org).
-- **GitHub Issues**: For bug reports and formal feature requests, please use the [Issue Tracker](https://github.com/isartor-ai/Isartor/issues).
+## Response Time
 
----
-
-By contributing to this project, you agree that your contributions will be licensed under the **Apache License, Version 2.0**.
+I respond to issues and PRs within 24–48 hours on weekdays.
+Weekend responses are not guaranteed.
