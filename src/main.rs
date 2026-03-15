@@ -89,10 +89,10 @@ async fn main() -> anyhow::Result<()> {
         if config.enable_slm_router {
             eprintln!("  │  ✓ L2 SLM Router:       active                       │");
         } else {
-            eprintln!("  │  - L2 SLM Router:       disabled (ENABLE_SLM_ROUTER=false)│");
+            eprintln!("  │  - L2 SLM Router:       disabled (ISARTOR__ENABLE_SLM_ROUTER=false) │");
         }
         eprintln!("  │  ✗ L3 Cloud Logic:      DISABLED (offline mode)      │");
-        eprintln!("  │  ✗ Telemetry export:    DISABLED if external endpoint │");
+        eprintln!("  │  ↺ Telemetry export:    see telemetry config (external endpoints blocked in offline mode) │");
         eprintln!("  │  ✓ License validation:  offline HMAC check           │");
         eprintln!("  └──────────────────────────────────────────────────────┘");
         eprintln!();
