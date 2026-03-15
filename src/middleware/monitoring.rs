@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::Request;
+use axum::http::HeaderValue;
 use axum::middleware::Next;
 use axum::response::IntoResponse;
 use tracing::Instrument;
@@ -114,6 +115,34 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
         "Request completed"
     );
 
+    // ── Attach observability headers ─────────────────────────────
+    // X-Isartor-Layer: which layer resolved the request (l0/l1a/l1b/l2/l3)
+    // X-Isartor-Deflected: true when the request was resolved without
+    //                      reaching the cloud LLM
+    let layer_header_value = match final_layer {
+        FinalLayer::ExactCache => "l1a",
+        FinalLayer::SemanticCache => "l1b",
+        FinalLayer::Slm => "l2",
+        FinalLayer::Cloud => "l3",
+        FinalLayer::AuthBlocked => "l0",
+    };
+    let deflected_header_value =
+        if resolved_early || matches!(final_layer, FinalLayer::AuthBlocked) {
+            "true"
+        } else {
+            "false"
+        };
+
+    let mut response = response;
+    response.headers_mut().insert(
+        "X-Isartor-Layer",
+        HeaderValue::from_static(layer_header_value),
+    );
+    response.headers_mut().insert(
+        "X-Isartor-Deflected",
+        HeaderValue::from_static(deflected_header_value),
+    );
+
     response
 }
 
@@ -182,6 +211,7 @@ mod tests {
             enable_monitoring,
             enable_slm_router: false,
             otel_exporter_endpoint: "http://localhost:4317".into(),
+            offline_mode: false,
         });
 
         Arc::new(AppState {

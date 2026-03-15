@@ -9,6 +9,8 @@
 [![CI](https://github.com/isartor-ai/Isartor/actions/workflows/ci.yml/badge.svg)](https://github.com/isartor-ai/Isartor/actions)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.1.0-green.svg)](https://github.com/isartor-ai/Isartor/releases)
+[![Air-Gappable](https://img.shields.io/badge/%E2%9C%93%20Air--Gappable-FedRAMP%20Ready-blue)](docs/AIR-GAPPED.md)
+[![Zero Telemetry](https://img.shields.io/badge/%E2%9C%93%20Zero%20hidden%20telemetry-verified%20by%20CI-brightgreen)](tests/phone_home_audit.rs)
 
 ---
 
@@ -25,7 +27,7 @@ Isartor replaces the dumb pipe with algorithmic intelligence at the edge. Acting
 By computing intent *before* routing, Isartor acts as an impenetrable Prompt Firewall for your LLM spend.
 
 - **100% Pure-Rust Edge AI:** Statically compiled, no dependency hell. Native tensor execution via Hugging Face `candle`.
-- **Algorithmic Deflection:** Layers 1 & 2 can resolve 60–80% of repetitive agentic traffic locally for $0.
+- **Algorithmic Deflection:** In our benchmark suite, L1a and L1b deflect **71% of repetitive agentic traffic** (FAQ/agent loop patterns) and **38% of diverse task traffic**. [Full benchmark →](benchmarks/README.md)
 - **Frictionless:** One `cargo build` or `docker run` and you're live.
 
 ---
@@ -49,7 +51,7 @@ Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM 
 | **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. | 5–50 ms |
 | **L3 — Cloud Logic** | Load Balancing & Retries | Routes surviving complex prompts to OpenAI, Anthropic, or Azure, with built-in fallback resilience. | Network-bound |
 
-Layers 1a and 1b alone can deflect **60–80% of agentic traffic** before any neural inference runs.
+Layers 1a and 1b deflect **71% of repetitive agentic traffic** (FAQ/agent loop patterns) and **38% of diverse task traffic** before any neural inference runs. [Full benchmark →](benchmarks/README.md)
 
 ---
 
@@ -81,24 +83,42 @@ export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
 
 ## Quick Start
 
-### Docker (Recommended)
+### Docker (Recommended — zero configuration)
 
-All required ML models are baked into the image.
+All required ML models are baked into the image. No API key needed for the cache layers.
 
 ```bash
 docker run -p 8080:8080 ghcr.io/isartor-ai/isartor:latest
 ```
 
-### macOS / Linux
+The startup banner appears after all layers are ready (< 30 s on a modern machine).
+Verify with:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.sh | bash
+curl http://localhost:8080/health
+# {"status":"ok","version":"0.1.0","layers":{...},"uptime_seconds":5,"demo_mode":true}
 ```
 
-### Windows (PowerShell)
+> **Image size:** ~120 MB compressed / ~260 MB on disk (includes `all-MiniLM-L6-v2` embedding model, statically linked Rust binary).
+
+### macOS / Linux — single command
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
+```
+
+After installation:
+
+```bash
+isartor          # start the server on port 8080
+isartor demo     # run the deflection demo (no API key needed)
+isartor init     # generate a commented config scaffold
+```
+
+### Windows (PowerShell) — single command
 
 ```powershell
-irm https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 ```
 
 ### Build from Source
@@ -169,6 +189,7 @@ See [docs/6-OBSERVABILITY.md](docs/6-OBSERVABILITY.md) for the full span and met
 | [Observability](docs/6-OBSERVABILITY.md) | OpenTelemetry spans, metrics, Grafana dashboards |
 | [Performance Tuning](docs/PERFORMANCE-TUNING.md) | Deflection measurement, config tuning, SLO/SLA templates |
 | [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues, diagnostic steps, FAQ |
+| [Governance](GOVERNANCE.md) | Project independence, license stability, decision making |
 
 ---
 

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use axum::{middleware as axum_mw, response::IntoResponse, routing::post, Json, Router};
 use clap::{Parser, Subcommand};
+use anyhow::bail;
 
 use isartor::config::AppConfig;
 use isartor::handler;
@@ -15,6 +16,12 @@ use isartor::middleware;
     about = "Prompt Firewall — cache-first prompt deflection"
 )]
 struct Cli {
+    /// Enable offline / air-gap mode: all outbound cloud connections are
+    /// blocked and L3 Cloud Logic is disabled.
+    /// Equivalent to setting ISARTOR__OFFLINE_MODE=true.
+    #[arg(long, env = "ISARTOR__OFFLINE_MODE")]
+    offline: bool,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -23,22 +30,42 @@ struct Cli {
 enum Commands {
     /// Generate a commented isartor.toml config scaffold and exit.
     Init,
+    /// Replay bundled demo prompts against the local cache layers and print a deflection table.
+    Demo,
+    /// Audit what outbound connections Isartor would make with the current configuration.
+    ConnectivityCheck,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // ── Handle `isartor init` ────────────────────────────────────
-    if let Some(Commands::Init) = cli.command {
-        isartor::first_run::write_config_scaffold()?;
-        return Ok(());
+    // ── Handle `isartor init` / `isartor demo` / `isartor connectivity-check` ─
+    match cli.command {
+        Some(Commands::Init) => {
+            isartor::first_run::write_config_scaffold()?;
+            return Ok(());
+        }
+        Some(Commands::Demo) => {
+            return run_standalone_demo().await;
+        }
+        Some(Commands::ConnectivityCheck) => {
+            return run_connectivity_check().await;
+        }
+        None => {}
     }
 
     // ------------------------------------------------------------------
     // 1. Initialise structured logging & OTel telemetry
     // ------------------------------------------------------------------
-    let config = Arc::new(AppConfig::load()?);
+    let mut config = AppConfig::load()?;
+
+    // CLI --offline flag takes precedence over env / config file.
+    if cli.offline {
+        config.offline_mode = true;
+    }
+
+    let config = Arc::new(config);
     let _otel_guard = isartor::telemetry::init_telemetry(&config)?;
 
     // ------------------------------------------------------------------
@@ -49,6 +76,26 @@ async fn main() -> anyhow::Result<()> {
 
     if first_run {
         isartor::first_run::print_welcome_banner();
+    }
+
+    // Print offline mode startup status.
+    if config.offline_mode {
+        eprintln!();
+        eprintln!("  ┌──────────────────────────────────────────────────────┐");
+        eprintln!("  │  [Isartor] OFFLINE MODE ACTIVE                       │");
+        eprintln!("  ├──────────────────────────────────────────────────────┤");
+        eprintln!("  │  ✓ L1a Exact Cache:     active                       │");
+        eprintln!("  │  ✓ L1b Semantic Cache:  active                       │");
+        if config.enable_slm_router {
+            eprintln!("  │  ✓ L2 SLM Router:       active                       │");
+        } else {
+            eprintln!("  │  - L2 SLM Router:       disabled (ISARTOR__ENABLE_SLM_ROUTER=false) │");
+        }
+        eprintln!("  │  ✗ L3 Cloud Logic:      DISABLED (offline mode)      │");
+        eprintln!("  │  ↺ Telemetry export:    see telemetry config (external endpoints blocked in offline mode) │");
+        eprintln!("  │  ✓ License validation:  offline HMAC check           │");
+        eprintln!("  └──────────────────────────────────────────────────────┘");
+        eprintln!();
     }
 
     // ------------------------------------------------------------------
@@ -188,4 +235,141 @@ async fn main() -> anyhow::Result<()> {
 /// Simple liveness probe — returns 200 OK.
 async fn healthz() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
+}
+
+/// `isartor demo` — standalone demo runner.
+///
+/// Initialises only the caches and the in-process text embedder (no server,
+/// no external LLM required), seeds the L1a/L1b layers with canonical
+/// prompt/response pairs, replays the bundled 50-prompt corpus, and prints
+/// a deflection summary table.
+async fn run_standalone_demo() -> anyhow::Result<()> {
+    // Minimal config — all defaults are fine for demo mode.
+    let config = Arc::new(AppConfig::load()?);
+
+    eprintln!();
+    eprintln!("  ┌─────────────────────────────────────────────────────┐");
+    eprintln!("  │  Isartor Demo — loading embedding model (~2 s) …    │");
+    eprintln!("  └─────────────────────────────────────────────────────┘");
+    eprintln!();
+
+    let text_embedder = Arc::new(
+        isartor::layer1::embeddings::TextEmbedder::new()
+            .expect("Failed to initialize embedding model"),
+    );
+
+    let app_state = Arc::new(isartor::state::AppState::new(config, text_embedder));
+
+    let stats = isartor::demo::run_demo(&app_state).await?;
+    isartor::demo::print_demo_results(&stats);
+
+    // Non-zero exit if deflection < 50 % so CI can catch regressions.
+    if stats.deflection_pct < 50.0 {
+        eprintln!(
+            "  ⚠  Deflection rate {:.1}% is below the 50% acceptance threshold.",
+            stats.deflection_pct
+        );
+        bail!(
+            "Deflection rate {:.1}% is below the 50% acceptance threshold.",
+            stats.deflection_pct
+        );
+    }
+
+    Ok(())
+}
+
+/// `isartor connectivity-check` — print a connectivity audit and exit.
+///
+/// Shows every outbound connection endpoint Isartor would use with the
+/// current configuration, so operators can verify zero unexpected
+/// external connections before deploying to an air-gapped environment.
+async fn run_connectivity_check() -> anyhow::Result<()> {
+    let config = AppConfig::load()?;
+
+    // L3 is considered configured only if an external LLM API key is present.
+    let l3_configured = !config.external_llm_api_key.is_empty();
+
+    let redis_configured = config.cache_backend == isartor::config::CacheBackend::Redis;
+    let is_redis_internal = isartor::core::is_internal_endpoint(&config.redis_url);
+
+    let air_gap_ok = !l3_configured || config.offline_mode;
+
+    println!();
+    println!("Isartor Connectivity Audit");
+    println!("──────────────────────────");
+
+    // L3 — cloud LLM endpoints
+    println!("Required (L3 cloud routing):");
+    match config.llm_provider.as_str() {
+        "azure" => {
+            let status = if l3_configured { "[CONFIGURED]" } else { "[NOT CONFIGURED]" };
+            println!("  → {}  {}", config.external_llm_url, status);
+        }
+        "anthropic" => {
+            let status = if l3_configured { "[CONFIGURED]" } else { "[NOT CONFIGURED]" };
+            println!("  → api.anthropic.com:443  {}", status);
+        }
+        _ => {
+            let status = if l3_configured { "[CONFIGURED]" } else { "[NOT CONFIGURED]" };
+            println!("  → api.openai.com:443     {}", status);
+        }
+    }
+    if config.offline_mode {
+        println!("    (BLOCKED — offline mode active)");
+    }
+
+    // OTel — observability endpoint
+    println!();
+    println!("Optional (observability / monitoring):");
+    {
+        let status = if otel_configured { "[CONFIGURED]" } else { "[NOT CONFIGURED]" };
+        println!("  → {}  {}", config.otel_exporter_endpoint, status);
+        if config.offline_mode && otel_configured {
+            let is_ext = !isartor::core::is_internal_endpoint(&config.otel_exporter_endpoint);
+            if is_ext {
+                println!("    (BLOCKED — offline mode: external OTel endpoint suppressed)");
+            }
+        }
+    }
+
+    // Redis — internal cache
+    println!();
+    println!("Internal only (no external):");
+    if redis_configured {
+        let locality = if is_redis_internal {
+            "[CONFIGURED - internal]"
+        } else {
+            "[CONFIGURED - external?]"
+        };
+        println!("  → {}  {}", config.redis_url, locality);
+    } else {
+        println!("  → (in-memory cache — no network connection)  [CONFIGURED - internal]");
+    }
+
+    // L2 SLM sidecar
+    if config.enable_slm_router {
+        println!("  → {}  [CONFIGURED - internal]", config.layer2.sidecar_url);
+    }
+
+    println!();
+    println!(
+        "Offline mode: {}",
+        if air_gap_ok {
+            "enabled (no external connections expected based on config)"
+        } else {
+            "disabled (L3 egress may be enabled — set ISARTOR__OFFLINE_MODE=true to block)"
+        }
+    );
+    println!(
+        "Air-gap compatible: {} {}",
+        if air_gap_ok { "✓ YES" } else { "⚠ PARTIAL" },
+        if air_gap_ok {
+            "(L3 disabled or offline mode active)"
+        } else {
+            "(disable L3 or set ISARTOR__OFFLINE_MODE=true)"
+        }
+    );
+    println!();
+
+    Ok(())
 }

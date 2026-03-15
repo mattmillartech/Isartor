@@ -53,13 +53,9 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
 
 # Application build
 COPY src/ src/
-RUN touch src/main.rs && \
-        if [ "$TARGETARCH" = "amd64" ]; then \
-            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
-        elif [ "$TARGETARCH" = "arm64" ]; then \
-            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
-        fi && \
-        cargo build --release --target $RUST_MUSL_TARGET
+COPY demo/ demo/
+RUN touch src/main.rs \
+    && cargo build --release --target x86_64-unknown-linux-musl
 
 # Verify the binary is truly static
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
