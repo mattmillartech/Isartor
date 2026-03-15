@@ -62,6 +62,37 @@ pub enum LlmProvider {
     Together,
 }
 
+impl LlmProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LlmProvider::Openai => "openai",
+            LlmProvider::Azure => "azure",
+            LlmProvider::Anthropic => "anthropic",
+            LlmProvider::Xai => "xai",
+            LlmProvider::Gemini => "gemini",
+            LlmProvider::Mistral => "mistral",
+            LlmProvider::Groq => "groq",
+            LlmProvider::Deepseek => "deepseek",
+            LlmProvider::Cohere => "cohere",
+            LlmProvider::Galadriel => "galadriel",
+            LlmProvider::Hyperbolic => "hyperbolic",
+            LlmProvider::Huggingface => "huggingface",
+            LlmProvider::Mira => "mira",
+            LlmProvider::Moonshot => "moonshot",
+            LlmProvider::Ollama => "ollama",
+            LlmProvider::Openrouter => "openrouter",
+            LlmProvider::Perplexity => "perplexity",
+            LlmProvider::Together => "together",
+        }
+    }
+}
+
+impl std::fmt::Display for LlmProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Cache backend for Layer 1a exact-match cache.
 ///
 /// Set via `ISARTOR__CACHE_BACKEND` env var.
