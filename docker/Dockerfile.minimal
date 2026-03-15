@@ -78,11 +78,6 @@ LABEL org.opencontainers.image.title="isartor"
 LABEL org.opencontainers.image.description="Isartor AI Gateway — Level 1 minimal image"
 
 ARG TARGETARCH
-# Copy the correct binary based on target architecture
-# COPY --from=builder copies from the builder stage, and Docker build context handles --platform matching
-COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/isartor /isartor-tmp-amd64
-COPY --from=builder /build/target/aarch64-unknown-linux-musl/release/isartor /isartor-tmp-arm64
-
 # Since distroless has no shell, we use a builder step to copy the right binary
 # This stage copies the binary before the final distroless stage
 FROM alpine:latest AS binary-selector
