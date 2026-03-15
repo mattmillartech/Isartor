@@ -31,6 +31,37 @@ pub enum CacheMode {
     Both,
 }
 
+/// Supported external LLM providers.
+///
+/// This is used for the `llm_provider` configuration field. The string values
+/// are deserialized in a case-insensitive (lowercase) manner via Serde. Any
+/// unsupported provider string will cause configuration loading to fail,
+/// avoiding silent fallbacks to unintended providers.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmProvider {
+    /// Default provider if none is specified explicitly.
+    #[default]
+    Openai,
+    Azure,
+    Anthropic,
+    Xai,
+    Gemini,
+    Mistral,
+    Groq,
+    Deepseek,
+    Cohere,
+    Galadriel,
+    Hyperbolic,
+    Huggingface,
+    Mira,
+    Moonshot,
+    Ollama,
+    Openrouter,
+    Perplexity,
+    Together,
+}
+
 /// Cache backend for Layer 1a exact-match cache.
 ///
 /// Set via `ISARTOR__CACHE_BACKEND` env var.
@@ -178,11 +209,22 @@ pub struct AppConfig {
     /// "groq", "deepseek", "cohere", "galadriel", "hyperbolic",
     /// "huggingface", "mira", "moonshot", "ollama", "openrouter",
     /// "perplexity", "together".
-    /// Unknown values fall through to the default "openai" branch.
-    pub llm_provider: String,
+    /// Any unsupported value will cause configuration loading to fail
+    /// instead of silently falling back to "openai".
+    pub llm_provider: LlmProvider,
 
     /// Base URL for the external LLM API.
     ///   - OpenAI:      https://api.openai.com/v1/chat/completions
+    /// Base URL for the external LLM HTTP endpoint.
+    ///
+    /// When `llm_provider` is `"azure"`, this value is passed as the Azure
+    /// endpoint (e.g. via `azure_endpoint(...)`).
+    ///
+    /// For other providers, the `rig-core` client currently uses its own
+    /// built-in default endpoints and ignores this setting. The following
+    /// URLs are provided for documentation/reference only and may not be
+    /// affected by changing `external_llm_url`:
+    ///
     ///   - Azure:       https://<resource>.openai.azure.com
     ///   - Anthropic:   https://api.anthropic.com/v1/messages
     ///   - xAI:         https://api.x.ai/v1/chat/completions

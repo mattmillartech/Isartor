@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use std::sync::Arc;
 use std::time::Duration;
+use std::env;
 
 use rig::agent::Agent;
 use rig::client::CompletionClient;
@@ -87,6 +88,10 @@ impl AppState {
             config.cache_max_capacity,
         ));
 
+        // Note: `config.external_llm_url` is only used for the Azure provider below.
+        // For all other providers (anthropic, xai, gemini, mistral, groq, deepseek, etc.),
+        // the rig-core clients currently do not consume `external_llm_url`, so
+        // `ISARTOR__EXTERNAL_LLM_URL` has no effect when those providers are selected.
         let agent: Arc<dyn AppLlmAgent> = match config.llm_provider.as_str() {
             "azure" => {
                 let client: azure::Client = azure::Client::builder()
@@ -198,6 +203,9 @@ impl AppState {
             }
             "ollama" => {
                 // Ollama is a local provider — no API key required.
+                // If an external LLM URL is configured, use it to override the default Ollama host.
+                // This allows running Ollama on a non-localhost host/port (e.g., via ISARTOR__EXTERNAL_LLM_URL).
+                env::set_var("OLLAMA_HOST", &config.external_llm_url);
                 let client = ollama::Client::new(Nothing)
                     .expect("Failed to initialize Ollama client");
                 Arc::new(RigAgent {

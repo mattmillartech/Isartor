@@ -83,7 +83,7 @@ All providers are powered by [rig-core](https://crates.io/crates/rig-core).
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ISARTOR__LLM_PROVIDER` | `String` | `openai` | Provider: `openai`, `azure`, `anthropic`, `xai`, `gemini`, `mistral`, `groq`, `deepseek`, `cohere`, `galadriel`, `hyperbolic`, `huggingface`, `mira`, `moonshot`, `ollama`, `openrouter`, `perplexity`, `together` |
-| `ISARTOR__EXTERNAL_LLM_URL` | `String` | `https://api.openai.com/v1/chat/completions` | Base URL for the external LLM API |
+| `ISARTOR__EXTERNAL_LLM_URL` | `String` | `https://api.openai.com/v1/chat/completions` | Base URL for the external LLM API (currently only used for the `azure` provider; other providers use their built-in endpoints) |
 | `ISARTOR__EXTERNAL_LLM_MODEL` | `String` | `gpt-4o-mini` | Model name to request |
 | `ISARTOR__EXTERNAL_LLM_API_KEY` | `String` | *(empty)* | API key for the cloud LLM provider (not needed for Ollama) |
 
