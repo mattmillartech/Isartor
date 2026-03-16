@@ -8,7 +8,7 @@
 # Multi-arch with buildx:
 #   docker buildx build --platform linux/amd64,linux/arm64 -t isartor:latest .
 
-ARG RUST_VERSION=1.85
+ARG RUST_VERSION=1.82
 ARG TARGETARCH
 
 # ── Stage 1: Builder ────────────────────────────────────────────────────────
