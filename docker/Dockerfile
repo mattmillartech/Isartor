@@ -75,7 +75,7 @@ RUN set -e && \
       echo "aarch64-unknown-linux-musl"; \
     fi) && \
     BINARY="/build/target/$RUST_TARGET/release/isartor" && \
-    if ldd "$BINARY" 2>&1 | grep -q "not a dynamic"; then \
+    if ldd "$BINARY" 2>&1 | grep -Eq "statically linked|not a dynamic"; then \
       echo "✅ Binary is statically linked"; \
     else \
       echo "❌ Binary is NOT statically linked" && \
