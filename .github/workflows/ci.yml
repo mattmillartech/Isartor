@@ -94,31 +94,3 @@ jobs:
           files: coverage/cobertura.xml
           fail_ci_if_error: false
 
-  benchmark:
-    name: Benchmarks
-    runs-on: ubuntu-latest
-    needs: check
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler cmake
-
-      - name: Install stable Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Run benchmarks (baseline)
-        run: cargo bench --bench cache_latency -- --output-format bencher | tee benchmark_results.txt
-
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: benchmark_results.txt

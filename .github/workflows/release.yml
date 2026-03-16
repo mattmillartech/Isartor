@@ -11,6 +11,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         include:
           # Linux (musl, static)
@@ -39,6 +40,9 @@ jobs:
           profile: minimal
           override: true
           targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Install cross (Linux only)
         if: runner.os == 'Linux'
