@@ -45,31 +45,31 @@ WORKDIR /build
 # Dependency caching layer
 COPY Cargo.toml Cargo.lock* ./
 COPY benches/ benches/
-RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
-        if [ "$TARGETARCH" = "amd64" ]; then \
-            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+RUN RUST_MUSL_TARGET=$(if [ "$TARGETARCH" = "amd64" ]; then \
+            echo "x86_64-unknown-linux-musl"; \
         elif [ "$TARGETARCH" = "arm64" ]; then \
-            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
-        fi && \
+            echo "aarch64-unknown-linux-musl"; \
+        fi) && \
+        mkdir src && echo 'fn main() {}' > src/main.rs && \
         cargo build --release --target $RUST_MUSL_TARGET && rm -rf src
 
 # Application build
 COPY src/ src/
 COPY demo/ demo/
-RUN touch src/main.rs && \
-        if [ "$TARGETARCH" = "amd64" ]; then \
-            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+RUN RUST_MUSL_TARGET=$(if [ "$TARGETARCH" = "amd64" ]; then \
+            echo "x86_64-unknown-linux-musl"; \
         elif [ "$TARGETARCH" = "arm64" ]; then \
-            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
-        fi && \
+            echo "aarch64-unknown-linux-musl"; \
+        fi) && \
+        touch src/main.rs && \
         cargo build --release --target $RUST_MUSL_TARGET
 
 # Verify the binary is truly static
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-            export RUST_MUSL_TARGET="x86_64-unknown-linux-musl"; \
+RUN RUST_MUSL_TARGET=$(if [ "$TARGETARCH" = "amd64" ]; then \
+            echo "x86_64-unknown-linux-musl"; \
         elif [ "$TARGETARCH" = "arm64" ]; then \
-            export RUST_MUSL_TARGET="aarch64-unknown-linux-musl"; \
-        fi && \
+            echo "aarch64-unknown-linux-musl"; \
+        fi) && \
         file target/$RUST_MUSL_TARGET/release/isartor | grep -q "statically linked" && \
         echo "✅ Binary is statically linked" || (echo "❌ Binary is NOT statically linked" && exit 1)
 
