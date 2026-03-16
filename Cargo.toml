@@ -88,3 +88,16 @@ panic = "abort"
 [features]
 default = ["embedded-inference"]
 embedded-inference = []
+
+[[bench]]
+name = "cache_latency"
+harness = false
+
+[[bench]]
+name = "concurrency"
+harness = false
+
+[[bench]]
+name = "e2e_pipeline"
+harness = false
+

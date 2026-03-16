@@ -93,6 +93,32 @@ impl std::fmt::Display for LlmProvider {
     }
 }
 
+impl From<&str> for LlmProvider {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "openai" => LlmProvider::Openai,
+            "azure" => LlmProvider::Azure,
+            "anthropic" => LlmProvider::Anthropic,
+            "xai" => LlmProvider::Xai,
+            "gemini" => LlmProvider::Gemini,
+            "mistral" => LlmProvider::Mistral,
+            "groq" => LlmProvider::Groq,
+            "deepseek" => LlmProvider::Deepseek,
+            "cohere" => LlmProvider::Cohere,
+            "galadriel" => LlmProvider::Galadriel,
+            "hyperbolic" => LlmProvider::Hyperbolic,
+            "huggingface" => LlmProvider::Huggingface,
+            "mira" => LlmProvider::Mira,
+            "moonshot" => LlmProvider::Moonshot,
+            "ollama" => LlmProvider::Ollama,
+            "openrouter" => LlmProvider::Openrouter,
+            "perplexity" => LlmProvider::Perplexity,
+            "together" => LlmProvider::Together,
+            _ => LlmProvider::Openai, // default fallback
+        }
+    }
+}
+
 /// Cache backend for Layer 1a exact-match cache.
 ///
 /// Set via `ISARTOR__CACHE_BACKEND` env var.
