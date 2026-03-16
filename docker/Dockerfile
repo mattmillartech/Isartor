@@ -55,7 +55,6 @@ RUN set -e && \
 # Copy application source
 COPY src/ src/
 COPY demo/ demo/
-COPY benches/ benches/
 
 # Build the application (dependencies already cached above)
 RUN set -e && \

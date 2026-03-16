@@ -36,7 +36,6 @@ RUN mkdir src && echo 'fn main() {}' > src/main.rs \
 
 # ── Application build ──────────────────────────────────────────────────────
 COPY src/ src/
-COPY benches/ benches/
 COPY demo/ demo/
 RUN touch src/main.rs \
     && cargo build --release
