@@ -1,43 +1,59 @@
 
 # Isartor Quickstart
 
-Get started with Isartor in seconds using one of the following methods:
+Get started with Isartor in seconds using one of the following methods.
 
-## Path A: Docker (Easiest – Batteries Included)
-
-The fastest way to get started. All required ML models are baked into the image.
+## Path A: Docker (Recommended)
 
 ```bash
-docker run -p 3000:3000 ghcr.io/isartor-ai/isartor:latest
+docker run -p 8080:8080 ghcr.io/isartor-ai/isartor:latest
+```
+
+Verify:
+
+```bash
+curl http://localhost:8080/health
 ```
 
 ## Path B: macOS & Linux (Binary)
 
-Install the latest release with a single command:
+If this repository is **public**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
+```
+
+If this repository is **private** (recommended):
+
+```bash
+gh auth login
+# fetch file contents via GitHub API (authenticated) and execute
+
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh?ref=main | sh
 ```
 
 ## Path C: Windows (Binary)
 
-Install via PowerShell one-liner:
+If this repository is **public**:
 
 ```powershell
-irm https://raw.githubusercontent.com/isartor-ai/isartor/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 ```
 
-> **Note for Binary Installs:**
-> Unlike Docker, the raw binary requires a `config.yaml` to locate GGUF model files on your disk. See the [Configuration Guide](2-ARCHITECTURE.md#configuration) for details.
+If this repository is **private** (recommended):
+
+```powershell
+gh auth login
+
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1?ref=main | iex
+```
 
 ---
 
 ## Test the Prompt Firewall
 
-You can test your Isartor instance with:
-
 ```bash
-curl -X POST http://localhost:3000/api/v1/chat \
+curl -s http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Calculate 2+2"}'
 ```
