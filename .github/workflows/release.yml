@@ -15,6 +15,11 @@ on:
           - linux
           - macos
           - all
+      publish_latest:
+        description: 'Also push ghcr.io/isartor-ai/isartor:latest (main only)'
+        required: false
+        default: false
+        type: boolean
 
 
 jobs:
@@ -72,8 +77,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: 1.90.0
           targets: ${{ matrix.target }}
 
       # Belt-and-suspenders: explicitly add the target in case the action's
@@ -234,11 +240,16 @@ jobs:
             tmpdir="$(mktemp -d)"
             tar -xzf "$tgz" -C "$tmpdir"
             mv "$tmpdir/isartor" "docker-dist/isartor-${arch}"
+            chmod +x "docker-dist/isartor-${arch}"
             rm -rf "$tmpdir"
           done
 
           test -f docker-dist/isartor-amd64
           test -f docker-dist/isartor-arm64
+
+          file docker-dist/isartor-amd64 docker-dist/isartor-arm64
+          file docker-dist/isartor-amd64 | grep -q 'statically linked'
+          file docker-dist/isartor-arm64 | grep -q 'statically linked'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -256,10 +267,11 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ needs.meta.outputs.docker_tag }}"
+          PUBLISH_LATEST="${{ needs.meta.outputs.is_tag == 'true' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.event.inputs.publish_latest == 'true') }}"
 
           echo "tags<<EOF" >> $GITHUB_OUTPUT
           echo "ghcr.io/isartor-ai/isartor:${TAG}" >> $GITHUB_OUTPUT
-          if [[ "${{ needs.meta.outputs.is_tag }}" == "true" ]]; then
+          if [[ "$PUBLISH_LATEST" == "true" ]]; then
             echo "ghcr.io/isartor-ai/isartor:latest" >> $GITHUB_OUTPUT
           fi
           echo "EOF" >> $GITHUB_OUTPUT
