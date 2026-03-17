@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh 
 ```bash
 gh auth login
 
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh?ref=main | sh
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh -f ref=main | sh
 ```
 
 **Windows (PowerShell) — public repo:**
@@ -57,7 +57,7 @@ irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 ```powershell
 gh auth login
 
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1?ref=main | iex
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1 -f ref=main | iex
 ```
 
 This script detects your target OS and processor architecture, downloads the correct release binary, and adds it to your path automatically.

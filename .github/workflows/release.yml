@@ -187,7 +187,7 @@ jobs:
             Private repo (recommended):
             ```bash
             gh auth login
-            gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh?ref=main | sh
+            gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh -f ref=main | sh
             ```
 
             ### Windows (PowerShell) — single command
@@ -200,7 +200,7 @@ jobs:
             Private repo (recommended):
             ```powershell
             gh auth login
-            gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1?ref=main | iex
+            gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1 -f ref=main | iex
             ```
 
             ### After installation

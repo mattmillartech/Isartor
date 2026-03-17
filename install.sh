@@ -103,7 +103,7 @@ if [ -z "$TAG" ]; then
     echo "If $REPO is a private repository, you must authenticate."
     echo "Recommended (GitHub CLI):"
     echo "  gh auth login"
-    echo "  gh api -H \"Accept: application/vnd.github.raw\" /repos/$REPO/contents/install.sh?ref=main | sh"
+    echo "  gh api -H \"Accept: application/vnd.github.raw\" /repos/$REPO/contents/install.sh -f ref=main | sh"
     echo ""
     echo "Or export a token (needs repo scope for private repos):"
     echo "  export GITHUB_TOKEN=..."

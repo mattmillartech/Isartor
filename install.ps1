@@ -34,7 +34,7 @@ try {
     Write-Host ""
     Write-Host "If $Repo is a private repository, authenticate first:"
     Write-Host "  gh auth login"
-    Write-Host "  gh api -H \"Accept: application/vnd.github.raw\" /repos/$Repo/contents/install.ps1?ref=main | iex"
+    Write-Host "  gh api -H \"Accept: application/vnd.github.raw\" /repos/$Repo/contents/install.ps1 -f ref=main | iex"
     Write-Host ""
     Write-Host "Or set a token (needs repo scope for private repos):"
     Write-Host "  setx GITHUB_TOKEN <token>"

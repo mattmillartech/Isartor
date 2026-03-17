@@ -138,7 +138,7 @@ If this repository is **private** (recommended):
 
 ```bash
 gh auth login
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh?ref=main | sh
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh -f ref=main | sh
 ```
 
 After installation:
@@ -161,7 +161,7 @@ If this repository is **private** (recommended):
 
 ```powershell
 gh auth login
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1?ref=main | iex
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1 -f ref=main | iex
 ```
 
 ### Build from Source

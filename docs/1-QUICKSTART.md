@@ -29,7 +29,7 @@ If this repository is **private** (recommended):
 gh auth login
 # fetch file contents via GitHub API (authenticated) and execute
 
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh?ref=main | sh
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.sh -f ref=main | sh
 ```
 
 ## Path C: Windows (Binary)
@@ -45,7 +45,7 @@ If this repository is **private** (recommended):
 ```powershell
 gh auth login
 
-gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1?ref=main | iex
+gh api -H "Accept: application/vnd.github.raw" /repos/isartor-ai/Isartor/contents/install.ps1 -f ref=main | iex
 ```
 
 ---
