@@ -86,20 +86,25 @@ jobs:
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
+      - name: Install Zig (Linux only)
+        if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install cargo-zigbuild (Linux only)
+        if: runner.os == 'Linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
       - name: Build release binary
         shell: bash
         run: |
           set -euo pipefail
 
           if [ "${{ runner.os }}" = "Linux" ]; then
-            # cross-rs/cross docker images for musl are currently pinned to old glibc,
-            # which can break running Rust build-scripts (GLIBC_2.28+). Use zigbuild instead.
-            docker run --rm \
-              --user "$(id -u):$(id -g)" \
-              -e HOME=/tmp \
-              -v "$PWD":/io -w /io \
-              ghcr.io/rust-cross/cargo-zigbuild:latest \
-              bash -lc "cargo zigbuild --release --target ${{ matrix.target }}"
+            cargo zigbuild --release --target ${{ matrix.target }}
           else
             cargo build --release --target ${{ matrix.target }}
           fi
