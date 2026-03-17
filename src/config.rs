@@ -457,14 +457,46 @@ fn validate_provider_config(cfg: &AppConfig) -> anyhow::Result<()> {
                 "Azure OpenAI selected but no API key configured. Set ISARTOR__EXTERNAL_LLM_API_KEY or ISARTOR__EXTERNAL_LLM_API_KEY_FILE"
             ));
         }
-        if cfg.external_llm_url.trim().is_empty() {
+
+        let endpoint = cfg.external_llm_url.trim();
+        if endpoint.is_empty() {
             return Err(anyhow::anyhow!(
                 "Azure OpenAI selected but ISARTOR__EXTERNAL_LLM_URL is empty (expected: https://<resource>.openai.azure.com)"
             ));
         }
+
+        // Common misconfiguration: leaving the OpenAI default URL in place.
+        if endpoint.contains("api.openai.com") {
+            return Err(anyhow::anyhow!(
+                "Azure OpenAI selected but ISARTOR__EXTERNAL_LLM_URL points to api.openai.com. Use your Azure OpenAI resource endpoint from Azure Portal → 'Keys and Endpoint', e.g. https://<resource>.openai.azure.com"
+            ));
+        }
+
+        // Another common misconfiguration: providing the full REST path.
+        if endpoint.contains("/openai/")
+            || endpoint.contains("/deployments/")
+            || endpoint.contains("chat/completions")
+            || endpoint.contains("api-version=")
+        {
+            return Err(anyhow::anyhow!(
+                "Azure OpenAI selected but ISARTOR__EXTERNAL_LLM_URL looks like a full REST URL. Provide only the base endpoint (no path/query), e.g. https://<resource>.openai.azure.com"
+            ));
+        }
+
+        // Allow public, gov, and cn domains. (We just sanity-check; rig-core appends the REST path.)
+        if !(endpoint.contains("openai.azure.com")
+            || endpoint.contains("openai.azure.us")
+            || endpoint.contains("openai.azure.cn")
+            || endpoint.contains("cognitiveservices.azure.com"))
+        {
+            return Err(anyhow::anyhow!(
+                "Azure OpenAI selected but ISARTOR__EXTERNAL_LLM_URL does not look like an Azure endpoint: '{endpoint}'. Expected: https://<resource>.openai.azure.com"
+            ));
+        }
+
         if cfg.azure_deployment_id.trim().is_empty() {
             return Err(anyhow::anyhow!(
-                "Azure OpenAI selected but ISARTOR__AZURE_DEPLOYMENT_ID is empty"
+                "Azure OpenAI selected but ISARTOR__AZURE_DEPLOYMENT_ID is empty (this is your Azure deployment name, not the model name)"
             ));
         }
         if cfg.azure_api_version.trim().is_empty() {

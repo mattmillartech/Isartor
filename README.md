@@ -100,7 +100,7 @@ docker run -p 8080:8080 \
   ghcr.io/isartor-ai/isartor:latest
 ```
 
-To use **Azure OpenAI** for Layer 3 (recommended: Docker secrets via `*_FILE`):
+To use **Azure OpenAI** for Layer 3 (recommended: Docker secrets via `*_FILE`). Important: `ISARTOR__EXTERNAL_LLM_URL` must be the **base Azure endpoint only** (no `/openai/...` path), e.g. `https://<resource>.openai.azure.com`:
 
 ```bash
 # Put your key in a file (no trailing newline is ideal, but Isartor trims whitespace)
