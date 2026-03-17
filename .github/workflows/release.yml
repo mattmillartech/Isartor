@@ -235,7 +235,7 @@ jobs:
   dist_release:
     name: Publish public binaries
     needs: [build, meta]
-    if: needs.meta.outputs.is_tag == 'true'
+    if: needs.meta.outputs.is_tag == 'true' && secrets.DIST_REPO_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
