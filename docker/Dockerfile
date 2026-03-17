@@ -101,6 +101,7 @@ COPY docker-dist/isartor-${TARGETARCH} /isartor
 ENV ISARTOR_HOST_PORT=0.0.0.0:8080 \
     HOME=/tmp \
     HF_HOME=/tmp/huggingface
+WORKDIR /tmp
 EXPOSE 8080
 
 # Run as non-root (distroless provides uid 65534 = nobody).
@@ -119,6 +120,7 @@ COPY --from=builder /isartor /isartor
 ENV ISARTOR_HOST_PORT=0.0.0.0:8080 \
     HOME=/tmp \
     HF_HOME=/tmp/huggingface
+WORKDIR /tmp
 EXPOSE 8080
 
 # Run as non-root (distroless provides uid 65534 = nobody).

@@ -165,6 +165,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           generate_release_notes: ${{ steps.tag.outputs.is_dev != 'true' }}
           draft: ${{ steps.tag.outputs.is_dev == 'true' }}
+          fail_on_unmatched_files: false
           body: |
             ## Zero-Config Quick Start
 
