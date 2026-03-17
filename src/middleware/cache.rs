@@ -180,16 +180,26 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         let resp_bytes = collected.to_bytes();
         let resp_string = String::from_utf8_lossy(&resp_bytes).to_string();
 
+        // Normalize what we store in caches: cache hits should reflect Layer 1,
+        // even if the original response came from Layer 2/3.
+        let cache_value = match serde_json::from_slice::<ChatResponse>(&resp_bytes) {
+            Ok(mut parsed) => {
+                parsed.layer = 1;
+                serde_json::to_string(&parsed).unwrap_or_else(|_| resp_string.clone())
+            }
+            Err(_) => resp_string.clone(),
+        };
+
         if resp_parts.status.is_success() {
             // Store in exact cache.
             if let Some(key) = exact_key {
                 tracing::debug!(cache.key = %key, "L1a: storing in exact cache");
-                state.exact_cache.put(key, resp_string.clone());
+                state.exact_cache.put(key, cache_value.clone());
             }
             // Store in vector cache.
             if let Some(emb) = embedding {
                 tracing::debug!("L1b: storing in vector cache");
-                state.vector_cache.insert(emb, resp_string.clone()).await;
+                state.vector_cache.insert(emb, cache_value.clone()).await;
             }
         }
 
@@ -346,10 +356,12 @@ mod tests {
         assert_eq!(json["message"], "downstream response");
         assert_eq!(json["layer"], 3);
 
-        // The response should now be in the exact cache.
+        // The response should now be in the exact cache (normalized to layer 1).
         let key = hex::encode(sha2::Sha256::digest(b"hello"));
         let cached = state.exact_cache.get(&key);
         assert!(cached.is_some(), "Response should be cached after miss");
+        let cached_json: serde_json::Value = serde_json::from_str(&cached.unwrap()).unwrap();
+        assert_eq!(cached_json["layer"], 1);
 
         // Second request — cache hit, should get cached response.
         let app2 = cache_app(state);
@@ -363,9 +375,10 @@ mod tests {
         let resp2 = app2.oneshot(req2).await.unwrap();
         assert_eq!(resp2.status(), StatusCode::OK);
         let body2 = resp2.into_body().collect().await.unwrap().to_bytes();
-        // The cached body should contain the downstream response.
-        let text = String::from_utf8_lossy(&body2);
-        assert!(text.contains("downstream response"));
+        let json2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
+        assert_eq!(json2["message"], "downstream response");
+        // Cache hits must report Layer 1 (even if the original response came from Layer 3).
+        assert_eq!(json2["layer"], 1);
     }
 
     #[tokio::test]

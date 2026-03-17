@@ -44,7 +44,7 @@ pub struct ChatRequest {
 }
 
 /// Unified response envelope returned by any layer.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
     pub layer: u8,
     pub message: String,
