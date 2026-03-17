@@ -179,12 +179,12 @@ jobs:
 
             ### macOS / Linux — single command
 
-            Public repo:
+            Public installer (works even if the source repo is private):
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
             ```
 
-            Private repo (recommended):
+            Install directly from the private source repo (requires GitHub auth):
             ```bash
             gh auth login
 
@@ -198,12 +198,12 @@ jobs:
 
             ### Windows (PowerShell) — single command
 
-            Public repo:
+            Public installer (works even if the source repo is private):
             ```powershell
-            irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
+            irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
             ```
 
-            Private repo (recommended):
+            Install directly from the private source repo (requires GitHub auth):
             ```powershell
             gh auth login
 
@@ -228,6 +228,48 @@ jobs:
             | macOS arm64 (M1/M2) | `isartor-${{ steps.tag.outputs.tag_name }}-aarch64-apple-darwin.tar.gz` |
             | Windows x86_64      | `isartor-${{ steps.tag.outputs.tag_name }}-x86_64-pc-windows-msvc.zip` |
 
+          files: |
+            dist/**/*.tar.gz
+            dist/**/*.zip
+
+  dist_release:
+    name: Publish public binaries
+    needs: [build, meta]
+    if: needs.meta.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: isartor-${{ needs.meta.outputs.tag }}-*
+          merge-multiple: true
+
+      - name: Create public GitHub Release (dist repo)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: isartor-ai/isartor-dist
+          token: ${{ secrets.DIST_REPO_TOKEN }}
+          tag_name: ${{ needs.meta.outputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          body: |
+            ## Install
+
+            ### macOS / Linux
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
+            ```
+
+            ### Windows (PowerShell)
+            ```powershell
+            irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
+            ```
+
+            ### Docker
+            ```bash
+            docker run -p 8080:8080 ghcr.io/isartor-ai/isartor:latest
+            ```
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip

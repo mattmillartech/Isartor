@@ -128,13 +128,13 @@ curl http://localhost:8080/health
 
 ### macOS / Linux — single command
 
-If this repository is **public**:
+**Public installer (works even if the source repo is private):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
 ```
 
-If this repository is **private** (recommended):
+**Install directly from the private source repo (requires GitHub auth):**
 
 ```bash
 gh auth login
@@ -157,13 +157,13 @@ isartor init     # generate a commented config scaffold
 
 ### Windows (PowerShell) — single command
 
-If this repository is **public**:
+**Public installer (works even if the source repo is private):**
 
 ```powershell
-irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
 ```
 
-If this repository is **private** (recommended):
+**Install directly from the private source repo (requires GitHub auth):**
 
 ```powershell
 gh auth login
