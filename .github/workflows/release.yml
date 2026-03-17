@@ -215,6 +215,8 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
+          build-args: |
+            RUST_VERSION=1.90
           push: true
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
