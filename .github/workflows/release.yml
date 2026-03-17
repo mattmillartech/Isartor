@@ -231,55 +231,6 @@ jobs:
             dist/**/*.tar.gz
             dist/**/*.zip
 
-  dist_release:
-    name: Publish public binaries
-    needs: [build, meta]
-    if: needs.meta.outputs.is_tag == 'true'
-    runs-on: ubuntu-latest
-    env:
-      DIST_REPO_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: isartor-${{ needs.meta.outputs.tag }}-*
-          merge-multiple: true
-
-      - name: Skip (DIST_REPO_TOKEN not set)
-        if: env.DIST_REPO_TOKEN == ''
-        run: echo "DIST_REPO_TOKEN not set; skipping public dist release."
-
-      - name: Create public GitHub Release (dist repo)
-        if: env.DIST_REPO_TOKEN != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: isartor-ai/isartor-dist
-          token: ${{ env.DIST_REPO_TOKEN }}
-          tag_name: ${{ needs.meta.outputs.tag }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          body: |
-            ## Install
-
-            ### macOS / Linux
-            ```bash
-            curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
-            ```
-
-            ### Windows (PowerShell)
-            ```powershell
-            irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
-            ```
-
-            ### Docker
-            ```bash
-            docker run -p 8080:8080 ghcr.io/isartor-ai/isartor:latest
-            ```
-          files: |
-            dist/**/*.tar.gz
-            dist/**/*.zip
-
   docker:
     name: Publish Docker Image
     needs: [build, meta]
