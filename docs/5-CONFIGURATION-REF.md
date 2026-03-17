@@ -49,6 +49,17 @@
 - `external_llm_model`: Model name for the selected provider (e.g. `gpt-4o-mini`, `gemini-2.0-flash`, `mistral-small-latest`, `llama-3.1-8b-instant`, `deepseek-chat`, `command-r`, `sonar`, `moonshot-v1-128k`)
 - `external_llm_api_key`: API key for the configured provider (not needed for `ollama`)
 
+### CLI Commands
+
+| Command | Description |
+|---|---|
+| `isartor` | Start the server (default) |
+| `isartor init` | Generate a commented `isartor.toml` config scaffold |
+| `isartor demo` | Run the deflection demo (no API key needed) |
+| `isartor connectivity-check` | Audit outbound connections |
+| `isartor connect <client>` | Configure AI clients to route through Isartor |
+| `isartor set-key --provider <name>` | Set LLM provider API key (writes to `isartor.toml` or env file) |
+
 ---
 
 For full details, see [README.md](../README.md) and [docs/2-ARCHITECTURE.md](2-ARCHITECTURE.md).

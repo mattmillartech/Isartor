@@ -371,4 +371,67 @@ ISARTOR__EXTERNAL_LLM_API_KEY=...
 
 ---
 
+## Setting Provider Keys via CLI
+
+The `isartor set-key` command lets you configure LLM provider API keys, model names, and provider selection directly from the command line. It writes to `isartor.toml` by default (preserving existing settings) or to a shell-sourceable env file.
+
+### Usage
+
+```bash
+# Interactive — prompts for the key securely (hidden input)
+isartor set-key --provider openai
+
+# Inline (for scripts / CI)
+isartor set-key --provider anthropic --key sk-ant-xxxxx --model claude-sonnet-4-6
+
+# Groq with default model (llama-3.1-8b-instant)
+isartor set-key --provider groq --key gsk_xxxxx
+
+# Write to env file instead of TOML
+isartor set-key --provider deepseek --key sk-xxxxx --env-file
+
+# Dry-run — see what would change without writing
+isartor set-key --provider gemini --key AIza... --dry-run
+
+# Ollama (no key needed)
+isartor set-key --provider ollama
+
+# Custom config path
+isartor set-key --provider openai --key sk-... --config-path /etc/isartor/isartor.toml
+```
+
+### Arguments
+
+| Argument | Short | Required | Description |
+|---|---|---|---|
+| `--provider` | `-p` | Yes | LLM provider name (e.g., `openai`, `anthropic`, `groq`, `ollama`) |
+| `--key` | `-k` | No | API key. If omitted and provider requires one, prompts interactively |
+| `--model` | `-m` | No | Model name. Uses sensible default for the provider if omitted |
+| `--config-path` | | No | Path to `isartor.toml` (default: `./isartor.toml`) |
+| `--dry-run` | | No | Print what would be written without modifying files |
+| `--env-file` | | No | Write `export` statements to `~/.isartor/env` instead of TOML |
+
+### Default Models
+
+When `--model` is omitted, the following defaults are used:
+
+| Provider | Default Model |
+|---|---|
+| `openai` | `gpt-4o-mini` |
+| `azure` | `gpt-4o-mini` |
+| `anthropic` | `claude-3-5-sonnet-20241022` |
+| `xai` | `grok-2` |
+| `gemini` | `gemini-2.0-flash` |
+| `mistral` | `mistral-small-latest` |
+| `groq` | `llama-3.1-8b-instant` |
+| `deepseek` | `deepseek-chat` |
+| `cohere` | `command-r` |
+| `ollama` | `llama3.2` |
+| `openrouter` | `openai/gpt-4o-mini` |
+| `perplexity` | `sonar` |
+| `together` | `meta-llama/Meta-Llama-3.1-8B-Instruct` |
+| All others | `gpt-4o-mini` |
+
+---
+
 *← Back to [README](../README.md)*

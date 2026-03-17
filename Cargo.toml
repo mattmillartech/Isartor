@@ -63,6 +63,8 @@ redis = { version = "0.25", features = ["tokio-comp"] }
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "5"
+rpassword = "5"
+toml_edit = "0.22"
 
 # Progress bars (first-run UX)
 indicatif = "0.17"

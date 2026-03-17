@@ -36,6 +36,8 @@ enum Commands {
     ConnectivityCheck,
     /// Configure local AI clients to route through Isartor.
     Connect(isartor::cli::connect::ConnectArgs),
+    /// Set the API key for an LLM provider (writes to isartor.toml or env file).
+    SetKey(isartor::cli::set_key::SetKeyArgs),
 }
 
 #[tokio::main]
@@ -56,6 +58,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Connect(args)) => {
             isartor::cli::connect::handle_connect(args).await?;
+            return Ok(());
+        }
+        Some(Commands::SetKey(args)) => {
+            isartor::cli::set_key::handle_set_key(args).await?;
             return Ok(());
         }
         None => {}
@@ -142,7 +148,6 @@ async fn main() -> anyhow::Result<()> {
         },
     )?);
 
-
     let app_state = Arc::new(isartor::state::AppState::new(config.clone(), text_embedder));
 
     // Mark boot time for the /health uptime counter.
@@ -170,7 +175,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/chat", post(handler::chat_handler))
         // Compatibility routes for common client SDKs.
         .route("/api/v1/chat", post(handler::chat_handler))
-        .route("/v1/chat/completions", post(handler::openai_chat_completions_handler))
+        .route(
+            "/v1/chat/completions",
+            post(handler::openai_chat_completions_handler),
+        )
         .route("/v1/messages", post(handler::anthropic_messages_handler))
         // Layer 2 – SLM triage (innermost, runs last before handler).
         .layer(axum_mw::from_fn(
@@ -274,7 +282,6 @@ async fn run_standalone_demo() -> anyhow::Result<()> {
             )
         },
     )?);
-
 
     let app_state = Arc::new(isartor::state::AppState::new(config, text_embedder));
 
