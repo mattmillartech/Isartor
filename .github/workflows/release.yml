@@ -51,6 +51,7 @@ jobs:
     name: Build (${{ matrix.os }} / ${{ matrix.target }})
     needs: meta
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.targets == 'all' || (github.event.inputs.targets == 'linux' && matrix.os == 'ubuntu-latest') || (github.event.inputs.targets == 'macos' && matrix.os == 'macos-latest') }}
     strategy:
       fail-fast: false
       matrix:
@@ -58,17 +59,13 @@ jobs:
           # Linux (musl, static) - fastest & cheapest
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            if: ${{ github.event_name != 'workflow_dispatch' || inputs.targets == 'linux' || inputs.targets == 'all' }}
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            if: ${{ github.event_name != 'workflow_dispatch' || inputs.targets == 'linux' || inputs.targets == 'all' }}
           # macOS (only on main/tags, most expensive)
           - os: macos-latest
             target: x86_64-apple-darwin
-            if: ${{ (github.event_name != 'workflow_dispatch' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || (github.event_name == 'workflow_dispatch' && (inputs.targets == 'macos' || inputs.targets == 'all')) }}
           - os: macos-latest
             target: aarch64-apple-darwin
-            if: ${{ (github.event_name != 'workflow_dispatch' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || (github.event_name == 'workflow_dispatch' && (inputs.targets == 'macos' || inputs.targets == 'all')) }}
 
     env:
       PROJECT_NAME: isartor
