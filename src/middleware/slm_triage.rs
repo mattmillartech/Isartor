@@ -10,8 +10,11 @@ use axum::{
 };
 use tracing::{info_span, Instrument};
 
+use crate::core::prompt::extract_prompt;
 use crate::middleware::body_buffer::BufferedBody;
-use crate::models::{ChatResponse, FinalLayer};
+use crate::models::{
+    ChatResponse, FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage,
+};
 use crate::state::AppState;
 
 /// System prompt used to ask the local SLM to classify the user's intent.
@@ -65,9 +68,51 @@ struct ChatCompletionResponse {
 /// 3. If the task is **COMPLEX** or the SLM is unreachable, the request
 ///    continues to Layer 3 (external LLM fallback).
 pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
+    fn slm_response_for_path(
+        path: &str,
+        status: StatusCode,
+        answer: String,
+        model: String,
+    ) -> Response {
+        match path {
+            "/v1/chat/completions" => {
+                let body = OpenAiChatResponse {
+                    choices: vec![OpenAiChatChoice {
+                        message: OpenAiMessage {
+                            role: "assistant".to_string(),
+                            content: answer,
+                        },
+                        index: 0,
+                        finish_reason: Some("stop".to_string()),
+                    }],
+                    model: Some(model),
+                };
+                (status, Json(body)).into_response()
+            }
+            "/v1/messages" => {
+                // Minimal Anthropic Messages response.
+                let body = serde_json::json!({
+                    "content": [{"type": "text", "text": answer}],
+                    "model": model,
+                });
+                (status, Json(body)).into_response()
+            }
+            _ => (
+                status,
+                Json(ChatResponse {
+                    layer: 2,
+                    message: answer,
+                    model: Some(model),
+                }),
+            )
+                .into_response(),
+        }
+    }
+
     let span = info_span!("layer2_slm", slm.complexity_score = tracing::field::Empty);
     async move {
         let layer_start = Instant::now();
+        let request_path = request.uri().path().to_string();
         let state = match request.extensions().get::<Arc<AppState>>() {
             Some(s) => s.clone(),
             None => {
@@ -113,11 +158,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
         }
     };
 
-    // Try to parse as JSON `{ "prompt": "..." }`, fall back to raw string.
-    let prompt: String = serde_json::from_slice::<serde_json::Value>(&body_bytes)
-        .ok()
-        .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
-        .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes).to_string());
+    let prompt = extract_prompt(&body_bytes);
 
     tracing::debug!(prompt = %prompt, "Layer 2: Classifying intent via local SLM");
 
@@ -233,15 +274,13 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                     match classifier.execute(&prompt).await {
                         Ok(answer) => {
                             crate::metrics::record_layer_duration("L2_SLM", layer_start.elapsed());
-                            let mut response = (
+                            let model = "embedded(gemma-2)".to_string();
+                            let mut response = slm_response_for_path(
+                                &request_path,
                                 StatusCode::OK,
-                                Json(ChatResponse {
-                                    layer: 2,
-                                    message: answer,
-                                    model: Some("embedded(gemma-2)".into()),
-                                }),
-                            )
-                                .into_response();
+                                answer,
+                                model,
+                            );
                             response.extensions_mut().insert(FinalLayer::Slm);
                             return response;
                         }
@@ -287,15 +326,13 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
                             .map(|c| c.message.content)
                             .unwrap_or_default();
                         crate::metrics::record_layer_duration("L2_SLM", layer_start.elapsed());
-                        let mut response = (
+                        let model = state.config.layer2.model_name.clone();
+                        let mut response = slm_response_for_path(
+                            &request_path,
                             StatusCode::OK,
-                            Json(ChatResponse {
-                                layer: 2,
-                                message: answer,
-                                model: Some(state.config.layer2.model_name.clone()),
-                            }),
-                        )
-                            .into_response();
+                            answer,
+                            model,
+                        );
                         response.extensions_mut().insert(FinalLayer::Slm);
                         return response;
                     }

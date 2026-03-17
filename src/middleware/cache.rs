@@ -13,6 +13,7 @@ use http_body_util::BodyExt;
 use sha2::{Digest, Sha256};
 
 use crate::config::CacheMode;
+use crate::core::prompt::extract_prompt;
 use crate::middleware::body_buffer::BufferedBody;
 use crate::models::{ChatResponse, FinalLayer};
 use crate::state::AppState;
@@ -67,11 +68,16 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
         }
     };
 
-    // Try JSON `{ "prompt": "..." }`, fall back to raw string.
-    let prompt: String = serde_json::from_slice::<serde_json::Value>(body_bytes.as_ref())
-        .ok()
-        .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
-        .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes).to_string());
+    let prompt = extract_prompt(body_bytes.as_ref());
+
+    // Keep cache entries separate per response format to avoid cross-format cache hits.
+    // (e.g., OpenAI-compatible endpoints should not return native ChatResponse bodies.)
+    let cache_ns = match request.uri().path() {
+        "/v1/chat/completions" => "openai",
+        "/v1/messages" => "anthropic",
+        _ => "native",
+    };
+    let cache_prompt = format!("{cache_ns}|{prompt}");
 
     let mode = &state.config.cache_mode;
     let layer_start = Instant::now();
@@ -80,7 +86,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // 2. Exact-match lookup (when mode is Exact or Both).
     // ------------------------------------------------------------------
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
-        let key = hex::encode(Sha256::digest(prompt.as_bytes()));
+        let key = hex::encode(Sha256::digest(cache_prompt.as_bytes()));
 
         tracing::debug!(
             cache.mode = ?mode,
@@ -112,7 +118,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // ------------------------------------------------------------------
     let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
         let embedder = state.text_embedder.clone();
-        let prompt_clone = prompt.clone();
+        let prompt_clone = cache_prompt.clone();
 
         // candle BertModel inference is CPU-bound; run on the blocking pool
         // so we don't starve the Tokio async workers.
@@ -357,7 +363,7 @@ mod tests {
         assert_eq!(json["layer"], 3);
 
         // The response should now be in the exact cache (normalized to layer 1).
-        let key = hex::encode(sha2::Sha256::digest(b"hello"));
+        let key = hex::encode(sha2::Sha256::digest(b"native|hello"));
         let cached = state.exact_cache.get(&key);
         assert!(cached.is_some(), "Response should be cached after miss");
         let cached_json: serde_json::Value = serde_json::from_str(&cached.unwrap()).unwrap();
@@ -407,7 +413,7 @@ mod tests {
         let state = test_state(CacheMode::Both);
 
         // Pre-populate the exact cache.
-        let key = hex::encode(sha2::Sha256::digest(b"cached prompt"));
+        let key = hex::encode(sha2::Sha256::digest(b"native|cached prompt"));
         let cached_json = serde_json::to_string(&ChatResponse {
             layer: 1,
             message: "from cache".into(),
@@ -449,7 +455,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Verify cached under the raw text key.
-        let key = hex::encode(sha2::Sha256::digest(b"raw prompt text"));
+        let key = hex::encode(sha2::Sha256::digest(b"native|raw prompt text"));
         let cached = state.exact_cache.get(&key);
         assert!(cached.is_some());
     }

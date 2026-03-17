@@ -1,6 +1,6 @@
 [package]
 name = "isartor"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -62,6 +62,7 @@ redis = { version = "0.25", features = ["tokio-comp"] }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
 
 # Progress bars (first-run UX)
 indicatif = "0.17"

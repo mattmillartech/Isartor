@@ -36,7 +36,18 @@ pub async fn auth_middleware(request: Request, next: Next) -> Response {
     let api_key = request
         .headers()
         .get("X-API-Key")
-        .and_then(|v| v.to_str().ok());
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .or_else(|| {
+            // OpenAI/Anthropic-compatible clients typically send:
+            //   Authorization: Bearer <token>
+            request
+                .headers()
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+                .map(str::to_string)
+        });
 
     match api_key {
         Some(key) if key == state.config.gateway_api_key => {
@@ -49,7 +60,7 @@ pub async fn auth_middleware(request: Request, next: Next) -> Response {
                 StatusCode::UNAUTHORIZED,
                 Json(json!({
                     "error": "Unauthorized",
-                    "message": "Missing or invalid X-API-Key header"
+                    "message": "Missing or invalid X-API-Key header (or Authorization: Bearer)"
                 })),
             )
                 .into_response();
@@ -164,6 +175,25 @@ mod tests {
             .method("POST")
             .uri("/test")
             .header("X-API-Key", "secret-key")
+            .body(Body::empty())
+            .unwrap();
+
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&body[..], b"ok");
+    }
+
+    #[tokio::test]
+    async fn bearer_api_key_passes_through() {
+        let state = test_state("secret-key");
+        let app = test_app(state);
+
+        let req = Request::builder()
+            .method("POST")
+            .uri("/test")
+            .header(axum::http::header::AUTHORIZATION, "Bearer secret-key")
             .body(Body::empty())
             .unwrap();
 

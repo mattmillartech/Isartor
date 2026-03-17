@@ -8,10 +8,11 @@ use axum::Json;
 use sha2::{Digest, Sha256};
 use tracing::{info_span, Instrument};
 
+use crate::core::prompt::extract_prompt;
 use crate::core::retry::{execute_with_retry, RetryConfig};
 use crate::errors::GatewayError;
 use crate::middleware::body_buffer::BufferedBody;
-use crate::models::{ChatResponse, FinalLayer};
+use crate::models::{ChatResponse, FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage};
 use crate::state::AppState;
 
 /// Layer 3 — Fallback handler.
@@ -23,6 +24,7 @@ use crate::state::AppState;
 /// When `offline_mode` is `true` the handler immediately returns HTTP 503
 /// rather than attempting any outbound cloud connection.
 pub async fn chat_handler(request: Request) -> impl IntoResponse {
+
     let span = info_span!(
         "layer3_llm",
         ai.prompt.length_bytes = tracing::field::Empty,
@@ -89,11 +91,7 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
         }
     };
 
-    // Try JSON `{ "prompt": "..." }`, fall back to raw string.
-    let prompt: String = serde_json::from_slice::<serde_json::Value>(&body_bytes)
-        .ok()
-        .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
-        .unwrap_or_else(|| String::from_utf8_lossy(&body_bytes).to_string());
+    let prompt = extract_prompt(&body_bytes);
 
     tracing::Span::current().record("ai.prompt.length_bytes", prompt.len() as u64);
 
@@ -177,6 +175,201 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
             response
         }
     }
+    }
+    .instrument(span)
+    .await
+}
+
+/// OpenAI-compatible chat completions endpoint — `POST /v1/chat/completions`.
+///
+/// This is used by many agent frameworks and SDKs that expect an OpenAI-style API.
+pub async fn openai_chat_completions_handler(request: Request) -> impl IntoResponse {
+    let span = info_span!("openai_chat_completions");
+    async move {
+        let layer_start = Instant::now();
+        let state = match request.extensions().get::<Arc<AppState>>() {
+            Some(s) => s.clone(),
+            None => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": {"message": "missing application state"}
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        if state.config.offline_mode {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": {"message": "offline mode active"}
+                })),
+            )
+                .into_response();
+        }
+
+        let body_bytes = match request.extensions().get::<BufferedBody>() {
+            Some(buf) => buf.0.clone(),
+            None => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": {"message": "missing buffered body"}
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        let prompt = extract_prompt(&body_bytes);
+
+        let provider_name = state.llm_agent.provider_name();
+        tracing::info!(provider = provider_name, "OpenAI compat: forwarding to LLM");
+
+        let retry_cfg = RetryConfig::default();
+        let agent = state.llm_agent.clone();
+        let provider_for_err = provider_name.to_string();
+        let prompt_for_retry = prompt.clone();
+
+        let result = execute_with_retry(&retry_cfg, "L3_OpenAICompat", || {
+            let agent = agent.clone();
+            let prompt = prompt_for_retry.clone();
+            let provider = provider_for_err.clone();
+            async move { agent.chat(&prompt).await.map_err(|e| GatewayError::from_llm_error(&provider, &e)) }
+        })
+        .await;
+
+        match result {
+            Ok(text) => {
+                crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
+
+                let response = OpenAiChatResponse {
+                    choices: vec![OpenAiChatChoice {
+                        message: OpenAiMessage {
+                            role: "assistant".to_string(),
+                            content: text,
+                        },
+                        index: 0,
+                        finish_reason: Some("stop".to_string()),
+                    }],
+                    model: Some(state.config.external_llm_model.clone()),
+                };
+
+                let mut resp = (StatusCode::OK, Json(response)).into_response();
+                resp.extensions_mut().insert(FinalLayer::Cloud);
+                resp
+            }
+            Err(gw_err) => {
+                crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
+                let mut resp = (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({
+                        "error": {"message": format!("[{provider_name}] {gw_err}")}
+                    })),
+                )
+                    .into_response();
+                resp.extensions_mut().insert(FinalLayer::Cloud);
+                resp
+            }
+        }
+    }
+    .instrument(span)
+    .await
+}
+
+/// Anthropic Messages endpoint — `POST /v1/messages`.
+///
+/// Used by Claude Code and other Anthropic-compatible clients.
+pub async fn anthropic_messages_handler(request: Request) -> impl IntoResponse {
+    let span = info_span!("anthropic_messages");
+    async move {
+        let layer_start = Instant::now();
+        let state = match request.extensions().get::<Arc<AppState>>() {
+            Some(s) => s.clone(),
+            None => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": {"message": "missing application state"}
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        if state.config.offline_mode {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({
+                    "error": {"message": "offline mode active"}
+                })),
+            )
+                .into_response();
+        }
+
+        let body_bytes = match request.extensions().get::<BufferedBody>() {
+            Some(buf) => buf.0.clone(),
+            None => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": {"message": "missing buffered body"}
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        let prompt = extract_prompt(&body_bytes);
+
+        let provider_name = state.llm_agent.provider_name();
+        tracing::info!(provider = provider_name, "Anthropic compat: forwarding to LLM");
+
+        let retry_cfg = RetryConfig::default();
+        let agent = state.llm_agent.clone();
+        let provider_for_err = provider_name.to_string();
+        let prompt_for_retry = prompt.clone();
+
+        let result = execute_with_retry(&retry_cfg, "L3_AnthropicCompat", || {
+            let agent = agent.clone();
+            let prompt = prompt_for_retry.clone();
+            let provider = provider_for_err.clone();
+            async move { agent.chat(&prompt).await.map_err(|e| GatewayError::from_llm_error(&provider, &e)) }
+        })
+        .await;
+
+        match result {
+            Ok(text) => {
+                crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
+                let mut resp = (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "type": "message",
+                        "role": "assistant",
+                        "model": state.config.external_llm_model,
+                        "content": [{"type": "text", "text": text}],
+                        "stop_reason": "end_turn"
+                    })),
+                )
+                    .into_response();
+                resp.extensions_mut().insert(FinalLayer::Cloud);
+                resp
+            }
+            Err(gw_err) => {
+                crate::metrics::record_layer_duration("L3_Cloud", layer_start.elapsed());
+                let mut resp = (
+                    StatusCode::BAD_GATEWAY,
+                    Json(serde_json::json!({
+                        "error": {"message": format!("[{provider_name}] {gw_err}")}
+                    })),
+                )
+                    .into_response();
+                resp.extensions_mut().insert(FinalLayer::Cloud);
+                resp
+            }
+        }
     }
     .instrument(span)
     .await

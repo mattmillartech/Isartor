@@ -34,6 +34,8 @@ enum Commands {
     Demo,
     /// Audit what outbound connections Isartor would make with the current configuration.
     ConnectivityCheck,
+    /// Configure local AI clients to route through Isartor.
+    Connect(isartor::cli::connect::ConnectArgs),
 }
 
 #[tokio::main]
@@ -51,6 +53,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::ConnectivityCheck) => {
             return run_connectivity_check().await;
+        }
+        Some(Commands::Connect(args)) => {
+            isartor::cli::connect::handle_connect(args).await?;
+            return Ok(());
         }
         None => {}
     }
@@ -162,6 +168,10 @@ async fn main() -> anyhow::Result<()> {
     // Authenticated routes — go through the full Deflection Stack.
     let authenticated = Router::new()
         .route("/api/chat", post(handler::chat_handler))
+        // Compatibility routes for common client SDKs.
+        .route("/api/v1/chat", post(handler::chat_handler))
+        .route("/v1/chat/completions", post(handler::openai_chat_completions_handler))
+        .route("/v1/messages", post(handler::anthropic_messages_handler))
         // Layer 2 – SLM triage (innermost, runs last before handler).
         .layer(axum_mw::from_fn(
             middleware::slm_triage::slm_triage_middleware,

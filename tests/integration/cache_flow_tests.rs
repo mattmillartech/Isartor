@@ -43,7 +43,7 @@ async fn exact_cache_miss_stores_and_hit_returns_cached() {
     assert_eq!(json["layer"], 3);
 
     // Verify the exact cache was populated.
-    let key = hex::encode(Sha256::digest(b"cache test prompt"));
+    let key = hex::encode(Sha256::digest(b"native|cache test prompt"));
     assert!(
         state.exact_cache.get(&key).is_some(),
         "Exact cache should have stored the response"
@@ -97,8 +97,8 @@ async fn exact_cache_different_prompts_are_separate() {
     let _ = app2.oneshot(req2).await.unwrap();
 
     // Both should be in cache under different keys.
-    let key_a = hex::encode(Sha256::digest(b"prompt A"));
-    let key_b = hex::encode(Sha256::digest(b"prompt B"));
+    let key_a = hex::encode(Sha256::digest(b"native|prompt A"));
+    let key_b = hex::encode(Sha256::digest(b"native|prompt B"));
     assert!(state.exact_cache.get(&key_a).is_some());
     assert!(state.exact_cache.get(&key_b).is_some());
 }
@@ -115,7 +115,7 @@ async fn both_mode_exact_hit_short_circuits() {
     let state = build_state(Arc::new(EchoAgent), config, embedder);
 
     // Pre-populate exact cache.
-    let key = hex::encode(Sha256::digest(b"pre-populated"));
+    let key = hex::encode(Sha256::digest(b"native|pre-populated"));
     let cached_body = serde_json::to_string(&serde_json::json!({
         "layer": 1,
         "message": "from exact cache",

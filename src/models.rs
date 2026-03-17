@@ -110,7 +110,7 @@ pub struct OpenAiChatRequest {
 }
 
 /// A single choice from the chat completions response.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAiChatChoice {
     pub message: OpenAiMessage,
     #[allow(dead_code)]
@@ -120,7 +120,7 @@ pub struct OpenAiChatChoice {
 }
 
 /// Response body from `POST /v1/chat/completions`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OpenAiChatResponse {
     pub choices: Vec<OpenAiChatChoice>,
     #[allow(dead_code)]

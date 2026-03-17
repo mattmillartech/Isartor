@@ -1,4 +1,5 @@
 pub mod ports;
+pub mod prompt;
 pub mod retry;
 
 // ── Network utility helpers ───────────────────────────────────────────
