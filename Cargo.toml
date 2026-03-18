@@ -59,7 +59,7 @@ http-body-util = "0.1"
 # Hashing (exact-match cache keys)
 sha2 = "0.10"
 hex = "0.4"
-rig-core = "0.32.0"
+rig-core = "0.33.0"
 async-trait = "0.1.89"
 opentelemetry = "0.31.0"
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
