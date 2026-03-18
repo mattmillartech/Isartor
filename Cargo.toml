@@ -89,9 +89,6 @@ clap = { version = "4", features = ["derive", "env"] }
 dirs = "5"
 rpassword = "5"
 toml_edit = "0.22"
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
 uuid = { version = "1", features = ["v4"] }
 time = "0.3"
 
@@ -106,6 +103,9 @@ indicatif = "0.17"
 
 # Time formatting
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 # Test utilities
