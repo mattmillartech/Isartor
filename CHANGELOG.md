@@ -57,7 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.18...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.19...HEAD
+[0.1.19]: https://github.com/isartor-ai/Isartor/compare/v0.1.18...v0.1.19
 [0.1.18]: https://github.com/isartor-ai/Isartor/compare/v0.1.17...v0.1.18
 [0.1.17]: https://github.com/isartor-ai/Isartor/compare/v0.1.16...v0.1.17
 [0.1.16]: https://github.com/isartor-ai/Isartor/compare/v0.1.15...v0.1.16
