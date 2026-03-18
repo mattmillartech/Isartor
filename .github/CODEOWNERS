@@ -1,0 +1,15 @@
+# Default owners for the entire repo
+* @isartor-ai/maintainers
+
+# CI/CD
+.github/ @isartor-ai/maintainers
+
+# Core source
+src/ @isartor-ai/maintainers
+
+# Docker
+docker/ @isartor-ai/maintainers
+
+# Documentation
+docs/ @isartor-ai/maintainers
+*.md @isartor-ai/maintainers

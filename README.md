@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/isartor-ai/Isartor/actions/workflows/ci.yml/badge.svg)](https://github.com/isartor-ai/Isartor/actions)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.16-green.svg)](https://github.com/isartor-ai/Isartor/releases)
+[![GitHub Release](https://img.shields.io/github/v/release/isartor-ai/Isartor?display_name=tag&sort=semver)](https://github.com/isartor-ai/Isartor/releases/latest)
 [![Air-Gappable](https://img.shields.io/badge/%E2%9C%93%20Air--Gappable-FedRAMP%20Ready-blue)](docs/AIR-GAPPED.md)
 [![Zero Telemetry](https://img.shields.io/badge/%E2%9C%93%20Zero%20hidden%20telemetry-verified%20by%20CI-brightgreen)](tests/phone_home_audit.rs)
 
@@ -85,10 +85,8 @@ export ISARTOR__VLLM_MODEL=meta-llama/Llama-3-8B-Instruct
 
 ### macOS / Linux — single command (Recommended — minimal configuration)
 
-**Public installer (works even if the source repo is private):**
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
 ```
 
 ### Docker (Straight forward — minimal configuration)
@@ -147,19 +145,8 @@ isartor set-key -p openai  # configure your LLM provider API key
 
 ### Windows (PowerShell) — single command
 
-**Public installer (works even if the source repo is private):**
-
 ```powershell
-irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
-```
-
-**Install directly from the private source repo (requires GitHub auth):**
-
-```powershell
-gh auth login
-
-$script = gh api graphql -f query='query($owner:String!,$name:String!,$expr:String!){repository(owner:$owner,name:$name){object(expression:$expr){... on Blob{text}}}}' -f owner='isartor-ai' -f name='Isartor' -f expr='main:install.ps1' --jq .data.repository.object.text
-iex $script
+irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 ```
 
 ### Build from Source

@@ -17,40 +17,14 @@ curl http://localhost:8080/health
 
 ## Path B: macOS & Linux (Binary)
 
-**Public installer (works even if the source repo is private):**
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.sh | sh
-```
-
-**Install directly from the private source repo (requires GitHub auth):**
-
-```bash
-gh auth login
-
-tmp="$(mktemp)" && \
-  GH_PAGER=cat gh api graphql \
-    -f query='query($owner:String!,$name:String!,$expr:String!){repository(owner:$owner,name:$name){object(expression:$expr){... on Blob{text}}}}' \
-    -f owner='isartor-ai' -f name='Isartor' -f expr='main:install.sh' \
-    --jq .data.repository.object.text > "$tmp" && \
-  sh "$tmp" && rm "$tmp"
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
 ```
 
 ## Path C: Windows (Binary)
 
-**Public installer (works even if the source repo is private):**
-
 ```powershell
-irm https://raw.githubusercontent.com/isartor-ai/isartor-dist/main/install.ps1 | iex
-```
-
-**Install directly from the private source repo (requires GitHub auth):**
-
-```powershell
-gh auth login
-
-$script = gh api graphql -f query='query($owner:String!,$name:String!,$expr:String!){repository(owner:$owner,name:$name){object(expression:$expr){... on Blob{text}}}}' -f owner='isartor-ai' -f name='Isartor' -f expr='main:install.ps1' --jq .data.repository.object.text
-iex $script
+irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 ```
 
 ---

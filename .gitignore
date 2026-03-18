@@ -13,3 +13,4 @@ __pycache__/
 .isartor_init
 isartor_demo_result.txt
 EXPLORATION_SUMMARY.md
+azure_openai_key/

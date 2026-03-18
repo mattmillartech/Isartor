@@ -106,6 +106,7 @@ fn build_audit_state(
         enable_slm_router: false,
         otel_exporter_endpoint: "http://localhost:4317".into(),
         offline_mode: offline,
+        proxy_port: "0.0.0.0:8081".into(),
     });
 
     let exact_cache = Arc::new(ExactMatchCache::new(NonZeroUsize::new(1_000).unwrap()));

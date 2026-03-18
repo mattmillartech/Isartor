@@ -3,6 +3,24 @@ name = "isartor"
 version = "0.1.18"
 edition = "2021"
 license = "Apache-2.0"
+description = "Open-source Prompt Firewall — a local LLM gateway with caching, semantic deduplication, and content filtering"
+homepage = "https://github.com/isartor-ai/Isartor"
+repository = "https://github.com/isartor-ai/Isartor"
+readme = "README.md"
+authors = ["Isartor AI <info@isartor.ai>"]
+keywords = ["llm", "proxy", "firewall", "prompt", "cache"]
+categories = ["command-line-utilities", "web-programming"]
+publish = true
+exclude = [
+    "docker/",
+    "k8s/",
+    "dashboards/",
+    "benchmarks/",
+    "demo/prompts/",
+    "scripts/",
+    "docs/",
+    ".github/",
+]
 
 
 [dependencies]

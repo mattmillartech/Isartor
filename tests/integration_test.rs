@@ -311,6 +311,7 @@ async fn body_survives_all_middleware() {
         enable_slm_router: false,
         otel_exporter_endpoint: "http://localhost:4317".into(),
         offline_mode: false,
+        proxy_port: "0.0.0.0:8081".into(),
     });
 
     let state = Arc::new(AppState {
