@@ -68,12 +68,12 @@ pub fn print_welcome_banner() {
     {g}║{r}                                                          {g}║{r}
     {g}╚══════════════════════════════════════════════════════════╝{r}
 "#,
-        g = "\x1b[38;5;178m",  // gold border
-        d = "\x1b[38;5;24m",   // dark blue (gate)
-        c = "\x1b[38;5;45m",   // cyan (signal/arrow)
-        b = "\x1b[38;5;18m",   // navy (ISARTOR text)
-        w = "\x1b[1;37m",      // bold white (layer labels)
-        r = "\x1b[0m",         // reset
+        g = "\x1b[38;5;178m", // gold border
+        d = "\x1b[38;5;24m",  // dark blue (gate)
+        c = "\x1b[38;5;45m",  // cyan (signal/arrow)
+        b = "\x1b[38;5;18m",  // navy (ISARTOR text)
+        w = "\x1b[1;37m",     // bold white (layer labels)
+        r = "\x1b[0m",        // reset
         ver = version,
     );
     println!("{banner}");

@@ -53,9 +53,7 @@ pub async fn handle_update(args: UpdateArgs) -> Result<()> {
         "tar.gz"
     };
     let asset_name = format!("isartor-{tag}-{target}.{ext}");
-    let download_url = format!(
-        "https://github.com/{REPO}/releases/download/{tag}/{asset_name}"
-    );
+    let download_url = format!("https://github.com/{REPO}/releases/download/{tag}/{asset_name}");
 
     eprintln!("  Asset:           {}", asset_name);
     eprintln!("  URL:             {}", download_url);
@@ -100,10 +98,9 @@ pub async fn handle_update(args: UpdateArgs) -> Result<()> {
     };
 
     // 5. Replace the current binary.
-    let current_exe = std::env::current_exe().context("cannot determine current executable path")?;
-    let current_exe = current_exe
-        .canonicalize()
-        .unwrap_or(current_exe);
+    let current_exe =
+        std::env::current_exe().context("cannot determine current executable path")?;
+    let current_exe = current_exe.canonicalize().unwrap_or(current_exe);
 
     eprintln!("  ⏳ Replacing {}...", current_exe.display());
     self_replace(&extracted_bin, &current_exe)?;
@@ -123,10 +120,7 @@ async fn fetch_latest_tag() -> Result<String> {
 
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
-        bail!(
-            "Failed to fetch latest release: HTTP {}",
-            resp.status()
-        );
+        bail!("Failed to fetch latest release: HTTP {}", resp.status());
     }
 
     let json: serde_json::Value = resp.json().await?;
@@ -201,11 +195,12 @@ fn self_replace(new_bin: &std::path::Path, current_exe: &std::path::Path) -> Res
     let backup = current_exe.with_extension("bak");
 
     // Move current binary aside.
-    std::fs::rename(current_exe, &backup)
-        .with_context(|| format!(
+    std::fs::rename(current_exe, &backup).with_context(|| {
+        format!(
             "failed to move current binary to backup ({}). Try running with sudo.",
             backup.display()
-        ))?;
+        )
+    })?;
 
     // Copy new binary into place.
     if let Err(e) = std::fs::copy(new_bin, current_exe) {
@@ -228,9 +223,7 @@ mod tests {
     fn detect_target_returns_valid_triple() {
         let target = detect_target().unwrap();
         assert!(
-            target.contains("linux")
-                || target.contains("darwin")
-                || target.contains("windows"),
+            target.contains("linux") || target.contains("darwin") || target.contains("windows"),
             "unexpected target: {target}"
         );
     }
