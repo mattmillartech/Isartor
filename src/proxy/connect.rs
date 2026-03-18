@@ -83,7 +83,7 @@ async fn handle_connect(
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;
 
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     if parts.len() < 3 || parts[0] != "CONNECT" {
         send_error(&mut client, 400, "Bad Request").await?;
         return Ok(());
@@ -338,7 +338,7 @@ async fn read_http_request<S: AsyncReadExt + AsyncBufReadExt + Unpin>(
     // Read request line.
     let mut request_line = String::new();
     reader.read_line(&mut request_line).await?;
-    let parts: Vec<&str> = request_line.trim().split_whitespace().collect();
+    let parts: Vec<&str> = request_line.split_whitespace().collect();
     let method = parts.first().unwrap_or(&"GET").to_string();
     let path = parts.get(1).unwrap_or(&"/").to_string();
 
@@ -507,18 +507,14 @@ mod tests {
 
     #[test]
     fn test_allowed_domains() {
-        assert!(ALLOWED_DOMAINS
-            .iter()
-            .any(|d| *d == "copilot-proxy.githubusercontent.com"));
-        assert!(ALLOWED_DOMAINS.iter().any(|d| *d == "api.github.com"));
-        assert!(!ALLOWED_DOMAINS.iter().any(|d| *d == "evil.example.com"));
+        assert!(ALLOWED_DOMAINS.contains(&"copilot-proxy.githubusercontent.com"));
+        assert!(ALLOWED_DOMAINS.contains(&"api.github.com"));
+        assert!(!ALLOWED_DOMAINS.contains(&"evil.example.com"));
     }
 
     #[test]
     fn test_intercepted_paths() {
-        assert!(INTERCEPTED_PATHS
-            .iter()
-            .any(|p| *p == "/v1/chat/completions"));
-        assert!(!INTERCEPTED_PATHS.iter().any(|p| *p == "/v1/models"));
+        assert!(INTERCEPTED_PATHS.contains(&"/v1/chat/completions"));
+        assert!(!INTERCEPTED_PATHS.contains(&"/v1/models"));
     }
 }

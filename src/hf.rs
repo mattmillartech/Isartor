@@ -50,7 +50,7 @@ pub fn writable_hf_hub_cache_dir() -> Result<PathBuf> {
     }
 
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        if home != PathBuf::from("/") {
+        if home != Path::new("/") {
             tried.push(home.join(".cache").join("huggingface").join("hub"));
         }
     }

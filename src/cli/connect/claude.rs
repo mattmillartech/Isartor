@@ -56,7 +56,7 @@ pub async fn handle_claude_connect(args: ClaudeArgs) -> ConnectResult {
     }
 
     // Ensure env section exists.
-    if !existing.get("env").and_then(|v| v.as_object()).is_some() {
+    if existing.get("env").and_then(|v| v.as_object()).is_none() {
         existing["env"] = serde_json::json!({});
     }
     let env = existing["env"].as_object_mut().unwrap();
