@@ -1,7 +1,7 @@
 //! # `isartor stop` — Graceful server shutdown
 //!
-//! Reads the PID from `~/.isartor/isartor.pid` and sends SIGTERM to
-//! stop a running Isartor server.
+//! Reads the PID from `~/.isartor/isartor.pid` and terminates the
+//! running Isartor server (SIGTERM on Unix, TerminateProcess on Windows).
 
 use std::path::PathBuf;
 
@@ -32,6 +32,62 @@ pub fn remove_pid_file() {
     }
 }
 
+// ── Platform helpers ─────────────────────────────────────────────────
+
+/// Check whether a process with the given PID is alive.
+#[cfg(unix)]
+fn is_process_alive(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(windows)]
+fn is_process_alive(pid: u32) -> bool {
+    use std::process::Command;
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+        .unwrap_or(false)
+}
+
+/// Send a termination signal to the process.
+/// On Unix: SIGTERM (graceful) or SIGKILL (force).
+/// On Windows: always TerminateProcess via `taskkill`.
+#[cfg(unix)]
+fn terminate_process(pid: u32, force: bool) -> Result<()> {
+    let signal = if force {
+        libc::SIGKILL
+    } else {
+        libc::SIGTERM
+    };
+    let result = unsafe { libc::kill(pid as i32, signal) };
+    if result != 0 {
+        let err = std::io::Error::last_os_error();
+        let name = if force { "SIGKILL" } else { "SIGTERM" };
+        bail!("Failed to send {} to PID {}: {}", name, pid, err);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn terminate_process(pid: u32, force: bool) -> Result<()> {
+    use std::process::Command;
+    let mut cmd = Command::new("taskkill");
+    if force {
+        cmd.arg("/F");
+    }
+    cmd.args(["/PID", &pid.to_string()]);
+    let output = cmd.output().context("failed to run taskkill")?;
+    if !output.status.success() {
+        bail!(
+            "taskkill failed for PID {}: {}",
+            pid,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────
 
 #[derive(Parser, Debug, Clone)]
@@ -40,7 +96,7 @@ pub struct StopArgs {
     #[arg(long)]
     pub pid_file: Option<PathBuf>,
 
-    /// Send SIGKILL instead of SIGTERM (force kill).
+    /// Force kill the process (SIGKILL on Unix, /F on Windows).
     #[arg(long)]
     pub force: bool,
 }
@@ -60,15 +116,13 @@ pub fn handle_stop(args: StopArgs) -> Result<()> {
 
     let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read PID file: {}", path.display()))?;
-    let pid: i32 = contents
+    let pid: u32 = contents
         .trim()
         .parse()
         .with_context(|| format!("invalid PID in {}: {:?}", path.display(), contents.trim()))?;
 
     // Verify the process is actually running.
-    let alive = unsafe { libc::kill(pid, 0) } == 0;
-    if !alive {
-        // Stale PID file — clean up.
+    if !is_process_alive(pid) {
         let _ = std::fs::remove_file(&path);
         bail!(
             "Process {} is not running (stale PID file removed). Isartor may have already stopped.",
@@ -76,26 +130,14 @@ pub fn handle_stop(args: StopArgs) -> Result<()> {
         );
     }
 
-    let signal = if args.force {
-        libc::SIGKILL
-    } else {
-        libc::SIGTERM
-    };
     let signal_name = if args.force { "SIGKILL" } else { "SIGTERM" };
-
-    let result = unsafe { libc::kill(pid, signal) };
-    if result != 0 {
-        let err = std::io::Error::last_os_error();
-        bail!("Failed to send {} to PID {}: {}", signal_name, pid, err);
-    }
-
+    terminate_process(pid, args.force)?;
     eprintln!("  ✓ Sent {} to Isartor (PID {})", signal_name, pid);
 
     // Wait briefly for the process to exit, then clean up the PID file.
     for _ in 0..20 {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let still_alive = unsafe { libc::kill(pid, 0) } == 0;
-        if !still_alive {
+        if !is_process_alive(pid) {
             let _ = std::fs::remove_file(&path);
             eprintln!("  ✓ Isartor stopped.");
             return Ok(());
@@ -126,7 +168,6 @@ mod tests {
 
     #[test]
     fn write_and_remove_pid_file() {
-        // Write PID file.
         write_pid_file().unwrap();
         let path = pid_file_path().unwrap();
         assert!(path.exists());
@@ -135,7 +176,6 @@ mod tests {
         let pid: u32 = content.trim().parse().unwrap();
         assert_eq!(pid, std::process::id());
 
-        // Remove PID file.
         remove_pid_file();
         assert!(!path.exists());
     }
@@ -154,9 +194,9 @@ mod tests {
             .contains("No PID file found"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn stop_with_stale_pid_file() {
-        // Write a PID file with a PID that is definitely not running.
         let path = PathBuf::from("/tmp/isartor-stale-test.pid");
         std::fs::write(&path, "999999999").unwrap();
 
@@ -167,7 +207,6 @@ mod tests {
         let result = handle_stop(args);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not running"));
-        // PID file should be cleaned up.
         assert!(!path.exists());
     }
 }
