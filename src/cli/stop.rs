@@ -55,11 +55,7 @@ fn is_process_alive(pid: u32) -> bool {
 /// On Windows: always TerminateProcess via `taskkill`.
 #[cfg(unix)]
 fn terminate_process(pid: u32, force: bool) -> Result<()> {
-    let signal = if force {
-        libc::SIGKILL
-    } else {
-        libc::SIGTERM
-    };
+    let signal = if force { libc::SIGKILL } else { libc::SIGTERM };
     let result = unsafe { libc::kill(pid as i32, signal) };
     if result != 0 {
         let err = std::io::Error::last_os_error();
