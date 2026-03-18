@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use super::{state::ConnectionState, test_isartor_connection, DEFAULT_GATEWAY_URL};
+use super::{DEFAULT_GATEWAY_URL, state::ConnectionState, test_isartor_connection};
 
 #[derive(Parser, Debug, Clone)]
 pub struct StatusArgs {
@@ -111,11 +111,7 @@ async fn check_isartor_health(gateway: &str) -> Option<Health> {
 }
 
 fn layer_icon(active: bool) -> &'static str {
-    if active {
-        "✓"
-    } else {
-        "○"
-    }
+    if active { "✓" } else { "○" }
 }
 
 fn client_display_name(client: &str) -> String {

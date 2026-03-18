@@ -318,10 +318,10 @@ async fn cache_response(body: &[u8], path: &str, response: &[u8], state: &Arc<Ap
         state.exact_cache.put(key, cache_value.clone());
     }
 
-    if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
-        if let Ok(emb) = state.text_embedder.generate_embedding(&prompt) {
-            state.vector_cache.insert(emb, cache_value).await;
-        }
+    if (*mode == CacheMode::Semantic || *mode == CacheMode::Both)
+        && let Ok(emb) = state.text_embedder.generate_embedding(&prompt)
+    {
+        state.vector_cache.insert(emb, cache_value).await;
     }
 }
 

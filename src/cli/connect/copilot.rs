@@ -1,8 +1,8 @@
 use clap::Parser;
 
 use super::{
-    home_path, remove_file, test_isartor_connection, write_file, BaseClientArgs, ConfigChange,
-    ConfigChangeType, ConnectResult,
+    BaseClientArgs, ConfigChange, ConfigChangeType, ConnectResult, home_path, remove_file,
+    test_isartor_connection, write_file,
 };
 use crate::proxy::tls::IsartorCa;
 

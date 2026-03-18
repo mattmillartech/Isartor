@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::bail;
-use axum::{middleware as axum_mw, response::IntoResponse, routing::post, Json, Router};
+use axum::{Json, Router, middleware as axum_mw, response::IntoResponse, routing::post};
 use clap::{Parser, Subcommand};
 
 use isartor::config::AppConfig;
@@ -116,7 +116,9 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("  │  - L2 SLM Router:       disabled (ISARTOR__ENABLE_SLM_ROUTER=false) │");
         }
         eprintln!("  │  ✗ L3 Cloud Logic:      DISABLED (offline mode)      │");
-        eprintln!("  │  ↺ Telemetry export:    see telemetry config (external endpoints blocked in offline mode) │");
+        eprintln!(
+            "  │  ↺ Telemetry export:    see telemetry config (external endpoints blocked in offline mode) │"
+        );
         eprintln!("  │  ✓ License validation:  offline HMAC check           │");
         eprintln!("  └──────────────────────────────────────────────────────┘");
         eprintln!();

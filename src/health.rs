@@ -9,9 +9,9 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use axum::Json;
 use axum::extract::Extension;
 use axum::response::IntoResponse;
-use axum::Json;
 use serde::Serialize;
 
 use crate::config::AppConfig;

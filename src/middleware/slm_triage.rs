@@ -2,13 +2,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
+    Json,
     extract::Request,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 
 use crate::core::prompt::extract_prompt;
 use crate::middleware::body_buffer::BufferedBody;
@@ -360,7 +360,7 @@ pub async fn slm_triage_middleware(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, middleware as axum_mw, routing::post, Router};
+    use axum::{Router, body::Body, middleware as axum_mw, routing::post};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
     use wiremock::matchers::{method, path};

@@ -6,7 +6,7 @@
 
 use std::num::NonZeroUsize;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use isartor::layer1::layer1a_cache::ExactMatchCache;
 use isartor::vector_cache::VectorCache;

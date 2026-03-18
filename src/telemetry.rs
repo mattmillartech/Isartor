@@ -1,13 +1,13 @@
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
+    Resource,
     metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
     trace::{SdkTracerProvider, TracerProviderBuilder},
-    Resource,
 };
 use opentelemetry_semantic_conventions::resource::{SERVICE_NAME, SERVICE_VERSION};
 use std::sync::Arc;
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::AppConfig;
 
@@ -24,15 +24,15 @@ pub struct OtelGuard {
 
 impl Drop for OtelGuard {
     fn drop(&mut self) {
-        if let Some(tp) = self.tracer_provider.take() {
-            if let Err(e) = tp.shutdown() {
-                eprintln!("[otel] tracer provider shutdown error: {e:?}");
-            }
+        if let Some(tp) = self.tracer_provider.take()
+            && let Err(e) = tp.shutdown()
+        {
+            eprintln!("[otel] tracer provider shutdown error: {e:?}");
         }
-        if let Some(mp) = self.meter_provider.take() {
-            if let Err(e) = mp.shutdown() {
-                eprintln!("[otel] meter provider shutdown error: {e:?}");
-            }
+        if let Some(mp) = self.meter_provider.take()
+            && let Err(e) = mp.shutdown()
+        {
+            eprintln!("[otel] meter provider shutdown error: {e:?}");
         }
     }
 }

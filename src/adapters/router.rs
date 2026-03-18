@@ -207,8 +207,8 @@ mod tests {
     async fn remote_vllm_skeleton_returns_complex() {
         // Use wiremock to mock the vLLM endpoint
         use wiremock::{
-            matchers::{method, path},
             Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
         };
         let mock_server = MockServer::start().await;
         // Mock the /v1/chat/completions endpoint to return a COMPLEX label

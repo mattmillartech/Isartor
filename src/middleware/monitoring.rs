@@ -150,7 +150,7 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
 mod tests {
     use super::*;
     use axum::http::StatusCode;
-    use axum::{body::Body, middleware as axum_mw, routing::post, Json, Router};
+    use axum::{Json, Router, body::Body, middleware as axum_mw, routing::post};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 

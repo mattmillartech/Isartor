@@ -4,7 +4,7 @@
 // Run with:   cargo bench --bench e2e_pipeline
 // =============================================================================
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 // Placeholder benchmarks for E2E pipeline
 // These would require:

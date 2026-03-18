@@ -18,14 +18,14 @@
 use std::env;
 use std::num::NonZeroUsize;
 use std::sync::{
-    atomic::{AtomicU32, Ordering},
     Arc,
+    atomic::{AtomicU32, Ordering},
 };
 
-use axum::{extract::Request, middleware as axum_mw, routing::post, Router};
+use axum::{Router, extract::Request, middleware as axum_mw, routing::post};
 use http_body_util::BodyExt;
 use tower::ServiceExt;
-use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
+use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 
 use isartor::clients::slm::SlmClient;
 use isartor::config::{
@@ -115,7 +115,9 @@ fn build_audit_state(
     // Ensure Hugging Face Hub is in offline/cache-only mode for audit tests to avoid
     // any outbound network I/O when initializing the TextEmbedder.
     if env::var("HF_HUB_OFFLINE").is_err() {
-        env::set_var("HF_HUB_OFFLINE", "1");
+        unsafe {
+            env::set_var("HF_HUB_OFFLINE", "1");
+        }
     }
 
     let text_embedder = Arc::new(TextEmbedder::new().expect("TextEmbedder init"));

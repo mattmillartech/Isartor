@@ -153,8 +153,8 @@ fn backoff_delay(attempt: u32, base: Duration, max: Duration) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     fn retryable_error(msg: &str) -> GatewayError {
         GatewayError::CloudLlm {

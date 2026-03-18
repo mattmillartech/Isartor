@@ -24,5 +24,5 @@ pub mod stubs;
 pub use concurrency::{AdaptiveConcurrencyLimiter, ConcurrencyConfig};
 #[allow(unused_imports)]
 pub use context::{IntentClassification, PipelineContext, PipelineResponse, ProcessingLogEntry};
-pub use orchestrator::{execute_pipeline, PipelineConfig};
+pub use orchestrator::{PipelineConfig, execute_pipeline};
 pub use traits::AlgorithmSuite;

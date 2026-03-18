@@ -124,8 +124,8 @@ async fn raw_string_body_survives() {
 
 #[tokio::test]
 async fn concurrent_requests_all_succeed() {
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
     let counter = Arc::new(AtomicU32::new(0));
     let agent = CountingAgent {

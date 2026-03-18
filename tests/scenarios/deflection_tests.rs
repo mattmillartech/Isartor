@@ -12,8 +12,8 @@
 //   3. Assert deflection rate ≥ 60%.
 // =============================================================================
 
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use axum::extract::Request;
 use http_body_util::BodyExt;

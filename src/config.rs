@@ -445,13 +445,13 @@ fn read_secret_file_env(var_names: &[&str]) -> anyhow::Result<Option<String>> {
 
 fn apply_secret_file_overrides(cfg: &mut AppConfig) -> anyhow::Result<()> {
     // Prefer explicit env/config value; only fall back to *_FILE when unset.
-    if cfg.external_llm_api_key.trim().is_empty() {
-        if let Some(secret) = read_secret_file_env(&[
+    if cfg.external_llm_api_key.trim().is_empty()
+        && let Some(secret) = read_secret_file_env(&[
             "ISARTOR__EXTERNAL_LLM_API_KEY_FILE",
             "ISARTOR_EXTERNAL_LLM_API_KEY_FILE",
-        ])? {
-            cfg.external_llm_api_key = secret;
-        }
+        ])?
+    {
+        cfg.external_llm_api_key = secret;
     }
 
     Ok(())

@@ -7,7 +7,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 
 use isartor::layer1::layer1a_cache::ExactMatchCache;
 

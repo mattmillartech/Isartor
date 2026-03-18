@@ -158,8 +158,8 @@ mod tests {
     #[tokio::test]
     async fn factory_builds_vllm_router() {
         use wiremock::{
-            matchers::{method, path},
             Mock, MockServer, ResponseTemplate,
+            matchers::{method, path},
         };
         let mock_server = MockServer::start().await;
         Mock::given(method("POST"))

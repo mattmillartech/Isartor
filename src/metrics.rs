@@ -16,7 +16,7 @@
 //! | `isartor_retries_total`              | Counter   | `operation`, `outcome`               |
 
 use opentelemetry::metrics::{Counter, Histogram};
-use opentelemetry::{global, KeyValue};
+use opentelemetry::{KeyValue, global};
 use std::sync::OnceLock;
 
 /// Cached set of OTel metric instruments.

@@ -205,7 +205,11 @@ impl AppState {
                 // Ollama is a local provider — no API key required.
                 // If an external LLM URL is configured, use it to override the default Ollama host.
                 // This allows running Ollama on a non-localhost host/port (e.g., via ISARTOR__EXTERNAL_LLM_URL).
-                env::set_var("OLLAMA_HOST", &config.external_llm_url);
+                // AppState::new() runs during startup before any worker threads are spawned,
+                // so updating the process environment here is safe under Rust 2024 rules.
+                unsafe {
+                    env::set_var("OLLAMA_HOST", &config.external_llm_url);
+                }
                 let client =
                     ollama::Client::new(Nothing).expect("Failed to initialize Ollama client");
                 Arc::new(RigAgent {
@@ -258,10 +262,10 @@ impl AppState {
                 // or we change AppState::new to be async.
                 let mut cfg = crate::services::local_inference::EmbeddedClassifierConfig::default();
                 // Allow overriding the model path via env var (e.g. Docker image with baked-in model).
-                if let Ok(path) = std::env::var("ISARTOR__EMBEDDED__MODEL_PATH") {
-                    if !path.is_empty() {
-                        cfg.model_path = Some(path);
-                    }
+                if let Ok(path) = std::env::var("ISARTOR__EMBEDDED__MODEL_PATH")
+                    && !path.is_empty()
+                {
+                    cfg.model_path = Some(path);
                 }
                 // Since `AppState::new` is not async, we use a blocking fallback or expect initialization elsewhere.
                 // For simplicity in this sync constructor we will leave it as None and assume an async `init` method later,

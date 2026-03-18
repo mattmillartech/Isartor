@@ -1,7 +1,7 @@
 use clap::Parser;
 
 use super::{
-    test_isartor_connection, BaseClientArgs, ConfigChange, ConfigChangeType, ConnectResult,
+    BaseClientArgs, ConfigChange, ConfigChangeType, ConnectResult, test_isartor_connection,
 };
 
 #[derive(Parser, Debug, Clone)]

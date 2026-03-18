@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -49,10 +49,10 @@ pub fn writable_hf_hub_cache_dir() -> Result<PathBuf> {
         tried.push(PathBuf::from(hf_home).join("hub"));
     }
 
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        if home != Path::new("/") {
-            tried.push(home.join(".cache").join("huggingface").join("hub"));
-        }
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
+        && home != Path::new("/")
+    {
+        tried.push(home.join(".cache").join("huggingface").join("hub"));
     }
 
     tried.push(std::env::temp_dir().join("huggingface").join("hub"));

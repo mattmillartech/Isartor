@@ -1,8 +1,8 @@
 use clap::Parser;
 
 use super::{
-    home_path, remove_file, test_isartor_connection, write_file, BaseClientArgs, ConfigChange,
-    ConfigChangeType, ConnectResult,
+    BaseClientArgs, ConfigChange, ConfigChangeType, ConnectResult, home_path, remove_file,
+    test_isartor_connection, write_file,
 };
 
 #[derive(Parser, Debug, Clone)]
@@ -42,11 +42,7 @@ pub async fn handle_openclaw_connect(args: OpenclawArgs) -> ConnectResult {
         .or_else(|| {
             let cwd = std::env::current_dir().ok()?;
             let path = cwd.join("openclaw.json");
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
+            if path.exists() { Some(path) } else { None }
         });
 
     // Build provider block (JSON5-ish).
@@ -82,16 +78,17 @@ pub async fn handle_openclaw_connect(args: OpenclawArgs) -> ConnectResult {
     );
 
     // Back up existing config if found.
-    if let Some(cfg_path) = &config_path {
-        if cfg_path.exists() && !args.base.dry_run {
-            let backup = cfg_path.with_extension("json.isartor-backup");
-            let _ = std::fs::copy(cfg_path, &backup);
-            changes.push(ConfigChange {
-                change_type: ConfigChangeType::FileBackedUp,
-                target: backup.to_string_lossy().to_string(),
-                description: "Original openclaw.json backed up".to_string(),
-            });
-        }
+    if let Some(cfg_path) = &config_path
+        && cfg_path.exists()
+        && !args.base.dry_run
+    {
+        let backup = cfg_path.with_extension("json.isartor-backup");
+        let _ = std::fs::copy(cfg_path, &backup);
+        changes.push(ConfigChange {
+            change_type: ConfigChangeType::FileBackedUp,
+            target: backup.to_string_lossy().to_string(),
+            description: "Original openclaw.json backed up".to_string(),
+        });
     }
 
     // Write a patch file for manual application.

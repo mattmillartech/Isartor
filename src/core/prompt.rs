@@ -23,10 +23,10 @@ pub fn extract_prompt(body: &[u8]) -> String {
         let mut parts: Vec<String> = Vec::with_capacity(messages.len() + 1);
 
         // Anthropic supports a top-level system field.
-        if let Some(system) = v.get("system").and_then(|s| s.as_str()) {
-            if !system.trim().is_empty() {
-                parts.push(format!("system: {system}"));
-            }
+        if let Some(system) = v.get("system").and_then(|s| s.as_str())
+            && !system.trim().is_empty()
+        {
+            parts.push(format!("system: {system}"));
         }
 
         for msg in messages {

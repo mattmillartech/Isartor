@@ -49,7 +49,7 @@ pub async fn buffer_body_middleware(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{middleware as axum_mw, routing::post, Router};
+    use axum::{Router, middleware as axum_mw, routing::post};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 

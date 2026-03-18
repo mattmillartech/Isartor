@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use axum::{extract::Request, middleware as axum_mw, routing::post, Router};
+use axum::{Router, extract::Request, middleware as axum_mw, routing::post};
 
 use isartor::handler::chat_handler;
 use isartor::middleware::auth::auth_middleware;

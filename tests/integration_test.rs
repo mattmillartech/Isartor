@@ -35,10 +35,10 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 /// We inline the router setup here because we can't import from a bin crate.
 async fn start_gateway(api_key: &str, sidecar_url: &str, embed_url: &str) -> SocketAddr {
     use axum::{
+        Router,
         extract::Request,
         middleware as axum_mw,
         routing::{get, post},
-        Router,
     };
 
     // Minimal inline types to avoid importing the binary crate.
@@ -240,7 +240,7 @@ async fn wiremock_simulates_sidecar_endpoints() {
 /// proving the body survived all middleware layers.
 #[tokio::test]
 async fn body_survives_all_middleware() {
-    use axum::{extract::Request, middleware as axum_mw, routing::post, Router};
+    use axum::{Router, extract::Request, middleware as axum_mw, routing::post};
     use std::num::NonZeroUsize;
     use std::sync::Arc;
     use tower::ServiceExt;

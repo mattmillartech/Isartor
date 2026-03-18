@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 /// Default PID file location: `~/.isartor/isartor.pid`
@@ -184,10 +184,12 @@ mod tests {
         };
         let result = handle_stop(args);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No PID file found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No PID file found")
+        );
     }
 
     #[cfg(unix)]

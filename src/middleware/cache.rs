@@ -2,12 +2,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::{
+    Json,
     body::Body,
     extract::Request,
     http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use http_body_util::BodyExt;
 use sha2::{Digest, Sha256};
@@ -227,7 +227,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{middleware as axum_mw, routing::post, Router};
+    use axum::{Router, middleware as axum_mw, routing::post};
     use http_body_util::BodyExt;
     use tower::ServiceExt;
 

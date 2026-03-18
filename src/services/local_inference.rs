@@ -32,8 +32,8 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use candle_core::{Device, Tensor};
 use candle_transformers::models::quantized_qwen2::ModelWeights;
-use hf_hub::api::tokio::{Api, ApiBuilder};
 use hf_hub::Repo;
+use hf_hub::api::tokio::{Api, ApiBuilder};
 use tokenizers::Tokenizer;
 use tokio::sync::Mutex;
 
@@ -269,7 +269,9 @@ impl EmbeddedClassifier {
 
         tracing::info!(
             "EmbeddedClassifier: model files located, model_path: {}, tokenizer_path: {}, download_ms: {}",
-            model_path.display(), tokenizer_path.display(), load_start.elapsed().as_millis()
+            model_path.display(),
+            tokenizer_path.display(),
+            load_start.elapsed().as_millis()
         );
 
         // ── Step 2: Load model (CPU-bound) ───────────────────────
@@ -298,7 +300,8 @@ impl EmbeddedClassifier {
         let total_load_ms = load_start.elapsed().as_millis();
         tracing::info!(
             "EmbeddedClassifier: model loaded successfully on CPU, total_load_ms: {}, eot_token_id: {}",
-            total_load_ms, eot_token_id
+            total_load_ms,
+            eot_token_id
         );
 
         Ok(Self {
@@ -471,7 +474,10 @@ impl EmbeddedClassifier {
 
         tracing::info!(
             "EmbeddedClassifier: generation complete, prompt_tokens: {}, tokens_generated: {}, inference_ms: {}, tokens_per_sec: {:.1}",
-            prompt_len, tokens_generated, inference_ms, tokens_per_sec
+            prompt_len,
+            tokens_generated,
+            inference_ms,
+            tokens_per_sec
         );
 
         Ok(output)

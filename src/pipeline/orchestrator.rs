@@ -448,14 +448,13 @@ pub async fn execute_pipeline(
 
 /// Store a successful response in the vector cache for future hits.
 async fn cache_response(ctx: &PipelineContext, response: &str, algorithms: &AlgorithmSuite) {
-    if let Some(ref vector) = ctx.request_vector {
-        if let Err(e) = algorithms
+    if let Some(ref vector) = ctx.request_vector
+        && let Err(e) = algorithms
             .vector_store
             .insert(vector.clone(), response.to_string())
             .await
-        {
-            tracing::warn!(error = %e, "Failed to insert response into vector cache");
-        }
+    {
+        tracing::warn!(error = %e, "Failed to insert response into vector cache");
     }
 }
 

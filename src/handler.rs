@@ -1,15 +1,15 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use axum::Json;
 use axum::extract::Request;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::Json;
 use sha2::{Digest, Sha256};
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 
 use crate::core::prompt::extract_prompt;
-use crate::core::retry::{execute_with_retry, RetryConfig};
+use crate::core::retry::{RetryConfig, execute_with_retry};
 use crate::errors::GatewayError;
 use crate::middleware::body_buffer::BufferedBody;
 use crate::models::{
@@ -401,7 +401,7 @@ pub async fn anthropic_messages_handler(request: Request) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, middleware as axum_mw, routing::post, Router};
+    use axum::{Router, body::Body, middleware as axum_mw, routing::post};
     use http_body_util::BodyExt;
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
@@ -549,10 +549,12 @@ mod tests {
         let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         assert_eq!(json["layer"], 3);
-        assert!(json["message"]
-            .as_str()
-            .unwrap()
-            .contains("provider outage"));
+        assert!(
+            json["message"]
+                .as_str()
+                .unwrap()
+                .contains("provider outage")
+        );
     }
 
     #[tokio::test]
