@@ -59,6 +59,8 @@ enum Commands {
     Update(isartor::cli::update::UpdateArgs),
     /// Show prompt totals, layer hits, and recent request routing.
     Stats(isartor::cli::stats::StatsArgs),
+    /// Start a Model Context Protocol (MCP) stdio server for Copilot CLI integration.
+    Mcp(isartor::cli::mcp::McpArgs),
 }
 
 const DETACH_ENV: &str = "ISARTOR_INTERNAL_DETACHED_CHILD";
@@ -110,6 +112,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Stats(args)) => {
             isartor::cli::stats::handle_stats(args).await?;
+            return Ok(());
+        }
+        Some(Commands::Mcp(args)) => {
+            isartor::cli::mcp::handle_mcp(args).await?;
             return Ok(());
         }
         None => {}

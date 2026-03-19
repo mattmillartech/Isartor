@@ -1,4 +1,5 @@
 pub mod connect;
+pub mod mcp;
 pub mod set_key;
 pub mod stats;
 pub mod stop;

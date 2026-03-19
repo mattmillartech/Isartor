@@ -3,7 +3,7 @@
 Isartor is an **OpenAI-compatible and Anthropic-compatible gateway** that deflects
 repeated or simple prompts at Layer 1 (cache) and Layer 2 (local SLM) before they
 reach the cloud. Clients integrate by **overriding their base URL** to point at
-Isartor or by using **preToolUse hooks** — no proxy, no MITM, no CA certificates.
+Isartor or by registering Isartor as an **MCP server** — no proxy, no MITM, no CA certificates.
 
 ## Endpoints
 
@@ -18,7 +18,7 @@ Authenticated chat endpoints:
   - `POST /v1/chat/completions`
 - **Anthropic Messages compatible**
   - `POST /v1/messages`
-- **Copilot preToolUse hook**
+- **Copilot preToolUse hook** (legacy)
   - `POST /api/v1/hook/pretooluse`
 
 ## Authentication
@@ -86,13 +86,13 @@ If gateway auth is enabled, also add:
 
 Isartor ships a helper CLI to configure popular clients to route through the
 gateway. Each integration uses the lightest-weight mechanism available for that
-client — either a **base URL override** or a **preToolUse hook**.
+client — an **MCP server** (for Copilot CLI) or a **base URL override**.
 
 ```bash
 # Show what's connected and test the gateway
 isartor connect status
 
-# GitHub Copilot CLI (preToolUse hook)
+# GitHub Copilot CLI (MCP server — isartor_chat tool)
 isartor connect copilot
 
 # Claude Code (base URL override)
@@ -107,45 +107,54 @@ isartor connect openclaw
 
 Add `--gateway-api-key <key>` to these commands only if you have explicitly enabled gateway auth.
 
-### GitHub Copilot CLI (preToolUse hook)
+### GitHub Copilot CLI (MCP server)
 
-Copilot CLI integrates via a **preToolUse hook** that sends tool-call metadata to
-Isartor before execution. Isartor can deflect the call at L1/L2 or let it pass
-through to the Copilot upstream as Layer 3.
+Copilot CLI integrates via an **MCP (Model Context Protocol) server** that
+Isartor registers as a stdio subprocess. Copilot gains an `isartor_chat` tool
+whose prompts flow through the full deflection stack (L1a/L1b cache → L2 SLM →
+L3 cloud), enabling cache hits and local deflection.
 
 #### Prerequisites
 
 - Isartor installed (`curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh`)
-- GitHub Copilot CLI installed (`gh extension install github/gh-copilot`)
+- GitHub Copilot CLI installed
 
 #### Step-by-step setup
 
 ```bash
 # 1. Start Isartor
-isartor up
+isartor up --detach
 
-# 2. Configure Copilot hooks
+# 2. Register the MCP server with Copilot CLI
 isartor connect copilot
 
-# 3. Register the hook with Copilot CLI (shown in output)
-# Follow instructions printed by the connect command
-
-# 4. Use Copilot normally
-gh copilot suggest "explain this function"
+# 3. Start Copilot normally — isartor_chat tool is now available
+copilot
 ```
 
 #### How it works
 
-1. `isartor connect copilot` generates a hook script at `~/.isartor/hooks/copilot_pretooluse.sh`
-2. The hook script POSTs tool-call metadata to Isartor's `/api/v1/hook/pretooluse` endpoint
-3. Isartor evaluates the request through the Deflection Stack (L1 → L2 → L3)
-4. If deflected at L1 or L2, the cached/local response is returned without a cloud call
+1. `isartor connect copilot` adds an `isartor` entry to `~/.copilot/mcp-config.json`
+2. When Copilot CLI starts, it launches `isartor mcp` as a stdio subprocess
+3. The MCP server exposes an `isartor_chat` tool
+4. Prompts sent through `isartor_chat` go through the deflection stack:
+   - **L1a** exact cache → **L1b** semantic cache → **L2** SLM triage → **L3** cloud
+5. Repeated or similar prompts are deflected locally — zero cloud cost
+
+#### Custom gateway URL
+
+```bash
+# If Isartor runs on a non-default port
+isartor connect copilot --gateway-url http://localhost:18080
+```
 
 #### Disconnecting
 
 ```bash
 isartor connect copilot --disconnect
 ```
+
+This removes the `isartor` entry from `~/.copilot/mcp-config.json`.
 
 ### Claude Code (base URL override)
 
@@ -243,7 +252,8 @@ isartor connect status
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "connection refused" | Isartor not running | Run `isartor up` first |
-| Copilot works but bypasses Isartor | Hook not registered | Run `isartor connect copilot` and follow registration instructions |
+| Copilot has no `isartor_chat` tool | MCP server not registered | Run `isartor connect copilot` |
+| Copilot works but bypasses cache | Using native Copilot tools instead of `isartor_chat` | Ask Copilot to use the `isartor_chat` tool |
 | Claude not routing through Isartor | `settings.json` not updated | Run `isartor connect claude` |
 | Gateway returns 401 | Auth enabled but key not configured | Add `--gateway-api-key` to connect command |
 

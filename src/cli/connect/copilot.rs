@@ -25,76 +25,77 @@ pub async fn handle_copilot_connect(args: CopilotArgs) -> ConnectResult {
         return disconnect(&args, &mut changes);
     }
 
-    // Clean up legacy proxy-era env files (from v0.1.33 and earlier).
+    // Clean up legacy files from previous integration approaches.
     if !args.base.dry_run {
-        for ext in ["sh", "fish", "ps1"] {
-            let legacy = home_path(&format!(".isartor/env/copilot.{ext}")).unwrap_or_default();
-            if legacy.exists() {
-                remove_file(&legacy, false);
-                changes.push(ConfigChange {
-                    change_type: ConfigChangeType::FileModified,
-                    target: legacy.to_string_lossy().to_string(),
-                    description: "Removed legacy proxy env file".to_string(),
-                });
-            }
-        }
+        cleanup_legacy_files(&mut changes);
     }
 
-    // Step 1: Write the preToolUse hook script.
-    let hook_script = generate_hook_script(&gateway);
-    let hook_path = home_path(".isartor/hooks/copilot_pretooluse.sh")
-        .unwrap_or_else(|_| std::path::PathBuf::from(".isartor/hooks/copilot_pretooluse.sh"));
+    // Step 1: Find the isartor binary path for MCP config.
+    let isartor_bin =
+        std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("isartor"));
+
+    // Step 2: Build MCP server entry for ~/.copilot/mcp-config.json
+    let mut mcp_args = vec!["mcp".to_string()];
+    if gateway != super::DEFAULT_GATEWAY_URL {
+        mcp_args.push("--gateway-url".to_string());
+        mcp_args.push(gateway.clone());
+    }
+    if let Some(ref key) = gateway_key
+        && !key.is_empty()
+    {
+        mcp_args.push("--gateway-api-key".to_string());
+        mcp_args.push(key.clone());
+    }
+
+    let isartor_entry = serde_json::json!({
+        "type": "stdio",
+        "command": isartor_bin.to_string_lossy(),
+        "args": mcp_args,
+    });
+
+    // Step 3: Read existing mcp-config.json, merge, write back.
+    let mcp_config_path = home_path(".copilot/mcp-config.json")
+        .unwrap_or_else(|_| std::path::PathBuf::from(".copilot/mcp-config.json"));
+
+    let mut mcp_config: serde_json::Value = if mcp_config_path.exists() {
+        let content = std::fs::read_to_string(&mcp_config_path).unwrap_or_default();
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    // Support both { "mcpServers": { ... } } and flat { "server": { ... } } formats.
+    // Copilot CLI accepts both; prefer mcpServers wrapper.
+    if mcp_config.get("mcpServers").is_none() {
+        mcp_config["mcpServers"] = serde_json::json!({});
+    }
+    mcp_config["mcpServers"]["isartor"] = isartor_entry;
+
+    let mcp_json = serde_json::to_string_pretty(&mcp_config).unwrap_or_default();
 
     if args.base.show_config || args.base.dry_run {
-        println!("{}", hook_script);
+        println!("{}", mcp_json);
     }
 
-    if !args.base.dry_run {
-        if let Some(parent) = hook_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if std::fs::write(&hook_path, &hook_script).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(&hook_path, std::fs::Permissions::from_mode(0o755));
-            }
-            changes.push(ConfigChange {
-                change_type: ConfigChangeType::FileCreated,
-                target: hook_path.to_string_lossy().to_string(),
-                description: "preToolUse hook script".to_string(),
-            });
-        }
-    }
+    let mcp_written = if !args.base.dry_run {
+        write_file(&mcp_config_path, &mcp_json, false).is_ok()
+    } else {
+        true
+    };
 
-    // Step 2: Write hook registration instructions.
-    let instructions = format!(
-        "# Isartor preToolUse hook for GitHub Copilot CLI\n\
-         #\n\
-         # Register this hook in your Copilot CLI config:\n\
-         #   gh copilot config set preToolUse \"{}\"\n\
-         #\n\
-         # Or add to your Copilot CLI hooks config:\n\
-         # {{\n\
-         #   \"preToolUse\": \"{}\"\n\
-         # }}\n",
-        hook_path.display(),
-        hook_path.display()
-    );
-
-    let instructions_path = home_path(".isartor/copilot-hook-setup.txt")
-        .unwrap_or_else(|_| std::path::PathBuf::from(".isartor/copilot-hook-setup.txt"));
-
-    if !args.base.dry_run && write_file(&instructions_path, &instructions, false).is_ok() {
+    if mcp_written {
         changes.push(ConfigChange {
-            change_type: ConfigChangeType::FileCreated,
-            target: instructions_path.to_string_lossy().to_string(),
-            description: "Hook registration instructions".to_string(),
+            change_type: if mcp_config_path.exists() {
+                ConfigChangeType::FileModified
+            } else {
+                ConfigChangeType::FileCreated
+            },
+            target: mcp_config_path.to_string_lossy().to_string(),
+            description: "Registered isartor MCP server".to_string(),
         });
     }
 
-    // Step 3: Store GitHub token if provided.
+    // Step 4: Store GitHub token if provided.
     if let Some(token) = &args.github_token {
         let token_path = home_path(".isartor/providers/copilot.json")
             .unwrap_or_else(|_| std::path::PathBuf::from(".isartor/providers/copilot.json"));
@@ -117,7 +118,10 @@ pub async fn handle_copilot_connect(args: CopilotArgs) -> ConnectResult {
         }
     }
 
-    // Step 4: Test the gateway API connection.
+    // Step 5: Ensure Isartor gateway URL is in Copilot's allowed URLs.
+    add_allowed_url(&gateway, &mut changes, args.base.dry_run);
+
+    // Step 6: Test the gateway connection.
     let test = test_isartor_connection(
         &gateway,
         gateway_key.as_deref(),
@@ -125,112 +129,131 @@ pub async fn handle_copilot_connect(args: CopilotArgs) -> ConnectResult {
     )
     .await;
 
+    let success = test.response_received || test.layer_resolved == "timeout" || args.base.dry_run;
+
     ConnectResult {
         client_name: "GitHub Copilot CLI".to_string(),
-        success: test.response_received || args.base.dry_run,
+        success,
         message: format!(
-            "Hook script written to:\n  {}\n\n\
-             IMPORTANT: Register the hook in your Copilot CLI config.\n\
-             See instructions at:\n  {}\n\n\
-             Copilot CLI integration uses preToolUse hooks (not HTTPS proxy).\n\
-             This provides tool-call caching and audit logging.",
-            hook_path.display(),
-            instructions_path.display(),
+            "MCP server registered in:\n  {}\n\n\
+             Copilot CLI will now have an `isartor_chat` tool available.\n\
+             Prompts sent through this tool route through the deflection stack\n\
+             (L1a/L1b cache → L2 SLM → L3 cloud).\n\n\
+             Start Copilot CLI normally — no env vars or hooks needed:\n  copilot",
+            mcp_config_path.display(),
         ),
         changes_made: changes,
         test_result: Some(test),
     }
 }
 
-fn generate_hook_script(gateway_url: &str) -> String {
-    format!(
-        r#"#!/usr/bin/env bash
-# Isartor preToolUse hook for GitHub Copilot CLI
-# Generated by: isartor connect copilot
-# Do not edit manually.
-#
-# This hook is called by Copilot CLI before each tool use.
-# It sends tool call metadata to Isartor for:
-#   - Tool call result caching
-#   - Audit logging
-#   - Budget enforcement
-#   - Policy enforcement
+/// Add the gateway URL to Copilot's allowed_urls in ~/.copilot/config.json.
+fn add_allowed_url(gateway_url: &str, changes: &mut Vec<ConfigChange>, dry_run: bool) {
+    let config_path = match home_path(".copilot/config.json") {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if !config_path.exists() {
+        return;
+    }
 
-ISARTOR_URL="{}"
-TOOL_NAME="${{1:-unknown}}"
-TOOL_ARGS="${{2:-}}"
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let mut config: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
 
-# POST tool call info to Isartor hook endpoint
-RESPONSE=$(curl -s -X POST \
-  "${{ISARTOR_URL}}/api/v1/hook/pretooluse" \
-  -H "Content-Type: application/json" \
-  -d "{{
-    \"tool\": \"${{TOOL_NAME}}\",
-    \"args\": \"${{TOOL_ARGS}}\",
-    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-  }}" \
-  --connect-timeout 1 \
-  --max-time 2 \
-  2>/dev/null)
+    let urls = config
+        .get_mut("allowed_urls")
+        .and_then(|v| v.as_array_mut());
 
-# If Isartor says to block (policy violation):
-if echo "${{RESPONSE}}" | grep -q '"action":"block"'; then
-  REASON=$(echo "${{RESPONSE}}" | grep -o '"reason":"[^"]*"' \
-    | sed 's/"reason":"//;s/"//')
-  echo "Isartor policy: ${{REASON}}" >&2
-  exit 1
-fi
-
-# If Isartor has a cached result, print it
-if echo "${{RESPONSE}}" | grep -q '"cached":true'; then
-  echo "${{RESPONSE}}" | grep -o '"result":"[^"]*"' \
-    | sed 's/"result":"//;s/"$//'
-  exit 0
-fi
-
-# Otherwise: allow the tool call to proceed normally
-exit 0
-"#,
-        gateway_url
-    )
+    if let Some(urls) = urls {
+        let gw = serde_json::Value::String(gateway_url.to_string());
+        if !urls.contains(&gw) {
+            urls.push(gw);
+            if !dry_run && let Ok(json) = serde_json::to_string_pretty(&config) {
+                let _ = std::fs::write(&config_path, json);
+                changes.push(ConfigChange {
+                    change_type: ConfigChangeType::FileModified,
+                    target: config_path.to_string_lossy().to_string(),
+                    description: format!("Added {gateway_url} to allowed_urls"),
+                });
+            }
+        }
+    }
 }
 
-fn disconnect(args: &CopilotArgs, changes: &mut Vec<ConfigChange>) -> ConnectResult {
-    // Remove hook script and instructions.
-    for filename in [
-        ".isartor/hooks/copilot_pretooluse.sh",
-        ".isartor/copilot-hook-setup.txt",
-    ] {
-        let path = home_path(filename).unwrap_or_else(|_| std::path::PathBuf::from(filename));
+fn cleanup_legacy_files(changes: &mut Vec<ConfigChange>) {
+    // Legacy proxy-era env files (v0.1.33 and earlier).
+    for ext in ["sh", "fish", "ps1"] {
+        let path = home_path(&format!(".isartor/env/copilot.{ext}")).unwrap_or_default();
         if path.exists() {
-            remove_file(&path, args.base.dry_run);
+            remove_file(&path, false);
             changes.push(ConfigChange {
                 change_type: ConfigChangeType::FileModified,
                 target: path.to_string_lossy().to_string(),
-                description: "Removed".to_string(),
+                description: "Removed legacy proxy env file".to_string(),
             });
         }
     }
 
-    // Also remove legacy shell env files from the proxy era.
-    for ext in ["sh", "fish", "ps1"] {
-        let path = home_path(&format!(".isartor/env/copilot.{ext}"))
-            .unwrap_or_else(|_| std::path::PathBuf::from(format!(".isartor/env/copilot.{ext}")));
+    // Legacy hook files (v0.1.34 hook approach).
+    for filename in [
+        ".isartor/hooks/copilot_pretooluse.sh",
+        ".isartor/copilot-hook-setup.txt",
+    ] {
+        let path = home_path(filename).unwrap_or_default();
         if path.exists() {
-            remove_file(&path, args.base.dry_run);
+            remove_file(&path, false);
             changes.push(ConfigChange {
                 change_type: ConfigChangeType::FileModified,
                 target: path.to_string_lossy().to_string(),
-                description: "Removed (legacy proxy env)".to_string(),
+                description: "Removed legacy hook file".to_string(),
             });
         }
+    }
+}
+
+fn disconnect(args: &CopilotArgs, changes: &mut Vec<ConfigChange>) -> ConnectResult {
+    // Remove isartor entry from mcp-config.json.
+    let mcp_config_path = home_path(".copilot/mcp-config.json")
+        .unwrap_or_else(|_| std::path::PathBuf::from(".copilot/mcp-config.json"));
+
+    if mcp_config_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&mcp_config_path)
+        && let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        let removed = config
+            .get_mut("mcpServers")
+            .and_then(|s| s.as_object_mut())
+            .map(|s| s.remove("isartor").is_some())
+            .unwrap_or(false);
+
+        if removed && !args.base.dry_run {
+            if let Ok(json) = serde_json::to_string_pretty(&config) {
+                let _ = std::fs::write(&mcp_config_path, json);
+            }
+            changes.push(ConfigChange {
+                change_type: ConfigChangeType::FileModified,
+                target: mcp_config_path.to_string_lossy().to_string(),
+                description: "Removed isartor MCP server".to_string(),
+            });
+        }
+    }
+
+    // Also clean up any legacy files.
+    if !args.base.dry_run {
+        cleanup_legacy_files(changes);
     }
 
     ConnectResult {
         client_name: "GitHub Copilot CLI".to_string(),
         success: true,
-        message: "Copilot CLI hooks disconnected.\n\
-                  Remember to remove the hook registration from your Copilot CLI config."
+        message: "Copilot CLI disconnected from Isartor.\n\
+                  The isartor MCP server has been removed from ~/.copilot/mcp-config.json."
             .to_string(),
         changes_made: changes.clone(),
         test_result: None,

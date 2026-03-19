@@ -210,7 +210,7 @@ fn client_display_name(client: &str) -> String {
 
 fn integration_method(client: &str) -> &'static str {
     match client {
-        "copilot" => "preToolUse hooks",
+        "copilot" => "MCP server (isartor_chat tool)",
         "claude" => "base URL override (ANTHROPIC_BASE_URL)",
         "openclaw" => "provider base URL (OpenAI-compatible)",
         "antigravity" => "base URL override (OpenAI-compatible)",
