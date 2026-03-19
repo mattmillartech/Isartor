@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-03-19
+
+### Changed
+- Gateway auth is now disabled by default for local-first usage. Set `ISARTOR__GATEWAY_API_KEY` (or `gateway_api_key` in `isartor.toml`) to enable Layer 0 authentication.
+- Startup logs now explicitly show whether gateway auth is enabled or disabled.
+
+### Fixed
+- Smoke test and integration docs now reflect that gateway auth is opt-in, while preserving explicit auth-enabled examples for manual testing flows.
+
 ## [0.1.26] - 2026-03-19
 
 ### Added
@@ -99,7 +108,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.26...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.27...HEAD
+[0.1.27]: https://github.com/isartor-ai/Isartor/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/isartor-ai/Isartor/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/isartor-ai/Isartor/compare/v0.1.23...v0.1.24

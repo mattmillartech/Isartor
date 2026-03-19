@@ -130,8 +130,10 @@ curl http://localhost:8080/healthz
 # Test the firewall
 curl -s http://localhost:8080/api/chat \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: changeme" \
   -d '{"prompt": "What is 2+2?"}' | jq .
+
+# If you enabled gateway auth, add:
+#   -H "X-API-Key: your-secret-key"
 
 # Check traces in Jaeger
 open http://localhost:16686

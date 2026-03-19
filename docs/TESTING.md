@@ -282,6 +282,8 @@ kill $(pgrep -f 'isartor')
   --gateway-api-key changeme
 ```
 
+`--gateway-api-key changeme` is included here because this test flow explicitly starts Isartor with auth enabled.
+
 This writes `~/.isartor/env/copilot.sh` with:
 ```bash
 export HTTPS_PROXY="http://localhost:8081"

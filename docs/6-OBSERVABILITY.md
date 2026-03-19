@@ -264,8 +264,10 @@ Isartor  ──OTLP gRPC──▶  OTel Collector ──▶  Jaeger    (traces)
 For quick operator checks without a separate telemetry stack:
 
 ```bash
-isartor stats --gateway-url http://localhost:8080 --gateway-api-key changeme
+isartor stats --gateway-url http://localhost:8080
 ```
+
+Add `--gateway-api-key <key>` only when gateway auth is enabled.
 
 Built-in JSON endpoints:
 

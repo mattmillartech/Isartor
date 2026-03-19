@@ -18,7 +18,7 @@ Authenticated chat endpoints:
 
 ## Authentication
 
-Isartor enforces a gateway key on all authenticated routes.
+Isartor can enforce a gateway key on authenticated routes when Layer 0 auth is enabled.
 
 Supported headers:
 
@@ -39,7 +39,6 @@ All endpoints in the Deflection Stack include:
 ```bash
 curl -sS http://localhost:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer changeme' \
   -d '{
     "model": "gpt-4o-mini",
     "messages": [
@@ -48,12 +47,17 @@ curl -sS http://localhost:8080/v1/chat/completions \
   }'
 ```
 
+If gateway auth is enabled, also add:
+
+```bash
+-H 'Authorization: Bearer your-secret-key'
+```
+
 ## Example: Anthropic-compatible request
 
 ```bash
 curl -sS http://localhost:8080/v1/messages \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Key: changeme' \
   -d '{
     "model": "claude-sonnet-4-6",
     "system": "Be concise.",
@@ -67,23 +71,31 @@ curl -sS http://localhost:8080/v1/messages \
   }'
 ```
 
+If gateway auth is enabled, also add:
+
+```bash
+-H 'X-API-Key: your-secret-key'
+```
+
 ## Client integrations: `isartor connect …`
 
 Isartor ships a helper CLI to configure popular clients to route through the gateway.
 
 ```bash
 # Show what’s connected and test the gateway
-isartor connect status --gateway-url http://localhost:8080 --gateway-api-key changeme
+isartor connect status --gateway-url http://localhost:8080
 
 # Claude Code (CONNECT proxy + TLS MITM)
-isartor connect claude --gateway-url http://localhost:8080 --gateway-api-key changeme
+isartor connect claude --gateway-url http://localhost:8080
 
 # GitHub Copilot CLI (CONNECT proxy + TLS MITM — see below)
-isartor connect copilot --gateway-url http://localhost:8080 --gateway-api-key changeme
+isartor connect copilot --gateway-url http://localhost:8080
 
 # Antigravity (CONNECT proxy + TLS MITM)
-isartor connect antigravity --gateway-url http://localhost:8080 --gateway-api-key changeme
+isartor connect antigravity --gateway-url http://localhost:8080
 ```
+
+Add `--gateway-api-key <key>` to these commands only if you have explicitly enabled gateway auth.
 
 ### GitHub Copilot CLI (CONNECT Proxy)
 
