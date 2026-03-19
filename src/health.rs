@@ -17,6 +17,7 @@ use serde::Serialize;
 use crate::config::AppConfig;
 use crate::proxy::connect;
 use crate::state::AppState;
+use crate::visibility;
 
 // ── Startup timestamp ────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ pub struct HealthResponse {
     pub proxy: &'static str,
     pub proxy_layer3: &'static str,
     pub proxy_recent_requests: usize,
+    pub prompt_total_requests: u64,
+    pub prompt_total_deflected_requests: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +102,8 @@ pub async fn health_handler(
         proxy: "active",
         proxy_layer3: "native_upstream_passthrough",
         proxy_recent_requests: connect::recent_proxy_decisions_count(),
+        prompt_total_requests: visibility::prompt_total_requests(),
+        prompt_total_deflected_requests: visibility::prompt_total_deflected_requests(),
     })
 }
 

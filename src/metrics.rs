@@ -9,9 +9,9 @@
 //!
 //! | Name                                 | Type      | Labels                              |
 //! |--------------------------------------|-----------|--------------------------------------|
-//! | `isartor_requests_total`             | Counter   | `final_layer`, `status_code`         |
+//! | `isartor_requests_total`             | Counter   | `final_layer`, `status_code`, `traffic_surface`, `client`, `endpoint_family` |
 //! | `isartor_layer_duration_seconds`     | Histogram | `layer_name`                         |
-//! | `isartor_tokens_saved_total`         | Counter   | `final_layer`                        |
+//! | `isartor_tokens_saved_total`         | Counter   | `final_layer`, `traffic_surface`, `client`, `endpoint_family` |
 //! | `isartor_errors_total`               | Counter   | `layer`, `error_class`               |
 //! | `isartor_retries_total`              | Counter   | `operation`, `outcome`               |
 
@@ -99,13 +99,51 @@ pub fn estimate_tokens(prompt: &str) -> u64 {
     prompt_tokens + completion_estimate
 }
 
-/// Record a request completion against the global metrics.
-pub fn record_request(final_layer: &str, status_code: u16, duration_secs: f64) {
-    let m = metrics();
-    let attrs = [
+fn request_attrs(
+    final_layer: &str,
+    status_code: u16,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+) -> [KeyValue; 5] {
+    [
         KeyValue::new("final_layer", final_layer.to_string()),
         KeyValue::new("status_code", status_code.to_string()),
-    ];
+        KeyValue::new("traffic_surface", traffic_surface.to_string()),
+        KeyValue::new("client", client.to_string()),
+        KeyValue::new("endpoint_family", endpoint_family.to_string()),
+    ]
+}
+
+/// Record a request completion against the global metrics.
+pub fn record_request(final_layer: &str, status_code: u16, duration_secs: f64) {
+    record_request_with_context(
+        final_layer,
+        status_code,
+        duration_secs,
+        "gateway",
+        "direct",
+        "native",
+    );
+}
+
+/// Record a request completion with additional request-surface dimensions.
+pub fn record_request_with_context(
+    final_layer: &str,
+    status_code: u16,
+    duration_secs: f64,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+) {
+    let m = metrics();
+    let attrs = request_attrs(
+        final_layer,
+        status_code,
+        traffic_surface,
+        client,
+        endpoint_family,
+    );
     m.requests_total.add(1, &attrs);
     m.request_duration_seconds.record(duration_secs, &attrs);
 }
@@ -121,11 +159,25 @@ pub fn record_layer_duration(layer_name: &str, duration: std::time::Duration) {
 
 /// Record tokens saved (call when a request is resolved before Layer 3).
 pub fn record_tokens_saved(final_layer: &str, estimated_tokens: u64) {
+    record_tokens_saved_with_context(final_layer, estimated_tokens, "gateway", "direct", "native");
+}
+
+/// Record tokens saved with additional request-surface dimensions.
+pub fn record_tokens_saved_with_context(
+    final_layer: &str,
+    estimated_tokens: u64,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+) {
     let m = metrics();
-    m.tokens_saved_total.add(
-        estimated_tokens,
-        &[KeyValue::new("final_layer", final_layer.to_string())],
-    );
+    let attrs = [
+        KeyValue::new("final_layer", final_layer.to_string()),
+        KeyValue::new("traffic_surface", traffic_surface.to_string()),
+        KeyValue::new("client", client.to_string()),
+        KeyValue::new("endpoint_family", endpoint_family.to_string()),
+    ];
+    m.tokens_saved_total.add(estimated_tokens, &attrs);
 }
 
 /// Record an error occurrence, labelled by the layer that produced it and

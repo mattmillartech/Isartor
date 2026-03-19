@@ -46,6 +46,8 @@ enum Commands {
     Stop(isartor::cli::stop::StopArgs),
     /// Update Isartor to the latest release.
     Update(isartor::cli::update::UpdateArgs),
+    /// Show prompt totals, layer hits, and recent request routing.
+    Stats(isartor::cli::stats::StatsArgs),
 }
 
 #[tokio::main]
@@ -78,6 +80,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Update(args)) => {
             isartor::cli::update::handle_update(args).await?;
+            return Ok(());
+        }
+        Some(Commands::Stats(args)) => {
+            isartor::cli::stats::handle_stats(args).await?;
             return Ok(());
         }
         None => {}
@@ -231,6 +237,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/debug/proxy/recent",
             get(isartor::proxy::connect::recent_proxy_requests_handler),
+        )
+        .route(
+            "/debug/stats/prompts",
+            get(isartor::visibility::prompt_stats_handler),
         )
         .layer(axum_mw::from_fn(middleware::auth::auth_middleware))
         .layer(axum_mw::from_fn(

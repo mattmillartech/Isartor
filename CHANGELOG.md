@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-03-19
+
+### Added
+- `isartor stats` for user-facing prompt totals, per-layer counts, and recent prompt routing history
+- Unified prompt visibility rollups across gateway and CONNECT proxy traffic via `/debug/stats/prompts`
+
+### Changed
+- `/health` now includes prompt totals so operators can quickly confirm how much prompt traffic Isartor has seen
+- Observability docs and metrics examples now cover proxy-aware prompt telemetry dimensions such as `traffic_surface`, `client`, and `endpoint_family`
+
 ## [0.1.24] - 2026-03-19
 
 ### Fixed
@@ -75,7 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.24...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...HEAD
+[0.1.25]: https://github.com/isartor-ai/Isartor/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/isartor-ai/Isartor/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/isartor-ai/Isartor/compare/v0.1.22...v0.1.23
 [0.1.22]: https://github.com/isartor-ai/Isartor/compare/v0.1.19...v0.1.22

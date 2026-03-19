@@ -8,8 +8,19 @@ use axum::response::IntoResponse;
 use tracing::Instrument;
 
 use crate::metrics;
+use crate::middleware::body_buffer::BufferedBody;
 use crate::models::FinalLayer;
 use crate::state::AppState;
+use crate::visibility;
+
+fn endpoint_family_for_path(path: &str) -> (&'static str, &'static str) {
+    match path {
+        "/api/chat" | "/api/v1/chat" => ("native", "direct"),
+        "/v1/chat/completions" => ("openai", "openai"),
+        "/v1/messages" => ("anthropic", "anthropic"),
+        _ => ("unknown", "gateway"),
+    }
+}
 
 /// Root monitoring middleware — **outermost** layer in the Axum stack.
 ///
@@ -43,6 +54,12 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
+    let prompt_hash = request
+        .extensions()
+        .get::<BufferedBody>()
+        .and_then(|buf| visibility::prompt_hash_from_body(&buf.0));
+    let (endpoint_family, client_name) = endpoint_family_for_path(&path);
+    let should_record_prompt_stats = !path.starts_with("/debug/");
 
     // Create the root span with all required HTTP + business attributes.
     // `isartor.final_layer` and `http.status_code` are recorded after
@@ -86,14 +103,23 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
     root_span.record("isartor.final_layer", layer_label);
 
     // ── Record OTel metrics ──────────────────────────────────────
-    metrics::record_request(layer_label, status_code, elapsed.as_secs_f64());
+    if should_record_prompt_stats {
+        metrics::record_request_with_context(
+            layer_label,
+            status_code,
+            elapsed.as_secs_f64(),
+            "gateway",
+            client_name,
+            endpoint_family,
+        );
+    }
 
     // Record tokens saved when request was resolved before Layer 3.
     let resolved_early = matches!(
         final_layer,
         FinalLayer::ExactCache | FinalLayer::SemanticCache | FinalLayer::Slm
     );
-    if resolved_early {
+    if resolved_early && should_record_prompt_stats {
         // Estimate using prompt size or a conservative default.
         let estimated_tokens = if content_length > 0 {
             metrics::estimate_tokens(
@@ -102,7 +128,29 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
         } else {
             256 // conservative default
         };
-        metrics::record_tokens_saved(layer_label, estimated_tokens);
+        metrics::record_tokens_saved_with_context(
+            layer_label,
+            estimated_tokens,
+            "gateway",
+            client_name,
+            endpoint_family,
+        );
+    }
+
+    if should_record_prompt_stats {
+        visibility::record_prompt(crate::models::PromptVisibilityEntry {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            traffic_surface: "gateway".to_string(),
+            client: client_name.to_string(),
+            endpoint_family: endpoint_family.to_string(),
+            route: path.clone(),
+            prompt_hash,
+            final_layer: final_layer.as_header_value().to_string(),
+            resolved_by: None,
+            deflected: final_layer.is_deflected(),
+            latency_ms: elapsed.as_millis() as u64,
+            status_code,
+        });
     }
 
     tracing::info!(

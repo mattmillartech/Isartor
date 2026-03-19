@@ -24,12 +24,14 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::config::CacheMode;
 use crate::core::prompt::extract_prompt;
+use crate::metrics;
 use crate::models::{
-    FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage, ProxyRecentResponse,
-    ProxyRouteDecision,
+    FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage, PromptVisibilityEntry,
+    ProxyRecentResponse, ProxyRouteDecision,
 };
 use crate::proxy::tls::IsartorCa;
 use crate::state::AppState;
+use crate::visibility;
 
 /// Domains that may be intercepted via TLS MITM.
 const COPILOT_DOMAINS: &[&str] = &[
@@ -85,6 +87,13 @@ impl ProxyClient {
             Self::Copilot => "copilot_upstream",
             Self::Claude => "claude_upstream",
             Self::Antigravity => "antigravity_upstream",
+        }
+    }
+
+    fn endpoint_family(self, path: &str) -> &'static str {
+        match path {
+            "/v1/messages" => "anthropic",
+            _ => "openai",
         }
     }
 }
@@ -281,7 +290,13 @@ async fn handle_mitm(
     // Only intercept POST to chat completions paths.
     if method == "POST" && INTERCEPTED_PATHS.iter().any(|p| path == *p) {
         let start = Instant::now();
-        let prompt_hash = prompt_hash(&body);
+        let prompt = extract_prompt(&body);
+        let estimated_tokens = if prompt.is_empty() {
+            None
+        } else {
+            Some(metrics::estimate_tokens(&prompt))
+        };
+        let prompt_hash = visibility::prompt_hash_from_body(&body);
 
         let proxy_client = identify_proxy_client(hostname);
         match resolve_intercepted_request(&body, &path, proxy_client, &state).await {
@@ -300,6 +315,8 @@ async fn handle_mitm(
                     prompt_hash,
                     final_layer,
                     resolved_by,
+                    200,
+                    estimated_tokens,
                     start.elapsed().as_millis() as u64,
                 );
                 return Ok(());
@@ -320,6 +337,8 @@ async fn handle_mitm(
                     prompt_hash,
                     final_layer,
                     resolved_by,
+                    status_code,
+                    estimated_tokens,
                     start.elapsed().as_millis() as u64,
                 );
                 return Ok(());
@@ -338,6 +357,8 @@ async fn handle_mitm(
                     prompt_hash,
                     final_layer,
                     resolved_by,
+                    parse_status_code(&upstream_response),
+                    estimated_tokens,
                     start.elapsed().as_millis() as u64,
                 );
                 tls_stream.write_all(&upstream_response).await?;
@@ -581,14 +602,6 @@ async fn try_proxy_slm_resolution(
     }
 }
 
-fn prompt_hash(body: &[u8]) -> Option<String> {
-    let prompt = extract_prompt(body);
-    if prompt.is_empty() {
-        return None;
-    }
-    Some(hex::encode(Sha256::digest(prompt.as_bytes())))
-}
-
 fn emit_proxy_decision(
     proxy_client: Option<ProxyClient>,
     hostname: &str,
@@ -596,15 +609,22 @@ fn emit_proxy_decision(
     prompt_hash: Option<String>,
     final_layer: FinalLayer,
     resolved_by: &str,
+    status_code: u16,
+    estimated_tokens: Option<u64>,
     latency_ms: u64,
 ) {
+    let client = proxy_client
+        .map(ProxyClient::id)
+        .unwrap_or("unknown")
+        .to_string();
+    let endpoint_family = proxy_client
+        .map(|proxy_client| proxy_client.endpoint_family(path))
+        .unwrap_or("proxy")
+        .to_string();
     let decision = ProxyRouteDecision {
         request_id: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now().to_rfc3339(),
-        client: proxy_client
-            .map(ProxyClient::id)
-            .unwrap_or("unknown")
-            .to_string(),
+        client: client.clone(),
         hostname: hostname.to_string(),
         path: path.to_string(),
         prompt_hash,
@@ -613,6 +633,24 @@ fn emit_proxy_decision(
         deflected: final_layer.is_deflected(),
         latency_ms,
     };
+
+    metrics::record_request_with_context(
+        final_layer.as_str(),
+        status_code,
+        latency_ms as f64 / 1000.0,
+        "proxy",
+        &client,
+        &endpoint_family,
+    );
+    if final_layer.is_deflected() {
+        metrics::record_tokens_saved_with_context(
+            final_layer.as_str(),
+            estimated_tokens.unwrap_or(256),
+            "proxy",
+            &client,
+            &endpoint_family,
+        );
+    }
 
     tracing::info!(
         client = %decision.client,
@@ -625,7 +663,30 @@ fn emit_proxy_decision(
         "Proxy request resolved"
     );
 
+    visibility::record_prompt(PromptVisibilityEntry {
+        timestamp: decision.timestamp.clone(),
+        traffic_surface: "proxy".to_string(),
+        client: decision.client.clone(),
+        endpoint_family,
+        route: format!("{hostname} {path}"),
+        prompt_hash: decision.prompt_hash.clone(),
+        final_layer: decision.final_layer.clone(),
+        resolved_by: Some(decision.resolved_by.clone()),
+        deflected: decision.deflected,
+        latency_ms: decision.latency_ms,
+        status_code,
+    });
     record_proxy_decision(decision);
+}
+
+fn parse_status_code(response: &[u8]) -> u16 {
+    let prefix = String::from_utf8_lossy(response);
+    prefix
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|code| code.parse::<u16>().ok())
+        .unwrap_or(200)
 }
 
 /// Cache a response received from the real upstream.
@@ -1153,6 +1214,8 @@ mod tests {
             Some("abc123".into()),
             FinalLayer::SemanticCache,
             "semantic_cache",
+            200,
+            Some(256),
             12,
         );
 

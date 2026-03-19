@@ -59,6 +59,7 @@
 | `isartor connectivity-check` | Audit outbound connections |
 | `isartor connect <client>` | Configure AI clients to route through Isartor |
 | `isartor connect copilot` | Configure Copilot CLI with CONNECT proxy + TLS MITM |
+| `isartor stats` | Show total prompts, counts by layer, and recent prompt routing history |
 | `isartor set-key --provider <name>` | Set LLM provider API key (writes to `isartor.toml` or env file) |
 | `isartor stop` | Stop a running Isartor instance (uses PID file). Flags: `--force` (SIGKILL), `--pid-file <path>` |
 | `isartor update` | Self-update to the latest (or specific) version from GitHub releases. Flags: `--version <tag>`, `--dry-run`, `--force` |

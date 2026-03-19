@@ -28,3 +28,4 @@ pub mod services;
 pub mod state;
 pub mod telemetry;
 pub mod vector_cache;
+pub mod visibility;

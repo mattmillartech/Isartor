@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![allow(clippy::trim_split_whitespace)]
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 // ── Observability: Final-layer annotation ────────────────────────────
@@ -89,6 +91,33 @@ pub struct ProxyRouteDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyRecentResponse {
     pub entries: Vec<ProxyRouteDecision>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptVisibilityEntry {
+    pub timestamp: String,
+    pub traffic_surface: String,
+    pub client: String,
+    pub endpoint_family: String,
+    pub route: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_hash: Option<String>,
+    pub final_layer: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_by: Option<String>,
+    pub deflected: bool,
+    pub latency_ms: u64,
+    pub status_code: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PromptStatsResponse {
+    pub total_prompts: u64,
+    pub total_deflected_prompts: u64,
+    pub by_layer: BTreeMap<String, u64>,
+    pub by_surface: BTreeMap<String, u64>,
+    pub by_client: BTreeMap<String, u64>,
+    pub recent: Vec<PromptVisibilityEntry>,
 }
 
 // ── Legacy Ollama — Generation (v1 middleware compat) ─────────────────

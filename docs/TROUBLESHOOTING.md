@@ -605,6 +605,56 @@ docker compose up -d --pull always
 
 In-memory caches are cleared on restart. Redis caches persist.
 
+### Q: Why does `isartor update` or GitHub access fail with `localhost:8081` / `Connection refused` after I stopped Isartor?
+
+**A:** Your shell likely still has proxy environment variables from a prior
+`isartor connect ...` session, so non-Isartor commands are still trying to
+reach GitHub through the local CONNECT proxy on `localhost:8081`.
+
+Typical error:
+
+```text
+Error: error sending request for url (https://api.github.com/repos/isartor-ai/Isartor/releases/latest)
+Caused by:
+  tunnel error: failed to create underlying connection
+  tcp connect error
+  Connection refused (os error 61)
+```
+
+**Fix on macOS / Linux:**
+
+```bash
+unset HTTPS_PROXY HTTP_PROXY ALL_PROXY https_proxy http_proxy all_proxy
+unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE
+unset ISARTOR_COPILOT_ENABLED ISARTOR_ANTIGRAVITY_ENABLED
+```
+
+Then confirm the shell is clean:
+
+```bash
+env | grep -i proxy
+```
+
+If you sourced one of the generated env files, either open a new terminal or
+remove the `source ~/.isartor/env/...` line from your shell profile.
+
+For proxy-routed clients such as Copilot CLI, Claude Code, and Antigravity,
+stop any already-running client process first, then launch it again from the
+same shell where you ran `source ~/.isartor/env/...`. Existing client
+processes do not pick up new proxy environment variables automatically.
+
+You can also clean up client-side configuration:
+
+```bash
+isartor connect copilot --disconnect
+isartor connect claude --disconnect
+isartor connect antigravity --disconnect
+```
+
+As of `v0.1.24`, `isartor update` automatically bypasses stale local Isartor
+proxy settings for GitHub release checks, but clearing the shell environment is
+still the right manual fix for other tools.
+
 ### Q: How do I monitor deflection rate in real-time?
 
 **A:** Use the Grafana dashboard included in `dashboards/prometheus-grafana.json`

@@ -102,11 +102,17 @@ isartor
 # Step 2: Configure your client
 isartor connect copilot
 
-# Step 3: Activate in your shell
+# Step 3: Stop any already-running client session, then activate the proxy env in the same shell
 source ~/.isartor/env/copilot.sh
 
-# Step 4: Use the client normally — traffic routes through Isartor’s Deflection Stack
+# Step 4: Launch the client from that same shell
+# e.g. gh copilot suggest "explain this function"
 ```
+
+If you start Copilot CLI, Claude Code, or Antigravity from a different shell or
+from an already-running process that did not inherit the generated env vars,
+traffic will bypass Isartor and you will not see proxy entries in
+`isartor connect status` or `/debug/proxy/recent`.
 
 **How it works:**
 - The proxy intercepts CONNECT requests to known Copilot, Anthropic, and Antigravity domains

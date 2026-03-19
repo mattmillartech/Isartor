@@ -138,19 +138,28 @@ Four instruments are registered as a singleton `GatewayMetrics` via `OnceLock`:
 
 | Metric Name                          | Type       | Attributes                      | Description                              |
 |--------------------------------------|------------|---------------------------------|------------------------------------------|
-| `isartor_requests_total`             | Counter    | `final_layer`, `http_status`    | Total requests                           |
-| `isartor_request_duration_seconds`   | Histogram  | `final_layer`, `http_status`    | End-to-end request duration              |
+| `isartor_requests_total`             | Counter    | `final_layer`, `status_code`, `traffic_surface`, `client`, `endpoint_family` | Total prompts processed |
+| `isartor_request_duration_seconds`   | Histogram  | `final_layer`, `status_code`, `traffic_surface`, `client`, `endpoint_family` | End-to-end request duration |
 | `isartor_layer_duration_seconds`     | Histogram  | `layer_name`                    | Per-layer latency                        |
-| `isartor_tokens_saved_total`         | Counter    | `final_layer`                   | Estimated tokens saved by early resolve  |
+| `isartor_tokens_saved_total`         | Counter    | `final_layer`, `traffic_surface`, `client`, `endpoint_family` | Estimated tokens saved by early resolve |
 
 ### Where metrics are recorded
 
 | Call Site                        | Metrics Recorded                                           |
 |----------------------------------|------------------------------------------------------------|
-| `root_monitoring_middleware`      | `record_request()`, `record_tokens_saved()` (if early)    |
+| `root_monitoring_middleware`      | `record_request_with_context()`, `record_tokens_saved_with_context()` (if early) |
+| `proxy::connect::emit_proxy_decision()` | `record_request_with_context()`, `record_tokens_saved_with_context()` (if early) |
 | `cache_middleware` (L1 hit)       | `record_layer_duration("L1a_ExactCache" \| "L1b_SemanticCache")` |
 | `slm_triage_middleware` (L2 hit)  | `record_layer_duration("L2_SLM")`                         |
 | `chat_handler` (L3)              | `record_layer_duration("L3_Cloud")`                        |
+
+### New request dimensions
+
+Unified prompt telemetry distinguishes:
+
+- `traffic_surface`: `gateway` or `proxy`
+- `client`: `direct`, `openai`, `anthropic`, `copilot`, `claude`, `antigravity`, etc.
+- `endpoint_family`: `native`, `openai`, or `anthropic`
 
 ### Token Estimation
 
@@ -172,6 +181,12 @@ sum(increase(isartor_tokens_saved_total[24h]))
 
 # Savings by layer
 sum by (final_layer) (rate(isartor_tokens_saved_total[1h]))
+
+# Prompt volume by traffic surface
+sum by (traffic_surface) (rate(isartor_requests_total[5m]))
+
+# Prompt volume by client
+sum by (client) (rate(isartor_requests_total[5m]))
 
 # Estimated cost savings (assuming $0.01 per 1K tokens)
 sum(increase(isartor_tokens_saved_total[24h])) / 1000 * 0.01
@@ -224,6 +239,8 @@ Isartor  ──OTLP gRPC──▶  OTel Collector ──▶  Jaeger    (traces)
 | Request Rate          | `rate(isartor_requests_total[5m])`                                                            |
 | P95 Latency           | `histogram_quantile(0.95, rate(isartor_request_duration_seconds_bucket[5m]))`                 |
 | Layer Resolution      | `sum by (final_layer) (rate(isartor_requests_total[5m]))`                                     |
+| Traffic Surface Split | `sum by (traffic_surface) (rate(isartor_requests_total[5m]))`                                 |
+| Client Split          | `sum by (client) (rate(isartor_requests_total[5m]))`                                          |
 | Per-Layer Latency     | `histogram_quantile(0.95, sum by (le, layer_name) (rate(isartor_layer_duration_seconds_bucket[5m])))` |
 | Tokens Saved / Hour   | `sum(increase(isartor_tokens_saved_total[1h]))`                                               |
 | Tokens Saved by Layer | `sum by (final_layer) (rate(isartor_tokens_saved_total[5m]))`                                 |
@@ -242,7 +259,23 @@ Isartor  ──OTLP gRPC──▶  OTel Collector ──▶  Jaeger    (traces)
 
 ---
 
-## 11  Troubleshooting
+## 11  Built-in User Views
+
+For quick operator checks without a separate telemetry stack:
+
+```bash
+isartor stats --gateway-url http://localhost:8080 --gateway-api-key changeme
+```
+
+Built-in JSON endpoints:
+
+- `GET /health`
+- `GET /debug/proxy/recent`
+- `GET /debug/stats/prompts`
+
+---
+
+## 12  Troubleshooting
 
 | Symptom                            | Cause                             | Fix                                         |
 |------------------------------------|-----------------------------------|---------------------------------------------|
