@@ -7,6 +7,7 @@
 </p>
 
 [![CI](https://github.com/isartor-ai/Isartor/actions/workflows/ci.yml/badge.svg)](https://github.com/isartor-ai/Isartor/actions)
+[![codecov](https://codecov.io/gh/isartor-ai/Isartor/branch/main/graph/badge.svg)](https://codecov.io/gh/isartor-ai/Isartor)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub Release](https://img.shields.io/github/v/release/isartor-ai/Isartor?display_name=tag&sort=semver)](https://github.com/isartor-ai/Isartor/releases/latest)
 [![Air-Gappable](https://img.shields.io/badge/%E2%9C%93%20Air--Gappable-FedRAMP%20Ready-blue)](docs/AIR-GAPPED.md)

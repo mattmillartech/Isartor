@@ -1,0 +1,74 @@
+name: Integration Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  ISARTOR__FIRST_RUN_COMPLETE: "1"
+  ISARTOR__GATEWAY_API_KEY: "changeme"
+
+jobs:
+  integration:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y protobuf-compiler cmake
+
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Start Isartor in background
+        run: |
+          ./target/release/isartor > /tmp/isartor.log 2>&1 &
+          echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for server to be ready
+        run: |
+          max=30
+          for i in $(seq 1 $max); do
+            if curl -sf http://localhost:8080/healthz > /dev/null; then
+              echo "Server ready after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Server did not start in ${max}s. Logs:"
+          cat /tmp/isartor.log
+          exit 1
+
+      - name: Run smoke test suite
+        run: |
+          chmod +x scripts/smoke-test.sh
+          scripts/smoke-test.sh \
+            --no-start \
+            --url http://localhost:8080 \
+            --api-key changeme \
+            --verbose
+
+      - name: Print server logs on failure
+        if: failure()
+        run: cat /tmp/isartor.log
+
+      - name: Stop Isartor
+        if: always()
+        run: |
+          if [[ -n "${ISARTOR_PID:-}" ]]; then
+            kill "$ISARTOR_PID" 2>/dev/null || true
+          fi

@@ -69,42 +69,22 @@ jobs:
 
       - name: Install stable Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate coverage report
-        # Run tarpaulin and capture any produced XML. Tarpaulin may emit
-        # different XML filenames depending on version; locate any XML and
-        # copy it to coverage/cobertura.xml so the Codecov uploader can find it.
         run: |
           set -euxo pipefail
-          cargo install cargo-tarpaulin --force || true
-          # Try common output format names; prefer XML output.
-          if cargo tarpaulin --all-features --out Xml --output-dir coverage/; then
-            echo "tarpaulin finished (Xml)"
-          elif cargo tarpaulin --all-features --out xml --output-dir coverage/; then
-            echo "tarpaulin finished (xml)"
-          else
-            echo "tarpaulin failed — continue to collect any partial outputs"
-          fi
-
-          # Normalize any discovered XML report to cobertura.xml for Codecov
-          mkdir -p coverage
-          report=$(ls coverage/*.xml 2>/dev/null | head -n1 || true)
-          if [ -n "$report" ]; then
-            cp "$report" coverage/cobertura.xml
-            echo "Copied $report -> coverage/cobertura.xml"
-          else
-            echo "No XML coverage report found in coverage/"
-          fi
+          cargo llvm-cov --all-features --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: coverage/cobertura.xml
+          files: lcov.info
           fail_ci_if_error: false
-
