@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-03-19
+
+### Added
+- `scripts/smoke-test.sh` — runnable bash script that exercises every Isartor feature (health, auth, L1a/L1b/L2/L3, OpenAI + Anthropic + native endpoints, proxy, stats CLI, Copilot CLI integration)
+- `docs/TESTING.md` — step-by-step manual test runbook with copy-paste commands and a feature coverage matrix
+- `.github/workflows/integration-test.yml` — CI workflow that builds the binary, starts the server, and runs the smoke test suite on every push/PR
+
+### Fixed
+- Refactored `emit_proxy_decision` in `src/proxy/connect.rs` to use a `ProxyDecisionContext` struct, resolving `clippy::too_many_arguments` lint error
+
+### Changed
+- Coverage CI switched from `cargo-tarpaulin` to `cargo-llvm-cov` for reliable LCOV report generation
+- README now includes a Codecov coverage badge
+
 ## [0.1.25] - 2026-03-19
 
 ### Added
@@ -85,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.26...HEAD
+[0.1.26]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/isartor-ai/Isartor/compare/v0.1.24...v0.1.25
 [0.1.24]: https://github.com/isartor-ai/Isartor/compare/v0.1.23...v0.1.24
 [0.1.23]: https://github.com/isartor-ai/Isartor/compare/v0.1.22...v0.1.23
