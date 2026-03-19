@@ -4,7 +4,10 @@ use super::{
     BaseClientArgs, ConfigChange, ConfigChangeType, ConnectResult, home_path, remove_file,
     test_isartor_connection, write_file,
 };
+use crate::config::AppConfig;
 use crate::proxy::tls::IsartorCa;
+
+const DEFAULT_PROXY_PORT: &str = "0.0.0.0:8081";
 
 #[derive(Parser, Debug, Clone)]
 pub struct CopilotArgs {
@@ -21,7 +24,7 @@ pub struct CopilotArgs {
 
     /// CONNECT proxy listen address (default: 0.0.0.0:8081).
     /// This is the proxy that intercepts Copilot CLI HTTPS traffic.
-    #[arg(long, default_value = "0.0.0.0:8081")]
+    #[arg(long, default_value = DEFAULT_PROXY_PORT)]
     pub proxy_port: String,
 }
 
@@ -59,13 +62,11 @@ pub async fn handle_copilot_connect(args: CopilotArgs) -> ConnectResult {
         description: "Isartor CA certificate (for TLS MITM)".to_string(),
     });
 
-    // Step 2: Derive the CONNECT proxy URL from --proxy-port.
-    let proxy_port_num = args
-        .proxy_port
-        .rsplit(':')
-        .next()
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(8081);
+    // Step 2: Derive the CONNECT proxy URL.
+    // If the user explicitly set --proxy-port, respect it.  Otherwise read
+    // the running AppConfig (honours ISARTOR__PROXY_PORT / isartor.toml)
+    // so the generated shell file matches the actual server.
+    let proxy_port_num = effective_proxy_port(&args.proxy_port);
     let proxy_url = format!("http://localhost:{proxy_port_num}");
 
     // Step 3: Write the shell env file.
@@ -197,4 +198,27 @@ fn disconnect(args: &CopilotArgs, changes: &mut Vec<ConfigChange>) -> ConnectRes
         changes_made: changes.clone(),
         test_result: None,
     }
+}
+
+/// Resolve the proxy port number.  If the user explicitly passed a
+/// non-default `--proxy-port`, use that.  Otherwise try to read the
+/// running `AppConfig` (which honours `ISARTOR__PROXY_PORT` / toml)
+/// so the generated env file always matches the actual server.
+fn effective_proxy_port(cli_value: &str) -> u16 {
+    if cli_value != DEFAULT_PROXY_PORT {
+        return parse_port(cli_value, 8081);
+    }
+
+    if let Ok(cfg) = AppConfig::load() {
+        return parse_port(&cfg.proxy_port, 8081);
+    }
+
+    parse_port(cli_value, 8081)
+}
+
+fn parse_port(addr: &str, fallback: u16) -> u16 {
+    addr.rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(fallback)
 }

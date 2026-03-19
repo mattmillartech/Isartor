@@ -65,6 +65,11 @@ const DETACH_ENV: &str = "ISARTOR_INTERNAL_DETACHED_CHILD";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Pin the rustls CryptoProvider before any TLS usage. Both `ring` and
+    // `aws-lc-rs` features are enabled transitively; without an explicit
+    // install rustls panics on the first handshake.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let cli = Cli::parse();
     if cli.detach && is_startup_command(&cli.command) && std::env::var_os(DETACH_ENV).is_none() {
         return spawn_detached_startup();

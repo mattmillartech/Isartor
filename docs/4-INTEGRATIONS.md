@@ -101,36 +101,105 @@ Add `--gateway-api-key <key>` to these commands only if you have explicitly enab
 
 Copilot CLI, Claude Code, and Antigravity can be routed through Isartor's HTTP CONNECT
 proxy so Isartor can preserve each client's native upstream as Layer 3 while still
-deflecting requests locally at L1/L2 when possible:
+deflecting requests locally at L1/L2 when possible.
+
+#### Prerequisites
+
+- Isartor installed (`curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh`)
+- GitHub Copilot CLI installed (`gh extension install github/gh-copilot`)
+
+#### Step-by-step setup
+
+```bash
+# 1. Start Isartor with the Copilot CONNECT proxy
+#    This starts both the API gateway (:8080) and the CONNECT proxy (:8081).
+#    Ports are configurable — see "Custom ports" below.
+isartor up copilot
+
+# 2. Generate the shell environment file for Copilot
+#    Writes ~/.isartor/env/copilot.sh with HTTPS_PROXY and NODE_EXTRA_CA_CERTS.
+#    The command auto-detects the running proxy port from your config, so
+#    it matches even if you changed ISARTOR__PROXY_PORT.
+isartor connect copilot
+
+# 3. Activate the proxy environment in your current shell
+#    IMPORTANT: run this in every new shell where you want Copilot to
+#    route through Isartor.
+source ~/.isartor/env/copilot.sh
+
+# 4. Use Copilot normally — traffic now routes through Isartor
+gh copilot suggest "explain this function"
+```
+
+> **Order matters.** Always run `isartor up copilot` *before* `isartor connect copilot`.
+> The `connect` command tests the gateway to confirm it is reachable.
+
+#### Custom ports
+
+Override the default ports with environment variables:
+
+```bash
+export ISARTOR__HOST_PORT=127.0.0.1:18080    # gateway
+export ISARTOR__PROXY_PORT=127.0.0.1:18081   # CONNECT proxy
+isartor up copilot
+
+# connect auto-detects the port from config — no extra flags needed
+isartor connect copilot
+source ~/.isartor/env/copilot.sh
+```
+
+You can also pass `--proxy-port` explicitly to override:
+
+```bash
+isartor connect copilot --proxy-port 127.0.0.1:18081
+```
+
+#### Verifying the connection
+
+```bash
+# Check connection status
+isartor connect status
+
+# View recent proxy decisions
+curl -s http://localhost:8080/debug/proxy/recent | jq .
+```
+
+#### Stopping and disconnecting
+
+```bash
+# Stop the Isartor server
+isartor stop
+
+# Remove the Copilot proxy configuration
+isartor connect copilot --disconnect
+
+# Unset env vars in the current shell (or just open a new shell)
+unset HTTPS_PROXY NODE_EXTRA_CA_CERTS ISARTOR_COPILOT_ENABLED
+```
+
+#### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Copilot hangs or "connection refused" | `HTTPS_PROXY` points to wrong port | Re-run `isartor connect copilot` and `source ~/.isartor/env/copilot.sh` |
+| Copilot works but bypasses Isartor | Env vars not loaded in the shell | Run `source ~/.isartor/env/copilot.sh` in the same shell that launches Copilot |
+| TLS / certificate errors | CA not trusted by Node.js | Verify `NODE_EXTRA_CA_CERTS` points to `~/.isartor/ca/isartor-ca.pem` |
+| "address already in use" on startup | Previous Isartor still running | Run `isartor stop` first, or check `lsof -i :8081` |
+
+If you start Copilot from a different shell or from an already-running process
+that did not inherit the generated env vars, traffic will bypass Isartor and
+you will not see proxy entries in `isartor connect status` or
+`/debug/proxy/recent`.
+
+#### How it works
 
 1. A local CA certificate is generated at `~/.isartor/ca/isartor-ca.pem`
 2. The CONNECT proxy runs on `:8081` only when you start `isartor up <client>` (configurable via `ISARTOR__PROXY_PORT`)
-3. `NODE_EXTRA_CA_CERTS` tells Copilot’s Node.js runtime to trust the local CA
-
-```bash
-# Step 1: Start Isartor in Copilot proxy mode
-isartor up copilot
-
-# Step 2: Configure your client
-isartor connect copilot
-
-# Step 3: Stop any already-running client session, then activate the proxy env in the same shell
-source ~/.isartor/env/copilot.sh
-
-# Step 4: Launch the client from that same shell
-# e.g. gh copilot suggest "explain this function"
-```
-
-If you start Copilot CLI, Claude Code, or Antigravity from a different shell or
-from an already-running process that did not inherit the generated env vars,
-traffic will bypass Isartor and you will not see proxy entries in
-`isartor connect status` or `/debug/proxy/recent`.
-
-**How it works:**
-- The proxy intercepts CONNECT requests to known Copilot, Anthropic, and Antigravity domains
-- TLS is terminated with a leaf certificate signed by the local CA
-- POST requests to `/v1/chat/completions` and `/v1/messages` are routed through the Deflection Stack (L1a → L1b → L2 → client upstream L3)
-- All other traffic is tunnelled transparently
+3. `NODE_EXTRA_CA_CERTS` tells Copilot's Node.js runtime to trust the local CA
+4. The proxy intercepts CONNECT requests to known Copilot, Anthropic, and Antigravity domains
+5. TLS is terminated with a leaf certificate signed by the local CA
+6. POST requests to `/v1/chat/completions` and `/v1/messages` are routed through the Deflection Stack (L1a → L1b → L2 → client upstream L3)
+7. All other traffic is tunnelled transparently
 
 **Intercepted domains:**
 - `copilot-proxy.githubusercontent.com`
@@ -143,11 +212,12 @@ traffic will bypass Isartor and you will not see proxy entries in
 - `daily-cloudcode-pa.googleapis.com`
 - `daily-cloudcode-pa.sandbox.googleapis.com`
 
-Notes:
+#### Notes
 
 - The CA is only trusted by Node.js (via `NODE_EXTRA_CA_CERTS`). No system-level trust changes are made.
 - Claude Code and Antigravity integrations also export `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` for non-Node HTTPS stacks.
 - Some tools support overriding the OpenAI base URL directly (preferred). Point them at `http://localhost:8080/v1`.
+
 
 ---
 

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-03-19
+
+### Fixed
+- **CONNECT proxy TLS panic**: pinned the rustls `CryptoProvider` (`ring`) at startup so the CONNECT proxy no longer panics on the first TLS handshake when both `ring` and `aws-lc-rs` features are enabled transitively.
+- **Port mismatch in `copilot.sh`**: `isartor connect copilot` now auto-detects the running proxy port from `AppConfig` (honouring `ISARTOR__PROXY_PORT` and `isartor.toml`) instead of always writing the CLI default. This fixes "connection refused" when users configure non-default ports.
+
+### Changed
+- Expanded Copilot integration docs in `docs/4-INTEGRATIONS.md` with custom-port instructions, troubleshooting table, and verification steps.
+
 ## [0.1.31] - 2026-03-19
 
 ### Fixed
