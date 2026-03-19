@@ -436,6 +436,157 @@ pub async fn pretooluse_hook_handler(body: axum::body::Bytes) -> impl IntoRespon
     }))
 }
 
+/// Cache lookup endpoint for MCP / external clients.
+///
+/// Checks L1a (exact) and L1b (semantic) caches without hitting L3.
+/// Returns the cached response if found, or 204 No Content on miss.
+pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
+    let state = request
+        .extensions()
+        .get::<Arc<AppState>>()
+        .cloned()
+        .expect("AppState missing");
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 64).await {
+        Ok(b) => b,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid body"})),
+            )
+                .into_response();
+        }
+    };
+
+    let prompt = serde_json::from_slice::<serde_json::Value>(&body_bytes)
+        .ok()
+        .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
+        .unwrap_or_default();
+
+    if prompt.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "prompt is required"})),
+        )
+            .into_response();
+    }
+
+    // L1a exact match.
+    let namespaced = format!("native|{prompt}");
+    let exact_key = hex::encode(Sha256::digest(namespaced.as_bytes()));
+    if let Some(cached) = state.exact_cache.get(&exact_key) {
+        tracing::info!("Cache lookup: L1a exact hit");
+        return (
+            StatusCode::OK,
+            [
+                ("X-Isartor-Layer", "l1a"),
+                ("X-Isartor-Deflected", "true"),
+                ("Content-Type", "application/json"),
+            ],
+            cached,
+        )
+            .into_response();
+    }
+
+    // L1b semantic match.
+    let embedder = state.text_embedder.clone();
+    let prompt_for_embed = prompt.clone();
+    if let Ok(Ok(embedding)) =
+        tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_for_embed)).await
+        && let Some(cached) = state.vector_cache.search(&embedding).await
+    {
+        tracing::info!("Cache lookup: L1b semantic hit");
+        return (
+            StatusCode::OK,
+            [
+                ("X-Isartor-Layer", "l1b"),
+                ("X-Isartor-Deflected", "true"),
+                ("Content-Type", "application/json"),
+            ],
+            cached,
+        )
+            .into_response();
+    }
+
+    // Cache miss.
+    (StatusCode::NO_CONTENT).into_response()
+}
+
+/// Cache store endpoint for MCP / external clients.
+///
+/// Stores a prompt/response pair in L1a (exact) and L1b (semantic) caches.
+/// Used by MCP tools to cache responses after the client's own LLM answers.
+pub async fn cache_store_handler(request: Request) -> impl IntoResponse {
+    let state = request
+        .extensions()
+        .get::<Arc<AppState>>()
+        .cloned()
+        .expect("AppState missing");
+
+    let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 256).await {
+        Ok(b) => b,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "invalid body"})),
+            )
+                .into_response();
+        }
+    };
+
+    #[derive(serde::Deserialize)]
+    struct CacheStoreRequest {
+        prompt: String,
+        response: String,
+        #[serde(default)]
+        model: String,
+    }
+
+    let req: CacheStoreRequest = match serde_json::from_slice(&body_bytes) {
+        Ok(r) => r,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "prompt and response are required"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Build a ChatResponse to store (normalized to layer 1).
+    let cached_json = serde_json::to_string(&ChatResponse {
+        layer: 1,
+        message: req.response.clone(),
+        model: Some(if req.model.is_empty() {
+            "cached".to_string()
+        } else {
+            req.model
+        }),
+    })
+    .unwrap_or_default();
+
+    // L1a exact cache.
+    let namespaced = format!("native|{}", req.prompt);
+    let exact_key = hex::encode(Sha256::digest(namespaced.as_bytes()));
+    state.exact_cache.put(exact_key, cached_json.clone());
+
+    // L1b semantic cache.
+    let embedder = state.text_embedder.clone();
+    let prompt_for_embed = req.prompt.clone();
+    if let Ok(Ok(embedding)) =
+        tokio::task::spawn_blocking(move || embedder.generate_embedding(&prompt_for_embed)).await
+    {
+        state.vector_cache.insert(embedding, cached_json).await;
+    }
+
+    tracing::info!(
+        prompt_len = req.prompt.len(),
+        "Cache store: written to L1a+L1b"
+    );
+
+    (StatusCode::OK, Json(serde_json::json!({"stored": true}))).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

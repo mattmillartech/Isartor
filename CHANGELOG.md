@@ -10,15 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.35] - 2026-03-19
 
 ### Changed
-- **Copilot CLI: MCP server replaces preToolUse hooks**: `isartor connect copilot` now registers Isartor as an MCP stdio server in `~/.copilot/mcp-config.json`. Copilot CLI gains an `isartor_chat` tool whose prompts flow through the full deflection stack (L1a/L1b cache → L2 SLM → L3 cloud), enabling actual cache hits and local deflection.
+- **Copilot CLI: cache-only MCP approach**: `isartor_chat` now performs cache lookup only (L1a exact + L1b semantic). On a miss it returns empty so Copilot uses its own LLM — Isartor never routes Copilot traffic through its configured L3 provider.
 - `isartor connect copilot` automatically cleans up legacy proxy env files and hook scripts from earlier versions.
 - `isartor connect copilot` adds the gateway URL to Copilot's `allowed_urls` in `~/.copilot/config.json`.
 - `isartor connect status` now shows "MCP server (isartor_chat tool)" for Copilot.
 - Improved connection test: checks `/health` first, distinguishes timeout (L3 unconfigured) from gateway unreachable.
-- Updated `docs/4-INTEGRATIONS.md` for the MCP approach.
+- Updated `docs/4-INTEGRATIONS.md` for the cache-only MCP approach.
 
 ### Added
-- `isartor mcp` subcommand: MCP (Model Context Protocol) stdio server for Copilot CLI and other MCP-compatible clients. Exposes `isartor_chat` tool.
+- `isartor mcp` subcommand: MCP (Model Context Protocol) stdio server for Copilot CLI and other MCP-compatible clients. Exposes `isartor_chat` (cache lookup) and `isartor_cache_store` (cache write) tools.
+- `POST /api/v1/cache/lookup`: Cache-only lookup endpoint (returns cached response or 204 on miss).
+- `POST /api/v1/cache/store`: Cache store endpoint (saves prompt/response pair to L1a exact + L1b semantic cache).
 
 ## [0.1.34] - 2026-03-19
 

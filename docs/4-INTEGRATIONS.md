@@ -18,6 +18,9 @@ Authenticated chat endpoints:
   - `POST /v1/chat/completions`
 - **Anthropic Messages compatible**
   - `POST /v1/messages`
+- **Cache lookup / store** (used by MCP clients)
+  - `POST /api/v1/cache/lookup`
+  - `POST /api/v1/cache/store`
 - **Copilot preToolUse hook** (legacy)
   - `POST /api/v1/hook/pretooluse`
 
@@ -107,12 +110,20 @@ isartor connect openclaw
 
 Add `--gateway-api-key <key>` to these commands only if you have explicitly enabled gateway auth.
 
-### GitHub Copilot CLI (MCP server)
+### GitHub Copilot CLI (MCP server — cache-only)
 
 Copilot CLI integrates via an **MCP (Model Context Protocol) server** that
-Isartor registers as a stdio subprocess. Copilot gains an `isartor_chat` tool
-whose prompts flow through the full deflection stack (L1a/L1b cache → L2 SLM →
-L3 cloud), enabling cache hits and local deflection.
+Isartor registers as a stdio subprocess. The MCP server exposes two tools:
+
+- **`isartor_chat`** — cache lookup only. Returns the cached answer on hit
+  (L1a exact or L1b semantic), or an empty string on miss. On a miss, Copilot
+  uses its own LLM to answer — Isartor never routes through its configured L3
+  provider for Copilot traffic.
+- **`isartor_cache_store`** — stores a prompt/response pair in Isartor's cache
+  so future identical or similar prompts are deflected locally.
+
+This design means **Copilot always uses its own LLM** for answering, while
+Isartor acts as a transparent cache layer that reduces redundant cloud calls.
 
 #### Prerequisites
 
@@ -128,7 +139,7 @@ isartor up --detach
 # 2. Register the MCP server with Copilot CLI
 isartor connect copilot
 
-# 3. Start Copilot normally — isartor_chat tool is now available
+# 3. Start Copilot normally — isartor_chat and isartor_cache_store tools are now available
 copilot
 ```
 
@@ -136,10 +147,28 @@ copilot
 
 1. `isartor connect copilot` adds an `isartor` entry to `~/.copilot/mcp-config.json`
 2. When Copilot CLI starts, it launches `isartor mcp` as a stdio subprocess
-3. The MCP server exposes an `isartor_chat` tool
-4. Prompts sent through `isartor_chat` go through the deflection stack:
-   - **L1a** exact cache → **L1b** semantic cache → **L2** SLM triage → **L3** cloud
-5. Repeated or similar prompts are deflected locally — zero cloud cost
+3. The MCP server exposes `isartor_chat` (cache lookup) and `isartor_cache_store` (cache write)
+4. When Copilot calls `isartor_chat`:
+   - **Cache hit** (L1a exact or L1b semantic): returns the cached answer instantly
+   - **Cache miss**: returns empty → Copilot uses its own LLM
+5. After Copilot gets an answer from its LLM, it can call `isartor_cache_store` to
+   populate the cache for future requests
+
+#### Cache endpoints (used by MCP internally)
+
+The MCP server calls these HTTP endpoints on the Isartor gateway:
+
+```bash
+# Cache lookup — returns cached response or 204 No Content
+curl -X POST http://localhost:8080/api/v1/cache/lookup \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "capital of France"}'
+
+# Cache store — saves a prompt/response pair
+curl -X POST http://localhost:8080/api/v1/cache/store \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "capital of France", "response": "The capital of France is Paris."}'
+```
 
 #### Custom gateway URL
 
@@ -254,6 +283,7 @@ isartor connect status
 | "connection refused" | Isartor not running | Run `isartor up` first |
 | Copilot has no `isartor_chat` tool | MCP server not registered | Run `isartor connect copilot` |
 | Copilot works but bypasses cache | Using native Copilot tools instead of `isartor_chat` | Ask Copilot to use the `isartor_chat` tool |
+| Cache never hits for Copilot | Responses not stored after LLM answers | Ask Copilot to call `isartor_cache_store` after answering |
 | Claude not routing through Isartor | `settings.json` not updated | Run `isartor connect claude` |
 | Gateway returns 401 | Auth enabled but key not configured | Add `--gateway-api-key` to connect command |
 

@@ -122,6 +122,28 @@ fn handle_tools_list(id: Option<Value>) -> Option<Value> {
                         },
                         "required": ["prompt"]
                     }
+                },
+                {
+                    "name": "isartor_cache_store",
+                    "description": "Store a prompt/response pair in Isartor's cache so future identical or similar prompts get deflected locally. Call this after you get an answer from your own LLM to populate the cache.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "prompt": {
+                                "type": "string",
+                                "description": "The original prompt"
+                            },
+                            "response": {
+                                "type": "string",
+                                "description": "The LLM response to cache"
+                            },
+                            "model": {
+                                "type": "string",
+                                "description": "Optional model name"
+                            }
+                        },
+                        "required": ["prompt", "response"]
+                    }
                 }
             ]
         }),
@@ -153,10 +175,30 @@ async fn handle_tools_call(id: Option<Value>, params: &Value, args: &McpArgs) ->
                 );
             }
 
-            match call_isartor_chat(&args.gateway_url, args.gateway_api_key.as_deref(), prompt)
-                .await
-            {
-                Ok(result) => jsonrpc_ok(id, result),
+            match cache_lookup(&args.gateway_url, args.gateway_api_key.as_deref(), prompt).await {
+                Ok(Some(answer)) => jsonrpc_ok(
+                    id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": answer
+                        }],
+                        "isError": false
+                    }),
+                ),
+                Ok(None) => {
+                    // Cache miss — return empty so the client uses its own LLM.
+                    jsonrpc_ok(
+                        id,
+                        json!({
+                            "content": [{
+                                "type": "text",
+                                "text": ""
+                            }],
+                            "isError": false
+                        }),
+                    )
+                }
                 Err(e) => jsonrpc_ok(
                     id,
                     json!({
@@ -169,72 +211,145 @@ async fn handle_tools_call(id: Option<Value>, params: &Value, args: &McpArgs) ->
                 ),
             }
         }
+        "isartor_cache_store" => {
+            let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+            let prompt = arguments
+                .get("prompt")
+                .and_then(|p| p.as_str())
+                .unwrap_or("");
+            let response = arguments
+                .get("response")
+                .and_then(|r| r.as_str())
+                .unwrap_or("");
+            let model = arguments
+                .get("model")
+                .and_then(|m| m.as_str())
+                .unwrap_or("");
+
+            if prompt.is_empty() || response.is_empty() {
+                return jsonrpc_ok(
+                    id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "Error: prompt and response are required"
+                        }],
+                        "isError": true
+                    }),
+                );
+            }
+
+            match cache_store(
+                &args.gateway_url,
+                args.gateway_api_key.as_deref(),
+                prompt,
+                response,
+                model,
+            )
+            .await
+            {
+                Ok(_) => jsonrpc_ok(
+                    id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "Cached successfully"
+                        }],
+                        "isError": false
+                    }),
+                ),
+                Err(e) => jsonrpc_ok(
+                    id,
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Cache store error: {e}")
+                        }],
+                        "isError": true
+                    }),
+                ),
+            }
+        }
         _ => jsonrpc_error(id, -32602, &format!("Unknown tool: {tool_name}")),
     }
 }
 
-async fn call_isartor_chat(
+/// Check Isartor's cache (L1a exact + L1b semantic) without hitting L3.
+/// Returns Some(answer) on cache hit, None on cache miss.
+async fn cache_lookup(
     gateway_url: &str,
     api_key: Option<&str>,
     prompt: &str,
-) -> anyhow::Result<Value> {
-    let url = format!("{}/api/chat", gateway_url.trim_end_matches('/'));
+) -> anyhow::Result<Option<String>> {
+    let url = format!("{}/api/v1/cache/lookup", gateway_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
 
-    let mut req = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .json(&json!({ "prompt": prompt }));
+    let mut req = client.post(&url).json(&json!({ "prompt": prompt }));
 
     if let Some(key) = api_key {
         req = req.header("X-API-Key", key);
     }
 
     let resp = req
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(3))
         .send()
         .await?;
 
-    let layer = resp
-        .headers()
-        .get("X-Isartor-Layer")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
-    let deflected = resp
-        .headers()
-        .get("X-Isartor-Deflected")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v == "true")
-        .unwrap_or(false);
-    let status = resp.status();
+    if resp.status() == reqwest::StatusCode::NO_CONTENT {
+        return Ok(None); // Cache miss
+    }
 
-    let body: Value = resp
-        .json()
-        .await
-        .unwrap_or(json!({"error": "empty response"}));
+    if !resp.status().is_success() {
+        anyhow::bail!("cache lookup failed: {}", resp.status());
+    }
 
+    // Parse the cached ChatResponse.
+    let body: Value = resp.json().await.unwrap_or(json!({}));
     let answer = body
-        .get("response")
-        .and_then(|r| r.as_str())
-        .unwrap_or_else(|| {
-            body.get("choices")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("message"))
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_str())
-                .unwrap_or("No response")
-        });
+        .get("message")
+        .and_then(|m| m.as_str())
+        .or_else(|| body.get("response").and_then(|r| r.as_str()))
+        .unwrap_or("")
+        .to_string();
 
-    let meta = format!("[layer={layer}, deflected={deflected}, status={status}]");
+    if answer.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(answer))
+    }
+}
 
-    Ok(json!({
-        "content": [{
-            "type": "text",
-            "text": format!("{answer}\n\n{meta}")
-        }],
-        "isError": false
-    }))
+/// Store a prompt/response pair in Isartor's cache (L1a + L1b).
+async fn cache_store(
+    gateway_url: &str,
+    api_key: Option<&str>,
+    prompt: &str,
+    response: &str,
+    model: &str,
+) -> anyhow::Result<()> {
+    let url = format!("{}/api/v1/cache/store", gateway_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+
+    let mut req = client.post(&url).json(&json!({
+        "prompt": prompt,
+        "response": response,
+        "model": model,
+    }));
+
+    if let Some(key) = api_key {
+        req = req.header("X-API-Key", key);
+    }
+
+    let resp = req
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("cache store failed: {}", resp.status());
+    }
+
+    Ok(())
 }
 
 // ── JSON-RPC helpers ──────────────────────────────────────────────────

@@ -303,6 +303,7 @@ async fn main() -> anyhow::Result<()> {
     // Unauthenticated routes — bypass the Deflection Stack entirely.
     let demo_flag = DemoModeFlag(demo_mode);
     let health_config = config.clone();
+    let state_for_cache = app_state.clone();
     let public = Router::new()
         .route("/healthz", axum::routing::get(healthz))
         .route("/health", axum::routing::get(health::health_handler))
@@ -310,6 +311,23 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/hook/pretooluse",
             axum::routing::post(handler::pretooluse_hook_handler),
         )
+        .route(
+            "/api/v1/cache/lookup",
+            axum::routing::post(handler::cache_lookup_handler),
+        )
+        .route(
+            "/api/v1/cache/store",
+            axum::routing::post(handler::cache_store_handler),
+        )
+        .layer(axum_mw::from_fn(
+            move |mut req: axum::extract::Request, next: axum_mw::Next| {
+                let st = state_for_cache.clone();
+                async move {
+                    req.extensions_mut().insert(st);
+                    next.run(req).await
+                }
+            },
+        ))
         .layer(axum::Extension(app_state.clone()))
         .layer(axum::Extension(health_config))
         .layer(axum::Extension(health::ProxyStatusFlag(
