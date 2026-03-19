@@ -260,18 +260,80 @@ fn extract_zip(archive: &std::path::Path, dest: &std::path::Path) -> Result<Path
     Ok(bin)
 }
 
+fn preferred_user_bin_dir() -> &'static str {
+    if cfg!(windows) {
+        r"%USERPROFILE%\.local\bin"
+    } else {
+        "~/.local/bin"
+    }
+}
+
+fn unix_user_bin_setup_commands(current_exe: &std::path::Path) -> Option<String> {
+    #[cfg(unix)]
+    {
+        let current = current_exe.display();
+        Some(format!(
+            "mkdir -p ~/.local/bin\ncp {current} ~/.local/bin/isartor\nchmod +x ~/.local/bin/isartor\nexport PATH=\"$HOME/.local/bin:$PATH\"\nhash -r\nwhich isartor"
+        ))
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = current_exe;
+        None
+    }
+}
+
+fn permission_denied_replace_guidance(
+    current_exe: &std::path::Path,
+    backup: &std::path::Path,
+) -> String {
+    let install_dir = current_exe
+        .parent()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| current_exe.display().to_string());
+
+    let mut message = format!(
+        "failed to move current binary to backup ({}). The install directory ({}) is not writable for this user. Reinstall Isartor into a user-writable directory such as {} and put it first in PATH.",
+        backup.display(),
+        install_dir,
+        preferred_user_bin_dir(),
+    );
+
+    if let Some(commands) = unix_user_bin_setup_commands(current_exe) {
+        message.push_str("\n\nSuggested commands:\n");
+        message.push_str(&commands);
+    }
+
+    message.push_str(&format!(
+        "\n\nIf you intentionally manage {} system-wide, rerun this update with sudo.",
+        install_dir
+    ));
+
+    message
+}
+
 /// Replace the running binary with a new one (atomic on Unix).
 fn self_replace(new_bin: &std::path::Path, current_exe: &std::path::Path) -> Result<()> {
     // On Unix: rename old binary to .bak, copy new one in, remove .bak.
     let backup = current_exe.with_extension("bak");
 
     // Move current binary aside.
-    std::fs::rename(current_exe, &backup).with_context(|| {
-        format!(
-            "failed to move current binary to backup ({}). Try running with sudo.",
-            backup.display()
-        )
-    })?;
+    match std::fs::rename(current_exe, &backup) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(err)
+                .with_context(|| permission_denied_replace_guidance(current_exe, &backup));
+        }
+        Err(err) => {
+            return Err(err).with_context(|| {
+                format!(
+                    "failed to move current binary to backup ({})",
+                    backup.display()
+                )
+            });
+        }
+    }
 
     // Copy new binary into place.
     if let Err(e) = std::fs::copy(new_bin, current_exe) {
@@ -351,5 +413,35 @@ mod tests {
                 assert!(should_bypass_isartor_proxy_env());
             },
         );
+    }
+
+    #[test]
+    fn permission_denied_guidance_recommends_user_writable_bin_dir() {
+        let message = permission_denied_replace_guidance(
+            std::path::Path::new("/usr/local/bin/isartor"),
+            std::path::Path::new("/usr/local/bin/isartor.bak"),
+        );
+
+        assert!(message.contains("/usr/local/bin"));
+        assert!(message.contains("~/.local/bin"));
+        assert!(message.contains("sudo"));
+        assert!(message.contains("PATH"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_denied_guidance_includes_exact_unix_commands() {
+        let message = permission_denied_replace_guidance(
+            std::path::Path::new("/usr/local/bin/isartor"),
+            std::path::Path::new("/usr/local/bin/isartor.bak"),
+        );
+
+        assert!(message.contains("Suggested commands:"));
+        assert!(message.contains("mkdir -p ~/.local/bin"));
+        assert!(message.contains("cp /usr/local/bin/isartor ~/.local/bin/isartor"));
+        assert!(message.contains("chmod +x ~/.local/bin/isartor"));
+        assert!(message.contains("export PATH=\"$HOME/.local/bin:$PATH\""));
+        assert!(message.contains("hash -r"));
+        assert!(message.contains("which isartor"));
     }
 }

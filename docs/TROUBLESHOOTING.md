@@ -659,6 +659,43 @@ As of `v0.1.24`, `isartor update` automatically bypasses stale local Isartor
 proxy settings for GitHub release checks, but clearing the shell environment is
 still the right manual fix for other tools.
 
+### Q: Why does `isartor update` fail with `Permission denied (os error 13)` when replacing `/usr/local/bin/isartor`?
+
+**A:** Your current `isartor` binary is installed in a system-managed directory,
+so the updater cannot rename it in place as an unprivileged user.
+
+Typical error:
+
+```text
+Error: failed to move current binary to backup (/usr/local/bin/isartor.bak)
+Caused by:
+  Permission denied (os error 13)
+```
+
+**Recommended fix:** move to a user-writable install location and make sure it
+comes first in `PATH`.
+
+```bash
+mkdir -p ~/.local/bin
+cp /usr/local/bin/isartor ~/.local/bin/isartor
+chmod +x ~/.local/bin/isartor
+export PATH="$HOME/.local/bin:$PATH"
+hash -r
+```
+
+Newer `isartor update` builds print these commands automatically when they
+detect a permission-denied self-update against a protected install directory.
+
+Then confirm the shell resolves the user-owned binary:
+
+```bash
+which isartor
+```
+
+If you intentionally manage `isartor` as a system-wide binary in
+`/usr/local/bin`, using `sudo isartor update` is still valid, but it should be a
+conscious admin choice rather than the default workflow.
+
 ### Q: How do I monitor deflection rate in real-time?
 
 **A:** Use the Grafana dashboard included in `dashboards/prometheus-grafana.json`

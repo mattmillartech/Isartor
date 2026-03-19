@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-03-19
+
+### Fixed
+- `isartor update` now explains permission-denied self-update failures for protected install directories such as `/usr/local/bin`, recommends a user-writable install path like `~/.local/bin`, and prints copy-pasteable recovery commands on Unix-like systems before suggesting `sudo`.
+
 ## [0.1.28] - 2026-03-19
 
 ### Added
@@ -119,7 +124,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.28...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.29...HEAD
+[0.1.29]: https://github.com/isartor-ai/Isartor/compare/v0.1.28...v0.1.29
 [0.1.28]: https://github.com/isartor-ai/Isartor/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/isartor-ai/Isartor/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...v0.1.26
