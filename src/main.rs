@@ -153,7 +153,9 @@ async fn main() -> anyhow::Result<()> {
     );
 
     if config.gateway_api_key.is_empty() {
-        tracing::info!("Gateway auth disabled (local-first default). Set ISARTOR__GATEWAY_API_KEY to enable.");
+        tracing::info!(
+            "Gateway auth disabled (local-first default). Set ISARTOR__GATEWAY_API_KEY to enable."
+        );
     } else {
         tracing::info!("Gateway auth enabled (Layer 0)");
     }
