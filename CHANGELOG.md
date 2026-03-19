@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-03-19
+
+### Added
+- `isartor up` for the recommended terminal startup flow.
+- `isartor up copilot|claude|antigravity` to start the API gateway plus the CONNECT proxy only when that client needs it.
+
+### Changed
+- Bare `isartor` startup now follows the gateway-only local-first path instead of always enabling the CONNECT proxy.
+- `/health` now reports proxy status accurately when running in gateway-only mode.
+- Startup docs, smoke tests, and CI workflows now use the new `up` entrypoints.
+
 ## [0.1.27] - 2026-03-19
 
 ### Changed
@@ -108,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.27...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.28...HEAD
+[0.1.28]: https://github.com/isartor-ai/Isartor/compare/v0.1.27...v0.1.28
 [0.1.27]: https://github.com/isartor-ai/Isartor/compare/v0.1.26...v0.1.27
 [0.1.26]: https://github.com/isartor-ai/Isartor/compare/v0.1.25...v0.1.26
 [0.1.25]: https://github.com/isartor-ai/Isartor/compare/v0.1.24...v0.1.25

@@ -41,22 +41,26 @@ Run the entire test suite in one command:
 ### 1  Start the Server
 
 ```bash
-# Quick start (demo mode, no API key required)
+# Gateway-only startup (local API testing)
+ISARTOR__FIRST_RUN_COMPLETE=1 \
+./target/release/isartor up
+
+# Full startup for proxy-aware testing (recommended for this guide)
 ISARTOR__FIRST_RUN_COMPLETE=1 \
 ISARTOR__GATEWAY_API_KEY=changeme \
-./target/release/isartor
+./target/release/isartor up copilot
 
 # With an OpenAI key (enables real L3 fallback)
 ISARTOR__FIRST_RUN_COMPLETE=1 \
 ISARTOR__GATEWAY_API_KEY=changeme \
 ISARTOR__EXTERNAL_LLM_API_KEY=sk-... \
-./target/release/isartor
+./target/release/isartor up copilot
 ```
 
 Server is ready when you see:
 ```
 INFO isartor: API gateway listening, addr: 0.0.0.0:8080
-INFO isartor: CONNECT proxy listening, addr: 0.0.0.0:8081
+INFO isartor: CONNECT proxy starting, addr: 0.0.0.0:8081
 ```
 
 ---
@@ -378,7 +382,7 @@ unset HTTPS_PROXY NODE_EXTRA_CA_CERTS ISARTOR_COPILOT_ENABLED
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Connection refused :8080` | Server not started | Run `./target/release/isartor` |
+| `Connection refused :8080` | Server not started | Run `./target/release/isartor up` |
 | `isartor update` fails after stop | Stale `HTTPS_PROXY` in shell | `unset HTTPS_PROXY HTTP_PROXY` |
 | Copilot traffic not showing in stats | Wrong shell / env not sourced | `source ~/.isartor/env/copilot.sh` then restart Copilot CLI |
 | L1b miss on paraphrase | Semantic index cold | Send several prompts first to warm the index |

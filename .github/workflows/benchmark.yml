@@ -47,7 +47,7 @@ jobs:
           ISARTOR__AZURE_DEPLOYMENT_ID: gpt-4o-mini
           ISARTOR__AZURE_API_VERSION: "2024-08-01-preview"
         run: |
-          ./target/release/isartor &
+          ./target/release/isartor up &
           echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
           # Wait until the server is accepting connections (up to 30 s)
           for i in $(seq 1 30); do

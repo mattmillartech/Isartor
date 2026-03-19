@@ -138,7 +138,8 @@ curl http://localhost:8080/health
 After installation:
 
 ```bash
-isartor              # start the server on port 8080
+isartor up           # start the API gateway only
+isartor up copilot   # start gateway + CONNECT proxy for Copilot CLI
 isartor demo         # run the deflection demo (no API key needed)
 isartor init         # generate a commented config scaffold
 isartor set-key -p openai  # configure your LLM provider API key
@@ -159,7 +160,7 @@ irm https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.ps1 | iex
 git clone https://github.com/isartor-ai/Isartor.git
 cd Isartor
 cargo build --release
-./target/release/isartor
+./target/release/isartor up
 ```
 
 ### Verify

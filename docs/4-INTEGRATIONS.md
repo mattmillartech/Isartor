@@ -104,12 +104,12 @@ proxy so Isartor can preserve each client's native upstream as Layer 3 while sti
 deflecting requests locally at L1/L2 when possible:
 
 1. A local CA certificate is generated at `~/.isartor/ca/isartor-ca.pem`
-2. The CONNECT proxy runs on `:8081` (configurable via `ISARTOR__PROXY_PORT`)
+2. The CONNECT proxy runs on `:8081` only when you start `isartor up <client>` (configurable via `ISARTOR__PROXY_PORT`)
 3. `NODE_EXTRA_CA_CERTS` tells Copilot’s Node.js runtime to trust the local CA
 
 ```bash
-# Step 1: Start Isartor (runs both API gateway :8080 and CONNECT proxy :8081)
-isartor
+# Step 1: Start Isartor in Copilot proxy mode
+isartor up copilot
 
 # Step 2: Configure your client
 isartor connect copilot

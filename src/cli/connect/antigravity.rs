@@ -97,7 +97,7 @@ pub async fn handle_antigravity_connect(args: AntigravityArgs) -> ConnectResult 
         client_name: "Antigravity".to_string(),
         success: test.response_received || args.base.dry_run,
         message: format!(
-            "Run: source {}\nThen restart Antigravity.\nProxy: {}\nCA: {}\nLayer 3 for proxied Antigravity requests: Antigravity upstream passthrough (no separate Isartor Layer 3 key required for this path).",
+            "Start Isartor with `isartor up antigravity`.\nRun: source {}\nThen restart Antigravity.\nProxy: {}\nCA: {}\nLayer 3 for proxied Antigravity requests: Antigravity upstream passthrough (no separate Isartor Layer 3 key required for this path).",
             env_path.display(),
             proxy_url,
             ca_cert_path.display()

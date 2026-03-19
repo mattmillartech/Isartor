@@ -53,7 +53,8 @@
 
 | Command | Description |
 |---|---|
-| `isartor` | Start the server (default) |
+| `isartor up` | Start the API gateway only (recommended default) |
+| `isartor up <copilot|claude|antigravity>` | Start the gateway plus the CONNECT proxy for that client |
 | `isartor init` | Generate a commented `isartor.toml` config scaffold |
 | `isartor demo` | Run the deflection demo (no API key needed) |
 | `isartor connectivity-check` | Audit outbound connections |

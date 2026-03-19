@@ -105,7 +105,7 @@ All providers are powered by [rig-core](https://crates.io/crates/rig-core).
 
 | Variable | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ISARTOR__PROXY_PORT` | `String` | `0.0.0.0:8081` | Socket address the CONNECT proxy binds to (for Copilot CLI TLS MITM interception) |
+| `ISARTOR__PROXY_PORT` | `String` | `0.0.0.0:8081` | Socket address the CONNECT proxy binds to when started via `isartor up <client>` |
 
 
 ### Embedded Classifier (Compiled Defaults)

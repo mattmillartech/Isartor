@@ -32,6 +32,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Start Isartor in gateway-only mode or with a client-specific CONNECT proxy.
+    Up(isartor::cli::up::UpArgs),
     /// Generate a commented isartor.toml config scaffold and exit.
     Init,
     /// Replay bundled demo prompts against the local cache layers and print a deflection table.
@@ -53,9 +55,13 @@ enum Commands {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let mut startup_mode = isartor::cli::up::StartupMode::GatewayOnly;
 
     // ── Handle `isartor init` / `isartor demo` / `isartor connectivity-check` ─
     match cli.command {
+        Some(Commands::Up(args)) => {
+            startup_mode = args.startup_mode();
+        }
         Some(Commands::Init) => {
             isartor::first_run::write_config_scaffold()?;
             return Ok(());
@@ -151,6 +157,7 @@ async fn main() -> anyhow::Result<()> {
         inference_engine = ?config.inference_engine,
         "LLM provider configured"
     );
+    tracing::info!("{}", isartor::cli::up::startup_log_line(startup_mode));
 
     if config.gateway_api_key.is_empty() {
         tracing::info!(
@@ -275,12 +282,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", axum::routing::get(health::health_handler))
         .layer(axum::Extension(app_state.clone()))
         .layer(axum::Extension(health_config))
+        .layer(axum::Extension(health::ProxyStatusFlag(
+            startup_mode.starts_proxy(),
+        )))
         .layer(axum::Extension(demo_flag));
 
     let app = public.merge(debug).merge(authenticated);
 
     // ------------------------------------------------------------------
-    // 5. Start the server and CONNECT proxy.
+    // 5. Start the server and, when requested, the CONNECT proxy.
     // ------------------------------------------------------------------
     let listener = tokio::net::TcpListener::bind(&config.host_port).await?;
     tracing::info!(addr = %config.host_port, "API gateway listening");
@@ -290,30 +300,35 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!(error = %e, "Failed to write PID file");
     }
 
-    // ------------------------------------------------------------------
-    // 5b. Start the CONNECT proxy (for Copilot CLI interception).
-    //     Graceful degradation: if the proxy fails to start, log a
-    //     warning and continue with just the API gateway.
-    // ------------------------------------------------------------------
-    let proxy_addr = config.proxy_port.clone();
-    let proxy_state = app_state.clone();
-    let proxy_handle = match isartor::proxy::tls::IsartorCa::load_or_generate() {
-        Ok(ca) => {
-            let ca = Arc::new(ca);
-            tracing::info!(addr = %proxy_addr, "CONNECT proxy starting");
-            Some(tokio::spawn(async move {
-                if let Err(e) =
-                    isartor::proxy::connect::run_connect_proxy(&proxy_addr, ca, proxy_state).await
-                {
-                    tracing::error!(error = %e, "CONNECT proxy exited with error");
-                }
-            }))
+    let proxy_handle = if startup_mode.starts_proxy() {
+        let proxy_addr = config.proxy_port.clone();
+        let proxy_state = app_state.clone();
+        match isartor::proxy::tls::IsartorCa::load_or_generate() {
+            Ok(ca) => {
+                let ca = Arc::new(ca);
+                tracing::info!(addr = %proxy_addr, "CONNECT proxy starting");
+                Some(tokio::spawn(async move {
+                    if let Err(e) =
+                        isartor::proxy::connect::run_connect_proxy(&proxy_addr, ca, proxy_state)
+                            .await
+                    {
+                        tracing::error!(error = %e, "CONNECT proxy exited with error");
+                    }
+                }))
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "CONNECT proxy disabled: CA generation failed");
+                None
+            }
         }
-        Err(e) => {
-            tracing::warn!(error = %e, "CONNECT proxy disabled: CA generation failed");
-            None
-        }
+    } else {
+        tracing::info!(
+            "CONNECT proxy not started. Use `isartor up copilot|claude|antigravity` when a client needs it."
+        );
+        None
     };
+
+    isartor::cli::up::print_startup_card(&config, startup_mode);
 
     // ------------------------------------------------------------------
     // 6. First-run demo — runs concurrently with the server.

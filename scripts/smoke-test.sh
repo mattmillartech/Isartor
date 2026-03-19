@@ -190,11 +190,12 @@ start_server() {
   log "Starting Isartor…"
   local port="${ISARTOR_PORT:-8080}"
   local proxy_port="${ISARTOR_PROXY_PORT:-8081}"
+  local startup_client="${ISARTOR_STARTUP_CLIENT:-copilot}"
   ISARTOR__FIRST_RUN_COMPLETE=1 \
   ISARTOR__GATEWAY_API_KEY="$API_KEY" \
   ISARTOR__HOST_PORT="0.0.0.0:${port}" \
   ISARTOR__PROXY_PORT="0.0.0.0:${proxy_port}" \
-  "$BINARY" > /tmp/isartor_smoke_server.log 2>&1 &
+  "$BINARY" up "$startup_client" > /tmp/isartor_smoke_server.log 2>&1 &
   SERVER_PID=$!
   trap cleanup EXIT
 }

@@ -158,7 +158,7 @@ pub async fn handle_copilot_connect(args: CopilotArgs) -> ConnectResult {
         client_name: "GitHub Copilot CLI".to_string(),
         success: test.response_received || args.base.dry_run,
         message: format!(
-            "1. Start Isartor:  isartor\n\
+            "1. Start Isartor:  isartor up copilot\n\
              2. Activate proxy: {source_cmd}\n\
              3. Use Copilot CLI normally — traffic routes through Isartor\n\
               \n\

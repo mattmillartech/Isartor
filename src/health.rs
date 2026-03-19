@@ -52,6 +52,9 @@ pub struct HealthResponse {
     pub prompt_total_deflected_requests: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ProxyStatusFlag(pub bool);
+
 #[derive(Debug, Serialize)]
 pub struct LayerStatus {
     /// L1a exact-match cache.
@@ -73,6 +76,7 @@ pub struct LayerStatus {
 pub async fn health_handler(
     Extension(config): Extension<Arc<AppConfig>>,
     Extension(demo_mode): Extension<DemoModeFlag>,
+    Extension(proxy_status): Extension<ProxyStatusFlag>,
     Extension(_app_state): Extension<Arc<AppState>>,
 ) -> impl IntoResponse {
     let l1b_status = match config.cache_mode {
@@ -99,9 +103,17 @@ pub async fn health_handler(
         },
         uptime_seconds: uptime_seconds(),
         demo_mode: demo_mode.0,
-        proxy: "active",
-        proxy_layer3: "native_upstream_passthrough",
-        proxy_recent_requests: connect::recent_proxy_decisions_count(),
+        proxy: if proxy_status.0 { "active" } else { "disabled" },
+        proxy_layer3: if proxy_status.0 {
+            "native_upstream_passthrough"
+        } else {
+            "disabled"
+        },
+        proxy_recent_requests: if proxy_status.0 {
+            connect::recent_proxy_decisions_count()
+        } else {
+            0
+        },
         prompt_total_requests: visibility::prompt_total_requests(),
         prompt_total_deflected_requests: visibility::prompt_total_deflected_requests(),
     })

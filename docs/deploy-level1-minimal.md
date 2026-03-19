@@ -89,7 +89,7 @@ export ISARTOR__CACHE_MODE="both"
 ### 3. Start the Firewall
 
 ```bash
-./target/release/isartor
+./target/release/isartor up
 ```
 
 On first start, the embedded classifier will **auto-download** the Gemma-2-2B-IT GGUF model from Hugging Face Hub (~1.5 GB). Subsequent starts load from the local cache (`~/.cache/huggingface/`).

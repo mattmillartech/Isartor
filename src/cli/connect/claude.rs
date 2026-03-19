@@ -202,7 +202,7 @@ pub async fn handle_claude_connect(args: ClaudeArgs) -> ConnectResult {
         client_name: "Claude Code".to_string(),
         success: test.response_received || args.base.dry_run,
         message: format!(
-            "Claude Code now routes through Isartor's CONNECT proxy. Start a new claude session to apply.\n\
+            "Claude Code now routes through Isartor's CONNECT proxy. Start Isartor with `isartor up claude`, then start a new claude session to apply.\n\
              Proxy: {proxy_url}\n\
              CA: {ca_path}\n\
              Layer 3 for proxied Claude requests: Anthropic upstream passthrough (no separate Isartor Layer 3 key required for this path)."
