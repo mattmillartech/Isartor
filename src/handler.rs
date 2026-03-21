@@ -449,6 +449,22 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
         .cloned()
         .expect("AppState missing");
 
+    // Extract User-Agent before consuming the request body.
+    let user_agent = request
+        .headers()
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let tool = crate::tool_identity::identify_tool_or_fallback(
+        if user_agent.is_empty() {
+            None
+        } else {
+            Some(&user_agent)
+        },
+        "mcp",
+    );
+
     let body_bytes = match axum::body::to_bytes(request.into_body(), 1024 * 64).await {
         Ok(b) => b,
         Err(_) => {
@@ -478,7 +494,14 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
     let exact_key = hex::encode(Sha256::digest(namespaced.as_bytes()));
     if let Some(cached) = state.exact_cache.get(&exact_key) {
         tracing::info!("Cache lookup: L1a exact hit");
-        record_cache_lookup_prompt("l1a", true, &prompt, started_at.elapsed(), StatusCode::OK);
+        record_cache_lookup_prompt(
+            "l1a",
+            true,
+            &prompt,
+            started_at.elapsed(),
+            StatusCode::OK,
+            tool,
+        );
         return (
             StatusCode::OK,
             [
@@ -499,7 +522,14 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
         && let Some(cached) = state.vector_cache.search(&embedding).await
     {
         tracing::info!("Cache lookup: L1b semantic hit");
-        record_cache_lookup_prompt("l1b", true, &prompt, started_at.elapsed(), StatusCode::OK);
+        record_cache_lookup_prompt(
+            "l1b",
+            true,
+            &prompt,
+            started_at.elapsed(),
+            StatusCode::OK,
+            tool,
+        );
         return (
             StatusCode::OK,
             [
@@ -519,6 +549,7 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
         &prompt,
         started_at.elapsed(),
         StatusCode::NO_CONTENT,
+        tool,
     );
     (StatusCode::NO_CONTENT).into_response()
 }
@@ -604,23 +635,26 @@ fn record_cache_lookup_prompt(
     prompt: &str,
     elapsed: std::time::Duration,
     status_code: StatusCode,
+    tool: &str,
 ) {
-    crate::metrics::record_request_with_context(
+    crate::metrics::record_request_with_tool(
         final_layer,
         status_code.as_u16(),
         elapsed.as_secs_f64(),
         "mcp",
         "copilot",
         "cache_lookup",
+        tool,
     );
 
     if deflected {
-        crate::metrics::record_tokens_saved_with_context(
+        crate::metrics::record_tokens_saved_with_tool(
             final_layer,
             crate::metrics::estimate_tokens(prompt),
             "mcp",
             "copilot",
             "cache_lookup",
+            tool,
         );
     }
 
@@ -640,6 +674,7 @@ fn record_cache_lookup_prompt(
         deflected,
         latency_ms: elapsed.as_millis() as u64,
         status_code: status_code.as_u16(),
+        tool: tool.to_string(),
     });
 }
 

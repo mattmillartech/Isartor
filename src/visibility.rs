@@ -18,6 +18,7 @@ struct PromptVisibilityState {
     by_layer: BTreeMap<String, u64>,
     by_surface: BTreeMap<String, u64>,
     by_client: BTreeMap<String, u64>,
+    by_tool: BTreeMap<String, u64>,
     recent: VecDeque<PromptVisibilityEntry>,
 }
 
@@ -33,6 +34,9 @@ impl PromptVisibilityState {
             .entry(entry.traffic_surface.clone())
             .or_insert(0) += 1;
         *self.by_client.entry(entry.client.clone()).or_insert(0) += 1;
+        if !entry.tool.is_empty() {
+            *self.by_tool.entry(entry.tool.clone()).or_insert(0) += 1;
+        }
 
         self.recent.push_front(entry);
         while self.recent.len() > RECENT_PROMPT_ENTRIES_CAPACITY {
@@ -47,6 +51,7 @@ impl PromptVisibilityState {
             by_layer: self.by_layer.clone(),
             by_surface: self.by_surface.clone(),
             by_client: self.by_client.clone(),
+            by_tool: self.by_tool.clone(),
             recent: self
                 .recent
                 .iter()
@@ -118,6 +123,7 @@ mod tests {
             deflected: true,
             latency_ms: 12,
             status_code: 200,
+            tool: "curl".into(),
         });
         state.record(PromptVisibilityEntry {
             timestamp: "2026-01-01T00:00:01Z".into(),
@@ -131,6 +137,7 @@ mod tests {
             deflected: false,
             latency_ms: 20,
             status_code: 200,
+            tool: "copilot".into(),
         });
 
         let snapshot = state.snapshot(10);
@@ -142,6 +149,8 @@ mod tests {
         assert_eq!(snapshot.by_surface.get("proxy"), Some(&1));
         assert_eq!(snapshot.by_client.get("direct"), Some(&1));
         assert_eq!(snapshot.by_client.get("copilot"), Some(&1));
+        assert_eq!(snapshot.by_tool.get("curl"), Some(&1));
+        assert_eq!(snapshot.by_tool.get("copilot"), Some(&1));
         assert_eq!(snapshot.recent.len(), 2);
         assert_eq!(snapshot.recent[0].client, "copilot");
     }

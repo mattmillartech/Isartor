@@ -11,6 +11,7 @@ use crate::metrics;
 use crate::middleware::body_buffer::BufferedBody;
 use crate::models::FinalLayer;
 use crate::state::AppState;
+use crate::tool_identity;
 use crate::visibility;
 
 fn endpoint_family_for_path(path: &str) -> (&'static str, &'static str) {
@@ -61,6 +62,21 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
     let (endpoint_family, client_name) = endpoint_family_for_path(&path);
     let should_record_prompt_stats = !path.starts_with("/debug/");
 
+    // Identify the AI tool from the User-Agent header.
+    let user_agent = request
+        .headers()
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let tool = tool_identity::identify_tool_or_fallback(
+        if user_agent.is_empty() {
+            None
+        } else {
+            Some(user_agent)
+        },
+        "gateway",
+    );
+
     // Create the root span with all required HTTP + business attributes.
     // `isartor.final_layer` and `http.status_code` are recorded after
     // the response returns.
@@ -104,13 +120,14 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
 
     // ── Record OTel metrics ──────────────────────────────────────
     if should_record_prompt_stats {
-        metrics::record_request_with_context(
+        metrics::record_request_with_tool(
             layer_label,
             status_code,
             elapsed.as_secs_f64(),
             "gateway",
             client_name,
             endpoint_family,
+            tool,
         );
     }
 
@@ -128,12 +145,13 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
         } else {
             256 // conservative default
         };
-        metrics::record_tokens_saved_with_context(
+        metrics::record_tokens_saved_with_tool(
             layer_label,
             estimated_tokens,
             "gateway",
             client_name,
             endpoint_family,
+            tool,
         );
     }
 
@@ -150,6 +168,7 @@ pub async fn root_monitoring_middleware(request: Request, next: Next) -> impl In
             deflected: final_layer.is_deflected(),
             latency_ms: elapsed.as_millis() as u64,
             status_code,
+            tool: tool.to_string(),
         });
     }
 

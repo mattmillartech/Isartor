@@ -115,6 +115,24 @@ fn request_attrs(
     ]
 }
 
+fn request_attrs_with_tool(
+    final_layer: &str,
+    status_code: u16,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+    tool: &str,
+) -> [KeyValue; 6] {
+    [
+        KeyValue::new("final_layer", final_layer.to_string()),
+        KeyValue::new("status_code", status_code.to_string()),
+        KeyValue::new("traffic_surface", traffic_surface.to_string()),
+        KeyValue::new("client", client.to_string()),
+        KeyValue::new("endpoint_family", endpoint_family.to_string()),
+        KeyValue::new("tool", tool.to_string()),
+    ]
+}
+
 /// Record a request completion against the global metrics.
 pub fn record_request(final_layer: &str, status_code: u16, duration_secs: f64) {
     record_request_with_context(
@@ -148,6 +166,29 @@ pub fn record_request_with_context(
     m.request_duration_seconds.record(duration_secs, &attrs);
 }
 
+/// Record a request with tool identification (the preferred function).
+pub fn record_request_with_tool(
+    final_layer: &str,
+    status_code: u16,
+    duration_secs: f64,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+    tool: &str,
+) {
+    let m = metrics();
+    let attrs = request_attrs_with_tool(
+        final_layer,
+        status_code,
+        traffic_surface,
+        client,
+        endpoint_family,
+        tool,
+    );
+    m.requests_total.add(1, &attrs);
+    m.request_duration_seconds.record(duration_secs, &attrs);
+}
+
 /// Record per-layer latency.
 pub fn record_layer_duration(layer_name: &str, duration: std::time::Duration) {
     let m = metrics();
@@ -176,6 +217,26 @@ pub fn record_tokens_saved_with_context(
         KeyValue::new("traffic_surface", traffic_surface.to_string()),
         KeyValue::new("client", client.to_string()),
         KeyValue::new("endpoint_family", endpoint_family.to_string()),
+    ];
+    m.tokens_saved_total.add(estimated_tokens, &attrs);
+}
+
+/// Record tokens saved with tool identification (the preferred function).
+pub fn record_tokens_saved_with_tool(
+    final_layer: &str,
+    estimated_tokens: u64,
+    traffic_surface: &str,
+    client: &str,
+    endpoint_family: &str,
+    tool: &str,
+) {
+    let m = metrics();
+    let attrs = [
+        KeyValue::new("final_layer", final_layer.to_string()),
+        KeyValue::new("traffic_surface", traffic_surface.to_string()),
+        KeyValue::new("client", client.to_string()),
+        KeyValue::new("endpoint_family", endpoint_family.to_string()),
+        KeyValue::new("tool", tool.to_string()),
     ];
     m.tokens_saved_total.add(estimated_tokens, &attrs);
 }

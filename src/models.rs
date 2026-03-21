@@ -108,6 +108,9 @@ pub struct PromptVisibilityEntry {
     pub deflected: bool,
     pub latency_ms: u64,
     pub status_code: u16,
+    /// AI tool that originated the request (identified from User-Agent header).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tool: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -117,6 +120,7 @@ pub struct PromptStatsResponse {
     pub by_layer: BTreeMap<String, u64>,
     pub by_surface: BTreeMap<String, u64>,
     pub by_client: BTreeMap<String, u64>,
+    pub by_tool: BTreeMap<String, u64>,
     pub recent: Vec<PromptVisibilityEntry>,
 }
 

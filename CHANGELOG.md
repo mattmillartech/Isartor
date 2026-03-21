@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.41] - 2026-03-21
+
+### Added
+- **User-Agent tool identification**: Automatic identification of 15+ AI tools (Cursor, Codex, Gemini CLI, Copilot, Claude Code, Windsurf, Zed, Cline, Roo Code, Aider, Continue, etc.) from `User-Agent` header.
+- **Per-tool metrics**: OTel `requests_total` and `request_duration_seconds` metrics now include a `tool` dimension for per-tool Grafana dashboards.
+- **Per-tool visibility stats**: `PromptVisibilityState` tracks request counts by tool; `isartor stats --by-tool` shows a per-tool breakdown.
+- **JSON stats output**: `isartor stats --json` outputs full `PromptStatsResponse` as JSON for programmatic consumption.
+- New module `src/tool_identity.rs` with `identify_tool()` and `identify_tool_or_fallback()` functions.
+
 ## [0.1.40] - 2026-03-21
 
 ### Added

@@ -27,5 +27,6 @@ pub mod proxy;
 pub mod services;
 pub mod state;
 pub mod telemetry;
+pub mod tool_identity;
 pub mod vector_cache;
 pub mod visibility;

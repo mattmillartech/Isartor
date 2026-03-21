@@ -16,6 +16,14 @@ pub struct StatsArgs {
     /// Number of recent prompts to show.
     #[arg(long, default_value_t = 10)]
     pub recent_limit: usize,
+
+    /// Show per-tool breakdown.
+    #[arg(long, default_value_t = false)]
+    pub by_tool: bool,
+
+    /// Output as JSON instead of human-readable text.
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
 }
 
 pub async fn handle_stats(args: StatsArgs) -> anyhow::Result<()> {
@@ -32,6 +40,15 @@ pub async fn handle_stats(args: StatsArgs) -> anyhow::Result<()> {
     else {
         anyhow::bail!("Unable to read prompt stats. Provide --gateway-api-key if needed.");
     };
+
+    // JSON output mode — dump the raw response and exit.
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&stats).unwrap_or_default()
+        );
+        return Ok(());
+    }
 
     println!("\nIsartor Prompt Stats");
     println!("  URL:        {}", gateway);
@@ -67,6 +84,17 @@ pub async fn handle_stats(args: StatsArgs) -> anyhow::Result<()> {
     println!("\nBy Client");
     for (client, count) in &stats.by_client {
         println!("  {:<10} {}", client, count);
+    }
+
+    if args.by_tool || !stats.by_tool.is_empty() {
+        println!("\nBy Tool");
+        if stats.by_tool.is_empty() {
+            println!("  No tool-level traffic recorded yet.");
+        } else {
+            for (tool, count) in &stats.by_tool {
+                println!("  {:<14} {}", tool, count);
+            }
+        }
     }
 
     println!("\nRecent Prompts");
@@ -127,11 +155,17 @@ fn effective_gateway_api_key(cli_value: Option<&str>) -> Option<String> {
 }
 
 fn print_recent_entry(entry: &PromptVisibilityEntry) {
+    let tool_tag = if entry.tool.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", entry.tool)
+    };
     println!(
-        "  {} {} {} {} via {} ({} ms, HTTP {})",
+        "  {} {} {}{} {} via {} ({} ms, HTTP {})",
         entry.timestamp,
         entry.traffic_surface,
         entry.client,
+        tool_tag,
         entry.final_layer.to_uppercase(),
         entry.route,
         entry.latency_ms,

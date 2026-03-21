@@ -688,6 +688,7 @@ fn emit_proxy_decision(context: ProxyDecisionContext<'_>) {
         deflected: decision.deflected,
         latency_ms: decision.latency_ms,
         status_code,
+        tool: decision.client.clone(),
     });
     record_proxy_decision(decision);
 }
