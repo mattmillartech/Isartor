@@ -1,0 +1,129 @@
+# The Deflection Stack
+
+Every incoming request passes through a sequence of smart computing layers. Only prompts requiring genuine, complex reasoning survive the Deflection Stack to reach the cloud.
+
+```text
+Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM Router ──► L2.5 Context Optimiser ──► L3 Cloud Logic
+                 │ hit                │ hit                 │ simple             │ compressed                │
+                 ▼                    ▼                     ▼                    ▼                           ▼
+              Response             Response            Local Response     Optimised Prompt            Cloud Response
+```
+
+## Layers at a Glance
+
+| Layer | Algorithm / Mechanism | What It Does | Typical Latency |
+|:------|:----------------------|:-------------|:----------------|
+| **L1a — Exact Cache** | Fast Hashing (`ahash`) | Sub-millisecond duplicate detection. Traps infinite agent loops instantly. | < 1 ms |
+| **L1b — Semantic Cache** | Cosine Similarity (Embeddings) | Computes mathematical meaning via pure-Rust `candle` models (`all-MiniLM-L6-v2`) to catch variations ("Price?" ≈ "Cost?"). | 1–5 ms |
+| **L2 — SLM Router** | Neural Classification (LLM) | Triages intent using an embedded Small Language Model (e.g. Qwen-1.5B) to resolve simple data extraction tasks. | 50–200 ms |
+| **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. | 5–50 ms |
+| **L3 — Cloud Logic** | Load Balancing & Retries | Routes surviving complex prompts to OpenAI, Anthropic, or Azure, with built-in fallback resilience. | Network-bound |
+
+Layers 1a and 1b deflect **71% of repetitive agentic traffic** (FAQ/agent loop patterns) and **38% of diverse task traffic** before any neural inference runs.
+
+## Layer Details
+
+### L1a — Exact Cache
+
+**Algorithm:** Fast hashing with `ahash`
+
+L1a is the first line of defence. It computes a hash of the incoming prompt and checks it against an in-memory LRU cache (single-binary mode) or a shared Redis cluster (enterprise mode).
+
+- **Hit:** Returns the cached response immediately (sub-millisecond).
+- **Miss:** The request continues to L1b.
+
+Cache keys are namespaced before hashing (`native|prompt`, `openai|prompt`, `anthropic|prompt`, etc.) to ensure one endpoint never returns another endpoint's response schema. On a cache hit, `ChatResponse.layer` is normalised to `1` regardless of which layer originally produced the response.
+
+| Mode | Implementation |
+|:-----|:---------------|
+| Minimalist | In-memory LRU (`ahash` + `parking_lot`) |
+| Enterprise | Redis cluster (shared across replicas, async `redis` crate) |
+
+### L1b — Semantic Cache
+
+**Algorithm:** Cosine similarity over sentence embeddings (`all-MiniLM-L6-v2`)
+
+L1b catches semantically equivalent prompts that differ in wording. A sentence embedding is computed for the incoming prompt using a pure-Rust `candle` BertModel, then compared against the vector cache using cosine similarity.
+
+- **Hit (similarity above threshold):** Returns the cached response (1–5 ms).
+- **Miss:** The request continues to L2.
+
+**Embedding pipeline:**
+
+- **Model:** `sentence-transformers/all-MiniLM-L6-v2` — 384-dimensional embeddings (~90 MB).
+- **Runtime:** Pure-Rust candle stack — zero C/C++ dependencies.
+- **Pooling:** Mean pooling with attention mask, followed by L2 normalisation.
+- **Thread safety:** `BertModel` is wrapped in `std::sync::Mutex`; inference runs on `tokio::task::spawn_blocking`.
+- **Architecture:** `TextEmbedder` is initialised once at startup, stored as `Arc<TextEmbedder>` in `AppState`.
+
+The vector cache is maintained in tandem with exact cache entries. Insertions and evictions update the index automatically, providing sub-millisecond vector search latency for thousands of embeddings.
+
+| Mode | Implementation |
+|:-----|:---------------|
+| Minimalist | In-process `candle` BertModel |
+| Enterprise | External TEI sidecar (optional) |
+
+### L2 — SLM Router
+
+**Algorithm:** Neural classification via Small Language Model
+
+L2 runs a lightweight language model to classify the prompt's intent. Simple requests (data extraction, FAQ-style queries) can be resolved locally without reaching the cloud.
+
+- **Simple intent:** Returns a locally generated response (50–200 ms).
+- **Complex intent:** The request continues to L2.5.
+- **Disabled (`enable_slm_router = false`):** Layer is a no-op; request falls through to L3.
+
+| Mode | Implementation |
+|:-----|:---------------|
+| Minimalist | Embedded `candle` GGUF inference (e.g. Gemma-2-2B-IT, CPU) |
+| Enterprise | Remote vLLM / TGI server (GPU pool) |
+
+### L2.5 — Context Optimiser
+
+**Algorithm:** Retrieve + Rerank (top-K selection)
+
+L2.5 retrieves and reranks candidate documents or responses to minimise downstream token usage. This layer compresses the context window before forwarding to the cloud LLM, reducing both cost and latency.
+
+- **Instrumented as:** `context_optimise` span in distributed traces.
+
+| Mode | Implementation |
+|:-----|:---------------|
+| Minimalist | In-process retrieve + rerank (top-K selection) |
+| Enterprise | Distributed rerank (optional TEI / ANN pool) |
+
+### L3 — Cloud Logic
+
+**Algorithm:** Load balancing & retries
+
+L3 is the final layer. Only the hardest prompts — those not resolved by cache, SLM, or context optimisation — reach the external cloud LLMs.
+
+- Routes to OpenAI, Anthropic, Azure OpenAI, or xAI via [rig-core](https://crates.io/crates/rig-core).
+- Built-in fallback resilience with load balancing and retries.
+- **Offline mode (`offline_mode = true`):** Blocks L3 routing explicitly instead of silently pretending success.
+- **Stale fallback:** On L3 failure, checks the namespaced exact-cache key first, then a legacy un-namespaced key for backward compatibility.
+
+| Mode | Implementation |
+|:-----|:---------------|
+| Minimalist | Direct to OpenAI / Anthropic |
+| Enterprise | Direct to OpenAI / Anthropic |
+
+## How Layers Interact
+
+The deflection stack is implemented as Axum middleware plus a final handler. For authenticated routes, the execution order is:
+
+1. **Body buffer** — `BufferedBody` stores the request body so multiple layers can read it.
+2. **Request-level monitoring** — Observability instrumentation.
+3. **Auth** — API key validation.
+4. **Layer 1 cache** — L1a exact match, then L1b semantic match.
+5. **Layer 2 SLM triage** — Intent classification and local response.
+6. **Layer 3 handler** — Cloud LLM fallback.
+
+> **Implementation note:** Axum middleware wraps inside-out — the last `.layer(...)` added runs first. The stack order in `src/main.rs` documents this explicitly and must be preserved.
+
+Public health routes (`/health`, `/healthz`) intentionally bypass the deflection stack. The authenticated routes are `/api/chat`, `/api/v1/chat`, `/v1/chat/completions`, and `/v1/messages`.
+
+## See Also
+
+- [Architecture](architecture.md) — high-level system design and pluggable providers
+- [Architecture Decision Records](architecture-decisions.md) — rationale behind the deflection stack design (ADR-001)
+- [Configuration Reference](../configuration/reference.md)

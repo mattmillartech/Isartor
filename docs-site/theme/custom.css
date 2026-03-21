@@ -1,0 +1,33 @@
+/* Isartor docs custom theme */
+
+:root {
+    --sidebar-width: 280px;
+}
+
+/* Better code block styling */
+pre {
+    border-radius: 6px;
+}
+
+/* Highlight important callouts */
+blockquote {
+    border-left: 4px solid #0E8A16;
+    background: rgba(14, 138, 22, 0.05);
+    padding: 0.5em 1em;
+    border-radius: 0 6px 6px 0;
+}
+
+/* Table styling */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table th {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* Navigation improvements */
+.sidebar .sidebar-scrollbox {
+    padding-bottom: 2em;
+}

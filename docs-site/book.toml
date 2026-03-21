@@ -1,0 +1,28 @@
+[book]
+title = "Isartor Documentation"
+authors = ["Isartor Team"]
+language = "en"
+src = "src"
+description = "Documentation for Isartor — the pure-Rust prompt firewall for LLM workloads"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/isartor-ai/Isartor"
+edit-url-template = "https://github.com/isartor-ai/Isartor/edit/main/docs-site/src/{path}"
+no-section-label = false
+additional-css = ["theme/custom.css"]
+
+[output.html.search]
+enable = true
+limit-results = 20
+boost-title = 2
+boost-hierarchy = 1
+
+[output.html.playground]
+editable = false
+copy-js = true

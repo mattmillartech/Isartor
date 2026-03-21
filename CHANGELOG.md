@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-03-21
+
+### Added
+- **Documentation site** (`docs-site/`): Full mdBook-powered documentation with 24 pages organized into Getting Started, Core Concepts, AI Tool Integrations, Deployment, Configuration, Observability, Development, and Blog sections.
+- GitHub Actions workflow (`docs.yml`) for automatic docs deployment to GitHub Pages on push to `main`.
+- Search functionality, custom theme, and "Edit this page" links.
+- Migrated and reorganized all content from `docs/` into navigable site structure with sidebar, per-tool integration pages, and merged/deduplicated observability guides.
+
 ## [0.1.41] - 2026-03-21
 
 ### Added
