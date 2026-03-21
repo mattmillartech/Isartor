@@ -44,12 +44,19 @@ pub async fn handle_stats(args: StatsArgs) -> anyhow::Result<()> {
     );
 
     println!("\nBy Layer");
-    for layer in ["l0", "l1a", "l1b", "l2", "l3"] {
+    let known_layers = ["l0", "l1a", "l1b", "l2", "l3"];
+    for layer in known_layers {
         println!(
             "  {:<3} {}",
             layer.to_uppercase(),
             stats.by_layer.get(layer).copied().unwrap_or(0)
         );
+    }
+    for (layer, count) in &stats.by_layer {
+        if known_layers.contains(&layer.as_str()) {
+            continue;
+        }
+        println!("  {:<3} {}", layer.to_uppercase(), count);
     }
 
     println!("\nBy Surface");

@@ -16,6 +16,7 @@ use crate::models::{
     ChatResponse, FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage,
 };
 use crate::state::AppState;
+use crate::visibility;
 
 /// Layer 3 — Fallback handler.
 ///
@@ -441,6 +442,7 @@ pub async fn pretooluse_hook_handler(body: axum::body::Bytes) -> impl IntoRespon
 /// Checks L1a (exact) and L1b (semantic) caches without hitting L3.
 /// Returns the cached response if found, or 204 No Content on miss.
 pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
+    let started_at = Instant::now();
     let state = request
         .extensions()
         .get::<Arc<AppState>>()
@@ -476,6 +478,7 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
     let exact_key = hex::encode(Sha256::digest(namespaced.as_bytes()));
     if let Some(cached) = state.exact_cache.get(&exact_key) {
         tracing::info!("Cache lookup: L1a exact hit");
+        record_cache_lookup_prompt("l1a", true, &prompt, started_at.elapsed(), StatusCode::OK);
         return (
             StatusCode::OK,
             [
@@ -496,6 +499,7 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
         && let Some(cached) = state.vector_cache.search(&embedding).await
     {
         tracing::info!("Cache lookup: L1b semantic hit");
+        record_cache_lookup_prompt("l1b", true, &prompt, started_at.elapsed(), StatusCode::OK);
         return (
             StatusCode::OK,
             [
@@ -509,6 +513,13 @@ pub async fn cache_lookup_handler(request: Request) -> impl IntoResponse {
     }
 
     // Cache miss.
+    record_cache_lookup_prompt(
+        "miss",
+        false,
+        &prompt,
+        started_at.elapsed(),
+        StatusCode::NO_CONTENT,
+    );
     (StatusCode::NO_CONTENT).into_response()
 }
 
@@ -587,6 +598,51 @@ pub async fn cache_store_handler(request: Request) -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({"stored": true}))).into_response()
 }
 
+fn record_cache_lookup_prompt(
+    final_layer: &str,
+    deflected: bool,
+    prompt: &str,
+    elapsed: std::time::Duration,
+    status_code: StatusCode,
+) {
+    crate::metrics::record_request_with_context(
+        final_layer,
+        status_code.as_u16(),
+        elapsed.as_secs_f64(),
+        "mcp",
+        "copilot",
+        "cache_lookup",
+    );
+
+    if deflected {
+        crate::metrics::record_tokens_saved_with_context(
+            final_layer,
+            crate::metrics::estimate_tokens(prompt),
+            "mcp",
+            "copilot",
+            "cache_lookup",
+        );
+    }
+
+    visibility::record_prompt(crate::models::PromptVisibilityEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        traffic_surface: "mcp".to_string(),
+        client: "copilot".to_string(),
+        endpoint_family: "cache_lookup".to_string(),
+        route: "/api/v1/cache/lookup".to_string(),
+        prompt_hash: Some(hex::encode(Sha256::digest(prompt.as_bytes()))),
+        final_layer: final_layer.to_string(),
+        resolved_by: if deflected {
+            None
+        } else {
+            Some("copilot_upstream".to_string())
+        },
+        deflected,
+        latency_ms: elapsed.as_millis() as u64,
+        status_code: status_code.as_u16(),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -602,6 +658,7 @@ mod tests {
     use crate::middleware::body_buffer::buffer_body_middleware;
     use crate::state::AppLlmAgent;
     use crate::vector_cache::VectorCache;
+    use crate::visibility::{clear_prompt_stats, prompt_stats_snapshot};
     use std::num::NonZeroUsize;
 
     struct SuccessAgent;
@@ -685,6 +742,21 @@ mod tests {
         Router::new()
             .route("/api/chat", post(chat_handler))
             .layer(axum_mw::from_fn(buffer_body_middleware))
+            .layer(axum_mw::from_fn(
+                move |mut req: Request, next: axum_mw::Next| {
+                    let st = state.clone();
+                    async move {
+                        req.extensions_mut().insert(st);
+                        next.run(req).await
+                    }
+                },
+            ))
+    }
+
+    fn cache_app(state: Arc<AppState>) -> Router {
+        Router::new()
+            .route("/api/v1/cache/lookup", post(cache_lookup_handler))
+            .route("/api/v1/cache/store", post(cache_store_handler))
             .layer(axum_mw::from_fn(
                 move |mut req: Request, next: axum_mw::Next| {
                     let st = state.clone();
@@ -816,5 +888,85 @@ mod tests {
 
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn cache_lookup_hit_is_recorded_in_prompt_stats() {
+        clear_prompt_stats();
+        let state = test_state(Arc::new(SuccessAgent));
+        let app = cache_app(state);
+
+        let store_req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/cache/store")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "prompt": "capital of France",
+                    "response": "Paris."
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let store_resp = app.clone().oneshot(store_req).await.unwrap();
+        assert_eq!(store_resp.status(), StatusCode::OK);
+
+        let lookup_req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/cache/lookup")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "prompt": "capital of France"
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let lookup_resp = app.oneshot(lookup_req).await.unwrap();
+        assert_eq!(lookup_resp.status(), StatusCode::OK);
+
+        let stats = prompt_stats_snapshot(50);
+        assert!(stats.by_surface.get("mcp").copied().unwrap_or(0) >= 1);
+        assert!(stats.by_client.get("copilot").copied().unwrap_or(0) >= 1);
+        assert!(stats.by_layer.get("l1a").copied().unwrap_or(0) >= 1);
+        assert!(stats.recent.iter().any(|entry| {
+            entry.traffic_surface == "mcp"
+                && entry.client == "copilot"
+                && entry.final_layer == "l1a"
+                && entry.route == "/api/v1/cache/lookup"
+        }));
+    }
+
+    #[tokio::test]
+    async fn cache_lookup_miss_is_recorded_in_prompt_stats() {
+        clear_prompt_stats();
+        let state = test_state(Arc::new(SuccessAgent));
+        let app = cache_app(state);
+
+        let lookup_req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/cache/lookup")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "prompt": "not cached yet"
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let lookup_resp = app.oneshot(lookup_req).await.unwrap();
+        assert_eq!(lookup_resp.status(), StatusCode::NO_CONTENT);
+
+        let stats = prompt_stats_snapshot(50);
+        assert!(stats.by_surface.get("mcp").copied().unwrap_or(0) >= 1);
+        assert!(stats.by_client.get("copilot").copied().unwrap_or(0) >= 1);
+        assert!(stats.by_layer.get("miss").copied().unwrap_or(0) >= 1);
+        assert!(stats.recent.iter().any(|entry| {
+            entry.traffic_surface == "mcp"
+                && entry.client == "copilot"
+                && entry.final_layer == "miss"
+                && entry.route == "/api/v1/cache/lookup"
+                && entry.resolved_by.as_deref() == Some("copilot_upstream")
+        }));
     }
 }

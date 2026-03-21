@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-03-21
+
+### Fixed
+- Recorded Copilot MCP cache lookups in prompt visibility and metrics so `isartor stats` now counts cache hits and misses coming from Copilot CLI.
+- Clarified the cache-hit path by surfacing MCP lookup traffic as `mcp` / `copilot` in stats, and showing non-standard layer buckets like `MISS` in the CLI stats output.
+- Confirmed the Copilot cache-hit path does not invoke Isartor Layer 3; only Copilot's own final render step remains after an MCP cache hit.
+
 ## [0.1.38] - 2026-03-21
 
 ### Changed

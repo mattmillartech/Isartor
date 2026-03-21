@@ -69,6 +69,11 @@ pub fn prompt_stats_snapshot(limit: usize) -> PromptStatsResponse {
     prompt_stats_store().lock().snapshot(limit)
 }
 
+#[cfg(test)]
+pub fn clear_prompt_stats() {
+    *prompt_stats_store().lock() = PromptVisibilityState::default();
+}
+
 pub fn prompt_total_requests() -> u64 {
     prompt_stats_store().lock().total_prompts
 }
