@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-03-21
+
+### Changed
+- Tightened Copilot cache-hit guidance so `isartor connect copilot` now installs stronger instructions telling Copilot to treat `isartor_chat` hits as verbatim final answers, without paraphrasing or extra tool calls.
+- Clarified Copilot MCP tool descriptions and integration docs: a Copilot CLI `final_answer` event after a cache hit is a CLI-side render step, not an Isartor Layer 3 forward.
+
 ## [0.1.37] - 2026-03-20
 
 ### Fixed

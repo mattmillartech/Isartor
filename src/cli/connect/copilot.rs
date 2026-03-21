@@ -273,13 +273,17 @@ fn managed_instruction_block() -> String {
          For plain conversational user prompts that do not require reading files,\n\
          editing code, or running shell commands, call `isartor_chat` first with\n\
          the user's prompt verbatim.\n\n\
-         - If `isartor_chat` returns non-empty text, use that cached answer as the\n\
-           final response.\n\
+         - If `isartor_chat` returns non-empty text, treat that tool result as the\n\
+           final answer for the user.\n\
+         - On a cache hit, do not answer from your own knowledge, do not\n\
+           paraphrase, do not add explanation, do not call other tools, and do\n\
+           not continue searching. Emit the cached text exactly as returned by\n\
+           `isartor_chat`, verbatim, and stop.\n\
          - If `isartor_chat` returns an empty string, answer with your own model,\n\
-           then immediately call `isartor_cache_store` with the exact prompt and\n\
-           your exact final answer.\n\
+          then immediately call `isartor_cache_store` with the exact prompt and\n\
+          your exact final answer.\n\
          - This keeps Copilot's own LLM as the source of truth on cache misses\n\
-           while allowing Isartor L1a/L1b cache hits on repeats.\n\
+          while allowing Isartor L1a/L1b cache hits on repeats.\n\
          - Do not skip this flow for simple questions like factual Q&A, summaries,\n\
            or general chat. Only bypass it when the task clearly requires repo\n\
            tools, file edits, commands, or GitHub-specific MCP tools.\n\
@@ -442,5 +446,14 @@ mod tests {
         assert!(!updated.contains(ISARTOR_INSTRUCTION_START));
         assert!(updated.contains("# Header"));
         assert!(updated.contains("# Footer"));
+    }
+
+    #[test]
+    fn managed_block_requires_verbatim_cache_hits() {
+        let block = managed_instruction_block();
+        assert!(block.contains("verbatim"));
+        assert!(block.contains("do not"));
+        assert!(block.contains("paraphrase"));
+        assert!(block.contains("call other tools"));
     }
 }

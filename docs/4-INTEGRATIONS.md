@@ -122,8 +122,11 @@ Isartor registers as a stdio subprocess. The MCP server exposes two tools:
 - **`isartor_cache_store`** — stores a prompt/response pair in Isartor's cache
   so future identical or similar prompts are deflected locally.
 
-This design means **Copilot always uses its own LLM** for answering, while
-Isartor acts as a transparent cache layer that reduces redundant cloud calls.
+This design means Copilot still owns the conversation loop, while Isartor acts
+as a transparent cache layer that reduces redundant cloud calls. On a cache hit,
+Isartor returns the cached text and **does not call its own Layer 3 provider**.
+Copilot CLI may still emit its normal final-answer event after the tool result,
+but that is a Copilot-side render step rather than an Isartor L3 forward.
 
 #### Prerequisites
 
@@ -151,13 +154,31 @@ copilot
 4. The MCP server exposes `isartor_chat` (cache lookup) and `isartor_cache_store` (cache write)
 5. For plain conversational prompts, Copilot now prefers this flow:
    - Call `isartor_chat` with the user's prompt
-   - **Cache hit**: return the cached answer immediately
+   - **Cache hit**: return the cached answer immediately, verbatim
    - **Cache miss**: answer with Copilot's own model, then call `isartor_cache_store`
 6. When Copilot calls `isartor_chat`:
    - **Cache hit** (L1a exact or L1b semantic): returns the cached answer instantly
    - **Cache miss**: returns empty → Copilot uses its own LLM
 7. After Copilot gets an answer from its LLM, it can call `isartor_cache_store` to
    populate the cache for future requests
+
+#### Important note about "still going to L3"
+
+If you inspect Copilot CLI JSON traces, you may still see a normal
+`final_answer` event after `isartor_chat` returns a cache hit. That does **not**
+mean Isartor forwarded the prompt to its own Layer 3 provider. The important
+signal is Isartor's own log and headers:
+
+- `Cache lookup: L1a exact hit` or `Cache lookup: L1b semantic hit`
+- no new `Layer 3: Forwarding to LLM via Rig` entry for that prompt
+
+In other words:
+
+- **Isartor L3 call** = bad for a cache hit
+- **Copilot final-answer render after a tool hit** = expected CLI behavior
+
+Isartor now installs stricter Copilot instructions that tell Copilot to emit the
+cached tool result verbatim on cache hits, without paraphrasing or extra tool calls.
 
 #### Cache endpoints (used by MCP internally)
 

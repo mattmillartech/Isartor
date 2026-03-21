@@ -107,7 +107,7 @@ fn handle_tools_list(id: Option<Value>) -> Option<Value> {
             "tools": [
                 {
                     "name": "isartor_chat",
-                    "description": "Cache-first lookup for the user's prompt. Call this before answering plain conversational questions. On a hit it returns a cached response from Isartor L1a/L1b. On a miss it returns empty so Copilot can answer with its own model.",
+                    "description": "Cache-first lookup for the user's prompt. Call this before answering plain conversational questions. On a hit it returns a cached response from Isartor L1a/L1b; when that happens, return that text verbatim as the final user-facing answer and do not paraphrase or continue reasoning. On a miss it returns empty so Copilot can answer with its own model.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -125,7 +125,7 @@ fn handle_tools_list(id: Option<Value>) -> Option<Value> {
                 },
                 {
                     "name": "isartor_cache_store",
-                    "description": "Store the final prompt/response pair in Isartor after Copilot answers a cache miss. Call this immediately after using your own model so repeated or similar prompts hit Isartor next time.",
+                    "description": "Store the final prompt/response pair in Isartor after Copilot answers a cache miss. Only call this after using your own model on a miss; do not call it after a cache hit that already returned a final answer.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
