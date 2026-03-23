@@ -84,6 +84,7 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     };
     let cache_prompt = format!("{cache_ns}|{prompt}");
     let semantic_cache_prompt = format!("{cache_ns}|{semantic_prompt}");
+    let semantic_cache_enabled = request.uri().path() != "/v1/messages";
 
     let mode = &state.config.cache_mode;
     let layer_start = Instant::now();
@@ -122,7 +123,9 @@ pub async fn cache_middleware(request: Request, next: Next) -> Response {
     // 3. Semantic lookup (when mode is Semantic or Both).
     //    Uses the in-process candle TextEmbedder — no HTTP round-trip.
     // ------------------------------------------------------------------
-    let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
+    let embedding: Option<Vec<f32>> = if semantic_cache_enabled
+        && (*mode == CacheMode::Semantic || *mode == CacheMode::Both)
+    {
         let embedder = state.text_embedder.clone();
         let prompt_clone = semantic_cache_prompt.clone();
 
@@ -332,6 +335,21 @@ mod tests {
                     )
                 }),
             )
+            .route(
+                "/v1/messages",
+                post(|| async {
+                    (
+                        StatusCode::OK,
+                        axum::Json(serde_json::json!({
+                            "type": "message",
+                            "role": "assistant",
+                            "model": "test-model",
+                            "content": [{"type": "text", "text": "downstream anthropic response"}],
+                            "stop_reason": "end_turn"
+                        })),
+                    )
+                }),
+            )
             .layer(axum_mw::from_fn(cache_middleware))
             .layer(axum_mw::from_fn(buffer_body_middleware))
             .layer(axum_mw::from_fn(
@@ -347,6 +365,18 @@ mod tests {
 
     fn json_body(prompt: &str) -> Body {
         Body::from(serde_json::to_vec(&serde_json::json!({ "prompt": prompt })).unwrap())
+    }
+
+    fn anthropic_body(prompt: &str) -> Body {
+        Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "system": "You are Claude Code. Help with software engineering tasks.",
+                "messages": [
+                    {"role": "user", "content": [{"type": "text", "text": prompt}]}
+                ]
+            }))
+            .unwrap(),
+        )
     }
 
     #[tokio::test]
@@ -465,5 +495,34 @@ mod tests {
         let key = hex::encode(sha2::Sha256::digest(b"native|raw prompt text"));
         let cached = state.exact_cache.get(&key);
         assert!(cached.is_some());
+    }
+
+    #[tokio::test]
+    async fn anthropic_messages_skip_semantic_cache() {
+        let state = test_state(CacheMode::Semantic);
+        let app = cache_app(state);
+
+        let req1 = axum::extract::Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(anthropic_body("what is rust"))
+            .unwrap();
+        let resp1 = app.clone().oneshot(req1).await.unwrap();
+        assert_eq!(resp1.status(), StatusCode::OK);
+
+        let req2 = axum::extract::Request::builder()
+            .method("POST")
+            .uri("/v1/messages")
+            .header("content-type", "application/json")
+            .body(anthropic_body("what is rust"))
+            .unwrap();
+        let resp2 = app.oneshot(req2).await.unwrap();
+        assert_eq!(resp2.status(), StatusCode::OK);
+
+        let body2 = resp2.into_body().collect().await.unwrap().to_bytes();
+        let json2: serde_json::Value = serde_json::from_slice(&body2).unwrap();
+        assert_eq!(json2["model"], "test-model");
+        assert_eq!(json2["type"], "message");
     }
 }

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-03-23
+
+### Fixed
+- **Claude Code `/v1/messages` no longer semantically caches unrelated prompts**: Anthropic-style chat traffic now uses exact cache only. This avoids unsafe L1b semantic hits where different Claude Code questions could resolve to the same cached answer.
+- **Retry warnings now show the full upstream cause chain**: L3 retry logs preserve nested `anyhow` causes so Copilot failures include the underlying network / TLS / DNS / timeout reason instead of only the top-level `Copilot completions request failed` context.
+- **CONNECT proxy mirrors the same safer Anthropic cache behavior**: proxied `/v1/messages` traffic also skips semantic cache to stay consistent with the gateway path.
+
 ## [0.1.44] - 2026-03-23
 
 ### Fixed

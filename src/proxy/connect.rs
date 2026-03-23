@@ -418,6 +418,7 @@ async fn resolve_intercepted_request(
         _ => "proxy",
     };
     let cache_prompt = format!("{cache_ns}|{prompt}");
+    let semantic_cache_enabled = path != "/v1/messages";
     let mode = &state.config.cache_mode;
 
     let exact_key = if *mode == CacheMode::Exact || *mode == CacheMode::Both {
@@ -435,7 +436,9 @@ async fn resolve_intercepted_request(
         None
     };
 
-    let embedding: Option<Vec<f32>> = if *mode == CacheMode::Semantic || *mode == CacheMode::Both {
+    let embedding: Option<Vec<f32>> = if semantic_cache_enabled
+        && (*mode == CacheMode::Semantic || *mode == CacheMode::Both)
+    {
         match state.text_embedder.generate_embedding(&prompt) {
             Ok(emb) => {
                 if let Some(cached) = state.vector_cache.search(&emb).await {

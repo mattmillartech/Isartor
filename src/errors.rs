@@ -102,7 +102,7 @@ impl GatewayError {
     /// Classify a cloud LLM error by inspecting the error message for
     /// common patterns (status codes, keywords).
     pub fn from_llm_error(provider: &str, err: &anyhow::Error) -> Self {
-        let msg = err.to_string();
+        let msg = format_error_chain(err);
         let class = classify_error_message(&msg);
         Self::CloudLlm {
             provider: provider.to_string(),
@@ -113,7 +113,7 @@ impl GatewayError {
 
     /// Classify an HTTP-based inference error.
     pub fn from_inference_error(err: &anyhow::Error) -> Self {
-        let msg = err.to_string();
+        let msg = format_error_chain(err);
         let class = classify_error_message(&msg);
         Self::Inference {
             message: msg,
@@ -136,6 +136,22 @@ impl GatewayError {
             message: msg.into(),
             class: ErrorClass::Retryable,
         }
+    }
+}
+
+fn format_error_chain(err: &anyhow::Error) -> String {
+    let mut parts = Vec::new();
+    for cause in err.chain() {
+        let msg = cause.to_string();
+        if parts.last().is_none_or(|prev| prev != &msg) {
+            parts.push(msg);
+        }
+    }
+
+    match parts.len() {
+        0 => String::new(),
+        1 => parts.remove(0),
+        _ => parts.join(": "),
     }
 }
 
@@ -298,6 +314,15 @@ mod tests {
         let err = anyhow::anyhow!("something weird happened");
         let gw = GatewayError::from_llm_error("openai", &err);
         assert_eq!(gw.class(), ErrorClass::Retryable);
+    }
+
+    #[test]
+    fn llm_error_includes_entire_cause_chain() {
+        let err = anyhow::anyhow!("dns lookup failed").context("request send failed");
+        let gw = GatewayError::from_llm_error("copilot", &err);
+        let rendered = format!("{gw}");
+        assert!(rendered.contains("request send failed"));
+        assert!(rendered.contains("dns lookup failed"));
     }
 
     #[test]
