@@ -1,4 +1,4 @@
-.PHONY: benchmark benchmark-dry-run build test
+.PHONY: benchmark benchmark-dry-run build test smoke-claude-copilot
 
 # ── Benchmark targets ─────────────────────────────────────────────────────────
 
@@ -25,3 +25,6 @@ build:
 
 test:
 	cargo test --all-features
+
+smoke-claude-copilot:
+	./scripts/claude-copilot-smoke-test.sh

@@ -147,8 +147,9 @@ isartor demo                  # run the deflection demo (no API key needed)
 isartor init                  # generate a commented config scaffold
 isartor set-key -p openai     # configure your LLM provider API key
 isartor connect copilot       # connect GitHub Copilot CLI via MCP
+isartor connect claude-copilot # use Claude Code with GitHub Copilot through Isartor
 isartor connect cursor        # connect Cursor IDE
-isartor connect claude-code   # connect Claude Code
+isartor connect claude        # connect Claude Code
 isartor connect codex         # connect OpenAI Codex CLI
 isartor connect gemini        # connect Gemini CLI
 isartor stats                 # prompt totals, layer hits, routing history
@@ -189,13 +190,32 @@ Connect your favourite AI coding tools to Isartor with a single command. Isartor
 | Tool | Connect Command | How It Works |
 |:-----|:----------------|:-------------|
 | **GitHub Copilot CLI** | `isartor connect copilot` | MCP server (`isartor_chat` / `isartor_cache_store` tools) |
+| **Claude Code + GitHub Copilot** | `isartor connect claude-copilot` | Claude base URL override + Copilot-backed Layer 3 |
 | **Cursor IDE** | `isartor connect cursor` | Base URL override + MCP registration |
-| **Claude Code** | `isartor connect claude-code` | `ANTHROPIC_BASE_URL` env override |
+| **Claude Code** | `isartor connect claude` | `ANTHROPIC_BASE_URL` env override |
 | **OpenAI Codex CLI** | `isartor connect codex` | `OPENAI_BASE_URL` env script |
 | **Gemini CLI** | `isartor connect gemini` | `GEMINI_API_BASE_URL` env script |
 | **Any OpenAI-compatible tool** | `isartor connect generic` | Configurable env var override |
 
 See the [full integration guides →](https://isartor-ai.github.io/Isartor/integrations/overview.html)
+
+### Use Claude Code with GitHub Copilot (experimental)
+
+```bash
+# Requires: active GitHub Copilot subscription
+# Default auth path: GitHub browser/device-flow login
+isartor connect claude-copilot
+isartor stop
+isartor up --detach
+claude
+```
+
+One-click smoke test:
+
+```bash
+./scripts/claude-copilot-smoke-test.sh
+# or: make smoke-claude-copilot
+```
 
 ---
 

@@ -89,6 +89,7 @@ If gateway auth is enabled, also add:
 |------|---------|-----------|
 | [GitHub Copilot CLI](copilot.md) | `isartor connect copilot` | MCP server (cache-only) |
 | [GitHub Copilot in VS Code](copilot-vscode.md) | VS Code `settings.json` | Proxy URL override |
+| [Claude Code + GitHub Copilot](claude-copilot.md) | `isartor connect claude-copilot` | Claude base URL override + Copilot-backed L3 |
 | [Claude Code](claude-code.md) | `isartor connect claude` | Base URL override |
 | [Cursor IDE](cursor.md) | `isartor connect cursor` | Base URL override + MCP |
 | [OpenAI Codex CLI](codex.md) | `isartor connect codex` | Base URL override |

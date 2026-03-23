@@ -53,7 +53,13 @@ pub async fn handle_status(args: StatusArgs) {
 
     println!("\nConnected Clients");
 
-    let all_clients = ["copilot", "claude", "openclaw", "antigravity"];
+    let all_clients = [
+        "copilot",
+        "claude",
+        "claude-copilot",
+        "openclaw",
+        "antigravity",
+    ];
     for client in all_clients {
         match state.connections.get(client) {
             Some(conn) => {
@@ -88,6 +94,14 @@ pub async fn handle_status(args: StatusArgs) {
                 println!("      Not connected. Run: isartor connect {}", client);
             }
         }
+    }
+
+    if state.connections.contains_key("claude") && state.connections.contains_key("claude-copilot")
+    {
+        println!("\n  ⚠ Warning: both Claude Code connectors are active.");
+        println!("    Disconnect one to avoid conflicting ~/.claude/settings.json values:");
+        println!("      isartor connect claude --disconnect");
+        println!("      isartor connect claude-copilot --disconnect");
     }
 
     let proxy_clients = ["copilot", "claude", "antigravity"];
@@ -202,6 +216,7 @@ fn client_display_name(client: &str) -> String {
     match client {
         "copilot" => "GitHub Copilot CLI".to_string(),
         "claude" => "Claude Code".to_string(),
+        "claude-copilot" => "Claude Code + GitHub Copilot".to_string(),
         "openclaw" => "OpenClaw".to_string(),
         "antigravity" => "Antigravity".to_string(),
         _ => client.to_string(),
@@ -212,6 +227,7 @@ fn integration_method(client: &str) -> &'static str {
     match client {
         "copilot" => "MCP server (isartor_chat tool)",
         "claude" => "base URL override (ANTHROPIC_BASE_URL)",
+        "claude-copilot" => "base URL override + GitHub Copilot L3 provider",
         "openclaw" => "provider base URL (OpenAI-compatible)",
         "antigravity" => "base URL override (OpenAI-compatible)",
         _ => "unknown",

@@ -16,6 +16,7 @@ use crate::clients::slm::SlmClient;
 use crate::config::AppConfig;
 use crate::layer1::embeddings::TextEmbedder;
 use crate::layer1::layer1a_cache::ExactMatchCache;
+use crate::providers::copilot::CopilotAgent;
 use crate::vector_cache::VectorCache;
 
 // ── Multi-provider Agent Wrapper ─────────────────────────────────────
@@ -113,6 +114,11 @@ impl AppState {
                     agent: client.agent(&config.external_llm_model).build(),
                 })
             }
+            "copilot" => Arc::new(CopilotAgent::new(
+                http_client.clone(),
+                config.external_llm_api_key.clone(),
+                config.external_llm_model.clone(),
+            )),
             "xai" => {
                 let client = xai::Client::new(&config.external_llm_api_key)
                     .expect("Failed to initialize xAI client");

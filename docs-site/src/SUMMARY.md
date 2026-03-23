@@ -18,6 +18,7 @@
 - [Overview](integrations/overview.md)
 - [GitHub Copilot CLI](integrations/copilot.md)
 - [GitHub Copilot in VS Code](integrations/copilot-vscode.md)
+- [Claude Code + GitHub Copilot](integrations/claude-copilot.md)
 - [Claude Code](integrations/claude-code.md)
 - [Cursor IDE](integrations/cursor.md)
 - [OpenAI Codex CLI](integrations/codex.md)

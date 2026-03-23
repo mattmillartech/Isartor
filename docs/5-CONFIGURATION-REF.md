@@ -45,9 +45,25 @@
   - `gemini`, `mistral`, `groq`, `deepseek`
   - `cohere`, `galadriel`, `hyperbolic`, `huggingface`
   - `mira`, `moonshot`, `ollama` (local, no key), `openrouter`
-  - `perplexity`, `together`
+  - `perplexity`, `together`, `copilot`
 - `external_llm_model`: Model name for the selected provider (e.g. `gpt-4o-mini`, `gemini-2.0-flash`, `mistral-small-latest`, `llama-3.1-8b-instant`, `deepseek-chat`, `command-r`, `sonar`, `moonshot-v1-128k`)
 - `external_llm_api_key`: API key for the configured provider (not needed for `ollama`)
+
+### Claude Code + GitHub Copilot settings
+
+These are written by `isartor connect claude-copilot`:
+
+| Setting | Value | Purpose |
+|---|---|---|
+| `ANTHROPIC_BASE_URL` | `http://localhost:8080` (or your gateway URL) | Routes Claude Code to Isartor |
+| `ANTHROPIC_AUTH_TOKEN` | `dummy` or your gateway key | Satisfies Claude Code auth requirements |
+| `ANTHROPIC_MODEL` | `claude-sonnet-4.5` by default | Primary Copilot-backed model |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | same as `ANTHROPIC_MODEL` | Default Sonnet mapping |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `gpt-4o-mini` by default | Fast model |
+| `DISABLE_NON_ESSENTIAL_MODEL_CALLS` | `1` | Reduce quota burn |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` | Compatibility flag |
+| `ENABLE_TOOL_SEARCH` | `true` | Preserve Claude Code tool search |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | `16000` | Stay under Copilot's output cap |
 
 ### CLI Commands
 

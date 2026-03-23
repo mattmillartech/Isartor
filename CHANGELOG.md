@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-03-23
+
+### Added
+- Native GitHub Copilot L3 provider with session-token exchange and Copilot completions support.
+- `isartor connect claude-copilot` to route Claude Code through Isartor while using GitHub Copilot as the Layer 3 backend.
+- One-click Claude Code + Copilot smoke test script: `./scripts/claude-copilot-smoke-test.sh` (also available via `make smoke-claude-copilot`).
+- Documentation for Claude Code + GitHub Copilot across the docs site, legacy docs, and README.
+- Focused unit and integration coverage for the Copilot provider and `claude-copilot` connector flow.
+
+### Changed
+- `isartor connect claude-copilot` now prefers GitHub device-flow OAuth by default and reuses saved OAuth credentials before falling back to explicit PAT usage.
+- Claude Code + Copilot docs now document the device-flow-first auth path and supported smoke-test workflow.
+
 ## [0.1.42] - 2026-03-21
 
 ### Added

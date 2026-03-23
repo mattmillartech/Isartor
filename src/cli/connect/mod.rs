@@ -1,5 +1,6 @@
 pub mod antigravity;
 pub mod claude;
+pub mod claude_copilot;
 pub mod codex;
 pub mod copilot;
 pub mod cursor;
@@ -31,6 +32,9 @@ pub enum ConnectClient {
 
     /// Connect Claude Code to Isartor
     Claude(claude::ClaudeArgs),
+
+    /// Connect Claude Code to GitHub Copilot through Isartor
+    ClaudeCopilot(claude_copilot::ClaudeCopilotArgs),
 
     /// Connect OpenClaw to Isartor
     Openclaw(openclaw::OpenclawArgs),
@@ -299,6 +303,19 @@ pub async fn handle_connect(args: ConnectArgs) -> anyhow::Result<()> {
             let result = claude::handle_claude_connect(a).await;
             print_connect_result(&result);
             update_state("claude", &gateway, base.disconnect, base.dry_run, &result);
+        }
+        ConnectClient::ClaudeCopilot(a) => {
+            let base = a.base.clone();
+            let gateway = base.effective_gateway_url();
+            let result = claude_copilot::handle_claude_copilot_connect(a).await;
+            print_connect_result(&result);
+            update_state(
+                "claude-copilot",
+                &gateway,
+                base.disconnect,
+                base.dry_run,
+                &result,
+            );
         }
         ConnectClient::Openclaw(a) => {
             let base = a.base.clone();

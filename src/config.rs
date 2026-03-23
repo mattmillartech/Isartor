@@ -46,6 +46,7 @@ pub enum LlmProvider {
     Openai,
     Azure,
     Anthropic,
+    Copilot,
     Xai,
     Gemini,
     Mistral,
@@ -69,6 +70,7 @@ impl LlmProvider {
             LlmProvider::Openai => "openai",
             LlmProvider::Azure => "azure",
             LlmProvider::Anthropic => "anthropic",
+            LlmProvider::Copilot => "copilot",
             LlmProvider::Xai => "xai",
             LlmProvider::Gemini => "gemini",
             LlmProvider::Mistral => "mistral",
@@ -100,6 +102,7 @@ impl From<&str> for LlmProvider {
             "openai" => LlmProvider::Openai,
             "azure" => LlmProvider::Azure,
             "anthropic" => LlmProvider::Anthropic,
+            "copilot" => LlmProvider::Copilot,
             "xai" => LlmProvider::Xai,
             "gemini" => LlmProvider::Gemini,
             "mistral" => LlmProvider::Mistral,
@@ -470,6 +473,12 @@ fn apply_secret_file_overrides(cfg: &mut AppConfig) -> anyhow::Result<()> {
 }
 
 fn validate_provider_config(cfg: &AppConfig) -> anyhow::Result<()> {
+    if cfg.llm_provider == LlmProvider::Copilot && cfg.external_llm_api_key.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "GitHub Copilot selected but no GitHub token configured. Set ISARTOR__EXTERNAL_LLM_API_KEY to a GitHub token with Copilot access, or run `isartor connect claude-copilot`."
+        ));
+    }
+
     if cfg.llm_provider == LlmProvider::Azure {
         if cfg.external_llm_api_key.trim().is_empty() {
             return Err(anyhow::anyhow!(

@@ -224,6 +224,24 @@ isartor connect copilot --disconnect
 This removes the `isartor` entry from `~/.copilot/mcp-config.json`.
 It also removes the managed Isartor block from `~/.copilot/copilot-instructions.md`.
 
+### Claude Code + GitHub Copilot (experimental)
+
+Use Claude Code with GitHub Copilot as the Layer 3 backend, while Isartor keeps
+L1a/L1b cache deflection in front of it:
+
+```bash
+isartor connect claude-copilot
+isartor stop
+isartor up --detach
+claude
+```
+
+→ Full guide: [CLAUDE-COPILOT.md](CLAUDE-COPILOT.md)
+
+> **Note:** this integration is currently best for plain prompting. Isartor's
+> Anthropic compatibility path is still text-oriented, so advanced Anthropic
+> tool-use flows may still require follow-up work.
+
 ### Claude Code (base URL override)
 
 Claude Code integrates via `ANTHROPIC_BASE_URL`, pointing all API traffic at

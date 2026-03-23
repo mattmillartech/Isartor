@@ -67,12 +67,13 @@ isartor init
 ### Layer 3: Cloud Fallbacks
 
 - `fallback.openai_api_key`, `fallback.anthropic_api_key`: API keys for external LLMs
-- `llm_provider`: Select the active provider. All providers are powered by [rig-core](https://crates.io/crates/rig-core):
+- `llm_provider`: Select the active provider. All providers are powered by [rig-core](https://crates.io/crates/rig-core) except `copilot`, which uses Isartor's native GitHub Copilot adapter:
   - `openai` (default), `azure`, `anthropic`, `xai`
   - `gemini`, `mistral`, `groq`, `deepseek`
   - `cohere`, `galadriel`, `hyperbolic`, `huggingface`
   - `mira`, `moonshot`, `ollama` (local, no key), `openrouter`
   - `perplexity`, `together`
+  - `copilot` (GitHub Copilot subscription-backed L3)
 - `external_llm_model`: Model name for the selected provider (e.g. `gpt-4o-mini`, `gemini-2.0-flash`, `mistral-small-latest`, `llama-3.1-8b-instant`, `deepseek-chat`, `command-r`, `sonar`, `moonshot-v1-128k`)
 - `external_llm_api_key`: API key for the configured provider (not needed for `ollama`)
 
@@ -150,6 +151,10 @@ export ISARTOR__EXTERNAL_LLM_MODEL=gemini-2.0-flash
 # Ollama (local — no API key required)
 export ISARTOR__LLM_PROVIDER=ollama
 export ISARTOR__EXTERNAL_LLM_MODEL=llama3
+
+# GitHub Copilot (configured automatically by `isartor connect claude-copilot`)
+export ISARTOR__LLM_PROVIDER=copilot
+export ISARTOR__EXTERNAL_LLM_MODEL=claude-sonnet-4.5
 ```
 
 ---
@@ -179,6 +184,7 @@ This writes the key to `isartor.toml` or the appropriate env file.
 | `isartor connectivity-check` | Audit outbound connections |
 | `isartor connect <client>` | Configure AI clients to route through Isartor |
 | `isartor connect copilot` | Configure Copilot CLI with CONNECT proxy + TLS MITM |
+| `isartor connect claude-copilot` | Configure Claude Code to use GitHub Copilot through Isartor |
 | `isartor stats` | Show total prompts, counts by layer, and recent prompt routing history |
 | `isartor set-key --provider <name>` | Set LLM provider API key (writes to `isartor.toml` or env file) |
 | `isartor stop` | Stop a running Isartor instance (uses PID file). Flags: `--force` (SIGKILL), `--pid-file <path>` |
