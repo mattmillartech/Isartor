@@ -40,6 +40,11 @@ python3 benchmarks/run.py \
     --input benchmarks/fixtures/faq_loop.jsonl \
     --requests 500
 
+# 6. Generate the with/without-Isartor ROI report (live data)
+make report
+
+# 7. Generate the ROI report offline using simulated data
+make report-dry-run
 # 6. Run the Claude Code / Qwen 2.5 Coder 7B Layer 2 benchmark
 #    (requires the Qwen sidecar stack: cd docker && docker compose -f docker-compose.qwen-benchmark.yml up --build)
 make benchmark-qwen
@@ -56,6 +61,7 @@ make benchmark-qwen
 |------|---------|-------------|
 | `fixtures/faq_loop.jsonl` | 1,000 | Simulates a repetitive FAQ / agent-loop workload. Covers returns, shipping, billing, account management, and more — all with semantic rephrasings. Designed to stress L1a (exact cache) and L1b (semantic cache). |
 | `fixtures/diverse_tasks.jsonl` | 500 | Genuine variety: code generation, summarisation, Q&A, data extraction, and creative writing. Represents a realistic mixed-workload with lower deflection than the FAQ loop corpus. |
+| `fixtures/claude_code_tasks.jsonl` | 250 | Real-world Claude Code prompts: Rust async/await, error handling, trait implementations, Axum API patterns, and more. Includes intentional repetitions and semantically similar queries to stress the L1a (exact cache) and L1b (semantic cache) layers in a developer-assistant scenario. The first 100 unique prompts are repeated 2–3× to simulate how Claude Code re-asks the same questions during iterative development. |
 | `fixtures/claude_code_tasks.jsonl` | 388 | Realistic Claude Code / Copilot workload: coding questions, algorithm explanations, Rust/Go/Python/TypeScript patterns, DevOps tasks, and architecture concepts. Designed to stress Layer 2 (SLM) with a Qwen 2.5 Coder 7B sidecar. Run via `make benchmark-qwen`. |
 | `fixtures/claude_code_todo.jsonl` | 105 | Realistic Claude Code session prompts for building a React TypeScript todo application. Covers component scaffolding, custom hooks, tests, routing, and tooling. Designed to model the repetitive, cache-friendly patterns of an AI-assisted coding workflow. |
 | `fixtures/claude_code_todo_app.jsonl` | 58 | Deterministic TypeScript todo-app coding workload for the Claude Code + Copilot benchmark. Includes unique implementation prompts, semantic variants, and exact repeats. |
@@ -68,6 +74,8 @@ Each file is in [JSONL](https://jsonlines.org/) format — one JSON object per l
 ```
 
 ## CLI Reference
+
+### `run.py` — Benchmark Harness
 
 ```
 usage: run.py [-h] [--url URL] [--api-key KEY] [--input INPUT]
@@ -278,6 +286,21 @@ targeting `main`. It:
 A `validate-harness` job also runs in dry-run mode on every push to confirm
 the harness itself is functioning correctly without requiring a live server.
 
+The `.github/workflows/roi-report.yml` workflow generates the full ROI report:
+
+1. Runs a dry-run benchmark (or uses existing results).
+2. Generates `benchmarks/results/roi_report.json` and `benchmarks/results/roi_report.md`.
+3. Uploads both files as workflow artifacts.
+4. Posts the Markdown report to the configured GitHub issue.
+
+To trigger the ROI report manually:
+
+```bash
+gh workflow run roi-report.yml \
+  --field issue_number=<your-issue-number> \
+  --field dry_run=false
+```
+
 ### Required repository secret
 
 The CI workflow routes L3 (cloud) requests through Azure OpenAI. Add the
@@ -291,6 +314,39 @@ Actions → New repository secret**):
 Without this secret the server cannot reach the Azure backend and L3 requests
 will return 502 errors. L1a/L1b cache-hit rows are unaffected.
 
+## ROI Report
+
+The `report.py` script produces a full **with-vs-without-Isartor** comparison from
+existing benchmark data.
+
+```bash
+# From live benchmark results:
+make report
+
+# Offline (dry-run simulation):
+make report-dry-run
+
+# From a specific results file:
+python3 benchmarks/report.py --input benchmarks/results/ci_run.json
+```
+
+**Outputs:**
+
+| File | Description |
+|------|-------------|
+| `benchmarks/results/roi_report.json` | Machine-readable artifact (schema v1) |
+| `benchmarks/results/roi_report.md`  | Human-readable Markdown report       |
+
+The report covers:
+
+- **With vs without comparison** — cloud token usage, cost, and latency for each scenario
+- **L1/L2/L3 layer breakdown** — hit counts, rates, and per-layer p50 latencies
+- **Token distribution** — separate input and output token estimates per layer
+- **Cost reduction** — estimated USD savings based on public gpt-4o pricing
+- **Latency delta** — P50 latency improvement from cache deflection
+- **Error / interruption resilience** — deflected requests are immune to cloud outages
+- **L2 SLM justification** — when the local SLM sidecar adds value vs falls through
+- **Methodology and assumptions** — all estimates clearly labelled
 ## Claude Code + GitHub Copilot Benchmark
 
 A dedicated three-scenario benchmark measures Isartor's impact on a real-world

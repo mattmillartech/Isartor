@@ -1,3 +1,4 @@
+.PHONY: benchmark benchmark-dry-run report report-dry-run build test smoke-claude-copilot
 .PHONY: benchmark benchmark-dry-run benchmark-qwen build test smoke-claude-copilot
 .PHONY: benchmark benchmark-dry-run build test smoke-claude-copilot \
         benchmark-claude-code benchmark-claude-code-dry-run benchmark-claude-code-report
@@ -23,6 +24,19 @@ benchmark:
 benchmark-dry-run:
 	python3 benchmarks/run.py --all --dry-run
 
+## Generate the with/without-Isartor ROI report from existing benchmark results.
+## Requires a live benchmark to have been run first (make benchmark).
+## Writes benchmarks/results/roi_report.json and benchmarks/results/roi_report.md.
+## Usage: make report
+report:
+	python3 benchmarks/report.py
+
+## Generate the ROI report using simulated (dry-run) data — no server required.
+## Useful for CI and offline validation.
+## Writes benchmarks/results/roi_report.json and benchmarks/results/roi_report.md.
+## Usage: make report-dry-run
+report-dry-run:
+	python3 benchmarks/report.py --dry-run
 ## Run the Claude Code / Qwen 2.5 Coder benchmark against a live Isartor instance
 ## wired to the real Qwen 2.5 Coder 7B sidecar.
 ## Prerequisites: start the stack first →
