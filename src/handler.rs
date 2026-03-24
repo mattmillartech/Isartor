@@ -255,7 +255,7 @@ pub async fn chat_handler(request: Request) -> impl IntoResponse {
         // ------------------------------------------------------------------
         // 2. Dispatch to the configured rig-core Agent — with retry.
         // ------------------------------------------------------------------
-        let retry_cfg = RetryConfig::default();
+        let retry_cfg = RetryConfig::cloud_llm();
         let agent = state.llm_agent.clone();
         let provider_for_err = provider_name.to_string();
         let prompt_for_retry = prompt.clone();
@@ -435,7 +435,7 @@ pub async fn openai_chat_completions_handler(request: Request) -> impl IntoRespo
                 }
             };
 
-            let retry_cfg = RetryConfig::default();
+            let retry_cfg = RetryConfig::cloud_llm();
             let provider_for_err = provider_name.to_string();
             let state_for_retry = state.clone();
             let request_for_retry = request.clone();
@@ -494,7 +494,7 @@ pub async fn openai_chat_completions_handler(request: Request) -> impl IntoRespo
 
         let prompt = extract_prompt(&body_bytes);
 
-        let retry_cfg = RetryConfig::default();
+        let retry_cfg = RetryConfig::cloud_llm();
         let agent = state.llm_agent.clone();
         let provider_for_err = provider_name.to_string();
         let prompt_for_retry = prompt.clone();
@@ -642,7 +642,7 @@ pub async fn anthropic_messages_handler(request: Request) -> impl IntoResponse {
             "Anthropic compat: forwarding to LLM"
         );
 
-        let retry_cfg = RetryConfig::default();
+        let retry_cfg = RetryConfig::cloud_llm();
         let agent = state.llm_agent.clone();
         let provider_for_err = provider_name.to_string();
         let prompt_for_retry = prompt.clone();

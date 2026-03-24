@@ -25,6 +25,9 @@ use crate::errors::{ErrorClass, GatewayError};
 pub const DEFAULT_MAX_ATTEMPTS: u32 = 3;
 pub const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(250);
 pub const DEFAULT_MAX_DELAY: Duration = Duration::from_secs(5);
+pub const CLOUD_LLM_MAX_ATTEMPTS: u32 = 5;
+pub const CLOUD_LLM_BASE_DELAY: Duration = Duration::from_secs(1);
+pub const CLOUD_LLM_MAX_DELAY: Duration = Duration::from_secs(8);
 
 /// Configuration for the retry policy.
 #[derive(Debug, Clone)]
@@ -43,6 +46,17 @@ impl Default for RetryConfig {
             max_attempts: DEFAULT_MAX_ATTEMPTS,
             base_delay: DEFAULT_BASE_DELAY,
             max_delay: DEFAULT_MAX_DELAY,
+        }
+    }
+}
+
+impl RetryConfig {
+    /// Retry policy for flaky upstream cloud LLM calls such as Copilot.
+    pub fn cloud_llm() -> Self {
+        Self {
+            max_attempts: CLOUD_LLM_MAX_ATTEMPTS,
+            base_delay: CLOUD_LLM_BASE_DELAY,
+            max_delay: CLOUD_LLM_MAX_DELAY,
         }
     }
 }
@@ -183,6 +197,16 @@ mod tests {
             base_delay: Duration::from_millis(1),
             max_delay: Duration::from_millis(10),
         }
+    }
+
+    #[test]
+    fn cloud_llm_profile_is_more_conservative_than_default() {
+        let cfg = RetryConfig::cloud_llm();
+        assert_eq!(cfg.max_attempts, CLOUD_LLM_MAX_ATTEMPTS);
+        assert_eq!(cfg.base_delay, CLOUD_LLM_BASE_DELAY);
+        assert_eq!(cfg.max_delay, CLOUD_LLM_MAX_DELAY);
+        assert!(cfg.max_attempts > DEFAULT_MAX_ATTEMPTS);
+        assert!(cfg.base_delay > DEFAULT_BASE_DELAY);
     }
 
     #[tokio::test]
