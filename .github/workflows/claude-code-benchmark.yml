@@ -181,8 +181,18 @@ jobs:
             find /tmp/llama-cpp -maxdepth 3 -type f | sort | sed -n '1,200p'
             exit 1
           fi
-          sudo install "$LLAMA_SERVER_PATH" /usr/local/bin/llama-server
-          llama-server --version
+          LLAMA_BIN_DIR=$(dirname "$LLAMA_SERVER_PATH")
+          LLAMA_RUNTIME_ROOT=$(dirname "$LLAMA_BIN_DIR")
+          sudo rm -rf /usr/local/llama-cpp
+          sudo mkdir -p /usr/local/llama-cpp
+          sudo cp -a "$LLAMA_RUNTIME_ROOT"/. /usr/local/llama-cpp/
+          sudo ln -sf /usr/local/llama-cpp/bin/llama-server /usr/local/bin/llama-server
+          echo "LLAMA_RUNTIME_DIR=/usr/local/llama-cpp" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/usr/local/llama-cpp/lib" >> "$GITHUB_ENV"
+          if [ -d /usr/local/llama-cpp/lib ]; then
+            find /usr/local/llama-cpp/lib -maxdepth 1 \( -type f -o -type l \) | sort | sed -n '1,200p'
+          fi
+          LD_LIBRARY_PATH=/usr/local/llama-cpp/lib llama-server --version
 
       # ── Post env setup comment ─────────────────────────────────────────────
       - name: Post environment setup comment
@@ -214,7 +224,7 @@ jobs:
       - name: Start llama-server (Qwen L2)
         if: env.DRY_RUN == 'false'
         run: |
-          llama-server \
+          LD_LIBRARY_PATH="${LLAMA_RUNTIME_DIR}/lib:${LD_LIBRARY_PATH:-}" llama-server \
             --model ./models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
             --host 127.0.0.1 \
             --port 8090 \
