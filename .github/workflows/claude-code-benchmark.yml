@@ -117,36 +117,71 @@ jobs:
       - name: Install llama.cpp
         if: env.DRY_RUN == 'false'
         run: |
-          # Install pre-built llama.cpp from the latest release
+          set -euo pipefail
+          # Install a pre-built llama.cpp Linux x64 CPU binary from the latest release.
           LLAMA_API_JSON=$(curl -fsSL \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/ggerganov/llama.cpp/releases/latest 2>/dev/null || true)
-          if command -v jq >/dev/null 2>&1; then
-            LLAMA_VERSION=$(echo "$LLAMA_API_JSON" | jq -r '.tag_name // empty' 2>/dev/null || true)
-          else
-            LLAMA_VERSION=$(echo "$LLAMA_API_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d '"' -f 4 || true)
-          fi
-          # Fallback: query the tags API endpoint
-          if [ -z "$LLAMA_VERSION" ]; then
-            TAGS_JSON=$(curl -fsSL \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/ggerganov/llama.cpp/tags?per_page=1" 2>/dev/null || true)
-            if command -v jq >/dev/null 2>&1; then
-              LLAMA_VERSION=$(echo "$TAGS_JSON" | jq -r '.[0].name // empty' 2>/dev/null || true)
-            else
-              LLAMA_VERSION=$(echo "$TAGS_JSON" | grep -o '"name":"[^"]*"' | head -1 | cut -d '"' -f 4 || true)
-            fi
-          fi
-          if [ -z "$LLAMA_VERSION" ]; then
-            echo "::error::Could not determine the latest llama.cpp release tag. The GitHub API may be rate-limited or unavailable. Set LLAMA_VERSION manually or retry later."
+            https://api.github.com/repos/ggml-org/llama.cpp/releases/latest)
+          export LLAMA_API_JSON
+          read -r LLAMA_VERSION LLAMA_ASSET_URL <<EOF
+          $(python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          payload = json.loads(os.environ["LLAMA_API_JSON"])
+          tag = payload.get("tag_name", "")
+          assets = payload.get("assets", [])
+          preferred_names = (
+              f"llama-{tag}-bin-ubuntu-x64.tar.gz",
+              f"llama-{tag}-bin-ubuntu-x64.zip",
+          )
+
+          selected_url = ""
+          for name in preferred_names:
+              for asset in assets:
+                  if asset.get("name") == name:
+                      selected_url = asset.get("browser_download_url", "")
+                      break
+              if selected_url:
+                  break
+
+          if not tag or not selected_url:
+              print("Could not determine a Linux x64 llama.cpp binary asset from the latest release.", file=sys.stderr)
+              sys.exit(1)
+
+          print(tag, selected_url)
+          PY
+          )
+          EOF
+          if [ -z "$LLAMA_VERSION" ] || [ -z "$LLAMA_ASSET_URL" ]; then
+            echo "::error::Could not determine the latest llama.cpp Linux x64 release asset."
             exit 1
           fi
-          echo "Installing llama.cpp ${LLAMA_VERSION}"
-          curl -fsSL \
-            "https://github.com/ggerganov/llama.cpp/releases/download/${LLAMA_VERSION}/llama-${LLAMA_VERSION}-bin-ubuntu-x64.zip" \
-            -o /tmp/llama.zip
-          unzip -q /tmp/llama.zip -d /tmp/llama-cpp
-          sudo install /tmp/llama-cpp/build/bin/llama-server /usr/local/bin/llama-server
+          echo "Installing llama.cpp ${LLAMA_VERSION} from ${LLAMA_ASSET_URL}"
+          rm -rf /tmp/llama-cpp /tmp/llama-archive
+          mkdir -p /tmp/llama-cpp
+          case "$LLAMA_ASSET_URL" in
+            *.tar.gz)
+              curl -fsSL "$LLAMA_ASSET_URL" -o /tmp/llama-archive.tar.gz
+              tar -xzf /tmp/llama-archive.tar.gz -C /tmp/llama-cpp
+              ;;
+            *.zip)
+              curl -fsSL "$LLAMA_ASSET_URL" -o /tmp/llama-archive.zip
+              unzip -q /tmp/llama-archive.zip -d /tmp/llama-cpp
+              ;;
+            *)
+              echo "::error::Unsupported llama.cpp archive format: ${LLAMA_ASSET_URL}"
+              exit 1
+              ;;
+          esac
+          LLAMA_SERVER_PATH=$(find /tmp/llama-cpp -type f -name llama-server | head -n 1)
+          if [ -z "$LLAMA_SERVER_PATH" ]; then
+            echo "::error::llama-server was not found in the downloaded llama.cpp archive."
+            find /tmp/llama-cpp -maxdepth 3 -type f | sort | sed -n '1,200p'
+            exit 1
+          fi
+          sudo install "$LLAMA_SERVER_PATH" /usr/local/bin/llama-server
           llama-server --version
 
       # ── Post env setup comment ─────────────────────────────────────────────
