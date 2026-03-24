@@ -37,6 +37,9 @@ CLAUDE_INPUT_PRICE_PER_TOKEN = 0.000003
 CLAUDE_OUTPUT_PRICE_PER_TOKEN = 0.000015
 AVG_INPUT_TOKENS = 800
 AVG_OUTPUT_TOKENS = 200
+RETRYABLE_HTTP_STATUSES = {429, 502, 503, 504}
+MAX_HTTP_ATTEMPTS = 3
+HTTP_RETRY_BACKOFF_SECS = 1.5
 
 SCENARIO_TO_KEY = {
     "baseline": "baseline",
@@ -108,7 +111,13 @@ def simulate_layer(prompt: str, scenario: str) -> tuple[str, float]:
     return "l3", rng.uniform(800.0, 2500.0)
 
 
-def anthropic_request(url: str, api_key: str, prompt: str, timeout: float, extra_headers: dict[str, str] | None = None) -> tuple[int, dict[str, str]]:
+def anthropic_request(
+    url: str,
+    api_key: str,
+    prompt: str,
+    timeout: float,
+    extra_headers: dict[str, str] | None = None,
+) -> tuple[int, dict[str, str]]:
     headers = {
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
@@ -125,11 +134,28 @@ def anthropic_request(url: str, api_key: str, prompt: str, timeout: float, extra
         }
     ).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        status = getattr(resp, "status", 200)
-        headers_out = {k.lower(): v for k, v in resp.headers.items()}
-        resp.read()
-        return status, headers_out
+
+    for attempt in range(1, MAX_HTTP_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                status = getattr(resp, "status", 200)
+                headers_out = {k.lower(): v for k, v in resp.headers.items()}
+                resp.read()
+                return status, headers_out
+        except urllib.error.HTTPError as exc:
+            if attempt >= MAX_HTTP_ATTEMPTS or exc.code not in RETRYABLE_HTTP_STATUSES:
+                raise
+            retry_after = exc.headers.get("Retry-After")
+            if retry_after and retry_after.isdigit():
+                sleep_secs = max(float(retry_after), HTTP_RETRY_BACKOFF_SECS * attempt)
+            else:
+                sleep_secs = HTTP_RETRY_BACKOFF_SECS * attempt
+            print(
+                f"[retry] HTTP {exc.code} from {url} on attempt {attempt}/{MAX_HTTP_ATTEMPTS}; "
+                f"retrying in {sleep_secs:.1f}s",
+                file=sys.stderr,
+            )
+            time.sleep(sleep_secs)
 
 
 def run_scenario(name: str, entries: list[dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
