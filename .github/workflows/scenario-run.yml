@@ -213,6 +213,7 @@ jobs:
         id: copilot_auth
         env:
           COPILOT_KEY_SECRET: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
+          COPILOT_WORKFLOW_KEY: ""
         run: |
           set -euo pipefail
           if [ "${{ steps.copilot_auth_prepare.outputs.auth_mode }}" = "secret" ]; then
@@ -290,8 +291,6 @@ jobs:
           VALIDATE
 
           echo "COPILOT_WORKFLOW_KEY=${COPILOT_WORKFLOW_KEY}" >> "$GITHUB_ENV"
-        env:
-          COPILOT_WORKFLOW_KEY: ""
 
       # ── Build Isartor (live isartor scenarios) ──────────────────────────
       - name: Install system dependencies
