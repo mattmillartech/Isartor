@@ -313,21 +313,40 @@ jobs:
 
       - name: Start Isartor gateway
         if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        env:
+          ISARTOR__API_KEY: benchmark-key
+          ISARTOR__LLM_PROVIDER: copilot
+          ISARTOR__COPILOT_TOKEN: ${{ env.COPILOT_WORKFLOW_KEY }}
+          ISARTOR__LAYER2__ENABLE_SLM_ROUTER: "false"
+          ISARTOR__OFFLINE_MODE: "false"
         run: |
           set -euo pipefail
-          export ISARTOR__API_KEY="${ISARTOR_API_KEY}"
-          export ISARTOR__LLM_PROVIDER=copilot
-          export ISARTOR__COPILOT_TOKEN="${COPILOT_WORKFLOW_KEY:-}"
-          export ISARTOR__LAYER2__ENABLE_SLM_ROUTER=false
+
+          # Write a minimal config so Isartor doesn't pick up repo defaults
+          mkdir -p ~/.isartor
+          printf 'llm_provider = "copilot"\noffline_mode = false\n[layer2]\nenable_slm_router = false\n' > isartor.toml
+
+          # Debug: confirm env is set
+          echo "LLM_PROVIDER=${ISARTOR__LLM_PROVIDER}"
+          echo "SLM_ROUTER=${ISARTOR__LAYER2__ENABLE_SLM_ROUTER}"
+          echo "COPILOT_TOKEN is $([ -n "${ISARTOR__COPILOT_TOKEN}" ] && echo 'set' || echo 'EMPTY')"
+
           ./target/release/isartor up --detach 2>&1 || true
 
-          # Wait for health
+          # Wait for health with log dump on failure
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
               echo "✅ Isartor healthy after ${i}s"
               break
             fi
-            [ "$i" -eq 30 ] && { echo "❌ Isartor failed to start"; exit 1; }
+            if [ "$i" -eq 30 ]; then
+              echo "❌ Isartor failed to start within 30s"
+              echo "=== Isartor logs (last 50 lines) ==="
+              tail -50 ~/.isartor/isartor.log 2>/dev/null || echo "(no log file)"
+              echo "=== Process check ==="
+              ps aux | grep -i isartor | grep -v grep || echo "(no isartor process)"
+              exit 1
+            fi
             sleep 1
           done
 
