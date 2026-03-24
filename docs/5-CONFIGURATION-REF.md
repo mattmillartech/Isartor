@@ -15,6 +15,8 @@
 | slm_router.remote_url   | ISARTOR__VLLM_URL              | string   | (none)                 | vLLM/TGI endpoint (if provider=vllm)             |
 | slm_router.model        | ISARTOR__VLLM_MODEL            | string   | gemma-2-2b-it          | Model name/path for SLM router                   |
 | slm_router.model_path   | ISARTOR__MODEL_PATH            | string   | (baked-in)             | Path to GGUF model file (embedded mode)          |
+| slm_router.classifier_mode | ISARTOR__LAYER2__CLASSIFIER_MODE | string | tiered               | Classifier mode: `tiered` (TEMPLATE/SNIPPET/COMPLEX) or `binary` (legacy SIMPLE/COMPLEX) |
+| slm_router.max_answer_tokens | ISARTOR__LAYER2__MAX_ANSWER_TOKENS | u64 | 2048                | Max tokens the SLM may generate for a local answer |
 | fallback.openai_api_key | ISARTOR__OPENAI_API_KEY        | string   | (none)                 | OpenAI API key for Layer 3 fallback              |
 | fallback.anthropic_api_key| ISARTOR__ANTHROPIC_API_KEY   | string   | (none)                 | Anthropic API key for Layer 3 fallback           |
 | llm_provider            | ISARTOR__LLM_PROVIDER          | string   | openai                 | LLM provider (see below for full list)           |
@@ -38,6 +40,8 @@
 ### Layer 2: SLM Router
 - `slm_router.provider`: `embedded` or `vllm`
 - `slm_router.remote_url`, `slm_router.model`, `slm_router.model_path`: Router config
+- `slm_router.classifier_mode`: `tiered` (default — TEMPLATE/SNIPPET/COMPLEX) or `binary` (legacy SIMPLE/COMPLEX)
+- `slm_router.max_answer_tokens`: Max tokens the SLM may generate for a local answer (default 2048)
 
 ### Layer 3: Cloud Fallbacks
 - `fallback.openai_api_key`, `fallback.anthropic_api_key`: API keys for external LLMs

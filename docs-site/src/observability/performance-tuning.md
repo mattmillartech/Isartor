@@ -30,7 +30,7 @@
 |-------|-----------|------|
 | **L1a** — Exact Cache | SHA-256 hash match | $0 |
 | **L1b** — Semantic Cache | Cosine similarity match | $0 |
-| **L2** — SLM Triage | Local SLM classifies as SIMPLE and answers locally | $0 |
+| **L2** — SLM Triage | Local SLM classifies requests as TEMPLATE, SNIPPET, or COMPLEX (tiered mode) and answers TEMPLATE/SNIPPET locally | $0 |
 
 The **deflection rate** directly maps to cost savings. A 70 % deflection
 rate means only 30 % of requests reach the paid cloud LLM.
@@ -300,18 +300,23 @@ export ISARTOR__REDIS_URL=redis://redis.svc:6379
 | Qwen-1.5-1.8B (Q4) | ~1.2 GB | Fastest | Adequate |
 | Llama-3-8B (Q4) | ~4.5 GB | Slower | Best |
 
-For intent classification (SIMPLE/COMPLEX), smaller models (1–3 B params)
-are sufficient. Use the smallest model that meets your accuracy needs.
+For intent classification (TEMPLATE/SNIPPET/COMPLEX in tiered mode, or
+SIMPLE/COMPLEX in legacy binary mode), smaller models (1–3 B params) are
+sufficient. Use the smallest model that meets your accuracy needs.
 
 ### Tuning the Classification Prompt
 
 The system prompt in `src/middleware/slm_triage.rs` determines classification
-accuracy. If too many COMPLEX requests are misclassified as SIMPLE (bad
-answers), consider:
+accuracy. If too many COMPLEX requests are misclassified as TEMPLATE or
+SNIPPET (resulting in bad local answers), consider:
 
 1. Making the system prompt more specific to your domain.
 2. Adding examples to the prompt (few-shot).
 3. Switching to a larger model.
+4. Setting `ISARTOR__LAYER2__MAX_ANSWER_TOKENS` to allow longer SLM responses
+   (default 2048).
+5. Falling back to binary mode via `ISARTOR__LAYER2__CLASSIFIER_MODE=binary`
+   if the three-tier split does not suit your workload.
 
 ---
 

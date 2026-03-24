@@ -247,7 +247,7 @@ isartor-gateway
        ├─ Layer0_ConcurrencyCheck                [0.01ms]
        ├─ Layer1_SemanticCache (MISS)            [5ms]
        ├─ Layer2_IntentClassifier                [80ms]
-       │     intent=SIMPLE, confidence=0.94
+       │     intent=TEMPLATE, confidence=0.97
        └─ Layer2_LocalExecutor                   [160ms]
              model=phi-3-mini, tokens=42
 ```

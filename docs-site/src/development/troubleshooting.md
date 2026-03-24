@@ -229,26 +229,45 @@ Layer 2: Failed to connect to SLM sidecar — falling through
 **Fallback behaviour:** When the SLM sidecar is unreachable, Isartor
 treats all requests as COMPLEX and forwards to Layer 3.
 
-### SLM Misclassification (SIMPLE ↔ COMPLEX)
+### SLM Misclassification (Tiered: TEMPLATE / SNIPPET / COMPLEX)
+
+The default classifier mode is **tiered**, which sorts requests into three
+categories instead of the legacy binary SIMPLE/COMPLEX split:
+
+| Tier         | Description                                              |
+|--------------|----------------------------------------------------------|
+| **TEMPLATE** | Config files, type definitions, documentation, boilerplate |
+| **SNIPPET**  | Short single-function code, simple middleware (<50 lines)  |
+| **COMPLEX**  | Multi-file implementations, test suites, full endpoints    |
+
+TEMPLATE and SNIPPET requests are answered locally by the SLM; COMPLEX
+requests are forwarded to Layer 3. The legacy binary mode (SIMPLE/COMPLEX)
+is still available via `ISARTOR__LAYER2__CLASSIFIER_MODE=binary`.
+
+An **answer quality guard** also rejects SLM answers that are too short
+(<10 chars) or start with uncertainty phrases, escalating them to Layer 3.
 
 **Symptom:** Users receive low-quality answers for complex questions
-(misclassified as SIMPLE) or unnecessarily hit the cloud for simple ones.
+(misclassified as TEMPLATE/SNIPPET) or unnecessarily hit the cloud for
+simple ones.
 
 **Diagnostic steps:**
 
 1. In Jaeger, search for `router.decision` attribute to see classification
-   distribution.
+   distribution across TEMPLATE, SNIPPET, and COMPLEX.
 
 2. Send known-simple and known-complex prompts and check the classification:
    ```bash
    curl -s -X POST http://localhost:8080/api/chat \
      -H "Content-Type: application/json" \
      -H "X-API-Key: $KEY" \
-     -d '{"prompt": "What is 2+2?"}' | jq '.layer'
-   # Expected: layer 2 (SIMPLE)
+     -d '{"prompt": "Generate a tsconfig.json"}' | jq '.layer'
+   # Expected: layer 2 (TEMPLATE)
    ```
 
 3. Consider switching to a larger SLM model for better classification accuracy.
+4. To fall back to the legacy binary classifier, set
+   `ISARTOR__LAYER2__CLASSIFIER_MODE=binary`.
 
 ### Embedded Candle Engine Errors
 
@@ -427,7 +446,7 @@ cache hits.
 When the SLM sidecar is unreachable, Isartor automatically degrades:
 
 - L1a/L1b cache still works → cached requests are served.
-- L2 SLM → all requests treated as COMPLEX → forwarded to L3.
+- L2 SLM → all requests treated as COMPLEX (regardless of classifier mode) → forwarded to L3.
 - **Impact:** Higher cloud costs, but no downtime.
 
 Monitor with:

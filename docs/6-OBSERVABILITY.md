@@ -99,7 +99,7 @@ debug/warn level.
 
 | Span Name              | Source                            | Key Attributes                                                           |
 |------------------------|-----------------------------------|--------------------------------------------------------------------------|
-| `layer2_slm`           | `src/middleware/slm_triage.rs`    | `slm.complexity_score` (`SIMPLE`\|`COMPLEX`)                             |
+| `layer2_slm`           | `src/middleware/slm_triage.rs`    | `slm.complexity_score` (`TEMPLATE`\|`SNIPPET`\|`COMPLEX`; legacy binary mode: `SIMPLE`\|`COMPLEX`) |
 | `l2_classify_intent`   | `src/adapters/router.rs`          | `router.backend` (`embedded_candle`\|`remote_vllm`), **`router.decision`**, `router.model`, `router.url`, `prompt_len` |
 
 ### 4.6  Layer 3 — Cloud LLM
@@ -123,7 +123,7 @@ in Jaeger / Tempo:
 | `cosine_similarity`    | string    | L1b search span             | Best cosine-similarity score (4 d.p) |
 | `cache.entries_scanned`| u64       | L1b search span             | Entries scanned during similarity search |
 | `cache.backend`        | string    | L1a get/put spans           | `"memory"` or `"redis"`              |
-| `router.decision`      | string    | L2 classify span            | `"SIMPLE"` or `"COMPLEX"`            |
+| `router.decision`      | string    | L2 classify span            | `"TEMPLATE"`, `"SNIPPET"`, or `"COMPLEX"` (tiered mode); `"SIMPLE"` or `"COMPLEX"` (binary mode) |
 | `router.backend`       | string    | L2 classify span            | `"embedded_candle"` or `"remote_vllm"` |
 | `provider.name`        | string    | L3 handler span             | e.g. `"openai"`, `"xai"`, `"azure"` |
 | `model`                | string    | L3 handler span             | e.g. `"gpt-4o"`, `"grok-beta"`      |
@@ -258,7 +258,7 @@ Isartor  ──OTLP gRPC──▶  OTel Collector ──▶  Jaeger    (traces)
 | Cache misses                   | Tag `cache.hit=false`                           |
 | Semantic cache tuning          | Tag `cosine_similarity` — sort by value         |
 | Layer 3 fallbacks              | Tag `isartor.final_layer=L3_Cloud`              |
-| SLM SIMPLE resolutions         | Tag `router.decision=SIMPLE`                    |
+| SLM local resolutions          | Tag `router.decision=TEMPLATE` or `router.decision=SNIPPET` (tiered); `router.decision=SIMPLE` (binary) |
 
 ---
 
