@@ -16,3 +16,6 @@ EXPLORATION_SUMMARY.md
 azure_openai_key/
 docs-site/book/
 benchmarks/results/claude_code_*_*Z.json
+benchmarks/results/roi_dryrun.json
+benchmarks/results/claude_code_*.json
+benchmarks/results/claude_code_roi_report.md
