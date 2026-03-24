@@ -1,5 +1,21 @@
 #!/usr/bin/env python3
 """
+Claude Code + GitHub Copilot Benchmark Harness
+
+Compares three execution paths for a realistic TypeScript todo-app coding workload:
+
+  Baseline — without Isartor
+    Requests go directly to a cloud LLM provider (Anthropic API or a Copilot
+    endpoint). No local deflection. Every request consumes cloud quota.
+
+  Isartor cold cache — first pass with Isartor (Qwen 2.5 Coder 7B as Layer 2)
+    Requests route through Isartor's /v1/messages endpoint with an empty cache.
+    Only exact duplicate prompts within the run hit L1a. Novel prompts fall
+    through to L2 (Qwen) or L3 (cloud).
+
+  Isartor warm cache — second pass with Isartor (same instance, cache populated)
+    All prompts seen in the cold pass are now in the cache. Exact hits land on
+    L1a, semantic variants on L1b. Only genuinely novel prompts reach L3.
 Claude Code + GitHub Copilot Benchmark — Three-Scenario Runner
 
 Executes the Claude Code todo-app benchmark across three scenarios and writes
@@ -67,6 +83,27 @@ Usage:
     # Dry-run — no server needed, fully deterministic (CI-safe):
     python3 benchmarks/claude_code_benchmark.py --dry-run
 
+    # Three-way comparison with dry-run:
+    python3 benchmarks/claude_code_benchmark.py --three-way --dry-run
+
+    # Isartor warm/cold only against a live instance:
+    python3 benchmarks/claude_code_benchmark.py --three-way \\
+        --isartor-url http://localhost:8080 \\
+        --api-key changeme
+
+    # Full comparison with real Anthropic API (Case A) and live Isartor:
+    python3 benchmarks/claude_code_benchmark.py --three-way \\
+        --isartor-url http://localhost:8080 \\
+        --direct-url https://api.anthropic.com \\
+        --direct-api-key sk-ant-...
+
+    # Honour environment variables:
+    ISARTOR_URL=http://localhost:8080 \\
+    ANTHROPIC_API_KEY=sk-ant-... \\
+    python3 benchmarks/claude_code_benchmark.py --three-way
+"""
+
+import argparse
     # Case B only against a live Isartor instance:
     python3 benchmarks/claude_code_benchmark.py --case B \
         --isartor-url http://localhost:8080
@@ -93,6 +130,7 @@ import random
 import statistics
 import sys
 import time
+import zlib
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -141,6 +179,11 @@ RESULTS_DIR = Path(__file__).parent / "results"
 FIXTURE_FILE = FIXTURES_DIR / "claude_code_todo_app.jsonl"
 
 # ── Cost constants ─────────────────────────────────────────────────────────────
+# Claude 3.5 Sonnet pricing (USD per token) — used for cloud-cost estimation.
+CLAUDE_INPUT_PRICE_PER_TOKEN = 0.000003    # $3.00 / 1M tokens
+CLAUDE_OUTPUT_PRICE_PER_TOKEN = 0.000015   # $15.00 / 1M tokens
+
+# Average token estimates for a typical Claude Code prompt in a coding workflow.
 # Claude 3.5 Sonnet pricing (USD per token) — used for Anthropic/Copilot path.
 # These are conservative estimates for typical Claude Code code prompts.
 CLAUDE_INPUT_PRICE_PER_TOKEN = 0.000003    # $3.00 / 1M tokens
@@ -173,6 +216,27 @@ def load_prompts(path: Path) -> list[str]:
     return prompts
 
 
+# ── Simulation helpers ─────────────────────────────────────────────────────────
+
+def _stable_rng(prompt: str) -> tuple[random.Random, int]:
+    """Return a seeded RNG and a 16-bit fingerprint derived from the prompt.
+
+    Uses zlib.crc32 (a non-cryptographic checksum) purely for deterministic
+    seeding — the result is used for reproducible simulation, not for security.
+    """
+    # crc32 returns a signed 32-bit integer; mask to unsigned for portability.
+    crc = zlib.crc32(prompt.encode()) & 0xFFFFFFFF
+    h = crc & 0xFFFF
+    rng = random.Random(crc)
+    return rng, h
+
+
+def _simulate_baseline(prompt: str) -> tuple[str, float]:
+    """
+    Simulate baseline (without Isartor): every request goes to L3 cloud.
+    Latency drawn from a realistic cloud-LLM distribution for code tasks.
+    """
+    rng, _ = _stable_rng("baseline:" + prompt)
 def _percentile(sorted_data: list[float], pct: float) -> float:
     if not sorted_data:
         return 0.0
@@ -558,6 +622,55 @@ def _simulate_case_a(prompt: str) -> tuple[str, float]:
     return "l3", latency
 
 
+def _simulate_cold(prompt: str) -> tuple[str, float]:
+    """
+    Simulate cold cache pass (first run with Isartor, cache empty).
+
+    Distribution reflects a cache starting from zero — only the explicit
+    duplicate prompts in the fixture hit L1a; novel prompts fall to L2/L3.
+      L1a ~12% (only exact duplicates already encountered within this run)
+      L1b ~ 8% (semantic near-matches of cached entries)
+      L2  ~15% (Qwen resolves novel but straightforward code tasks)
+      L3  ~65% (cloud — novel complex prompts)
+    """
+    rng, h = _stable_rng("cold:" + prompt)
+    if h < 0x1EB8:         # ~12% -> L1a
+        layer = "l1a"
+        latency = rng.uniform(0.1, 0.8)
+    elif h < 0x2F5C:       # ~ 8% -> L1b
+        layer = "l1b"
+        latency = rng.uniform(1.0, 8.0)
+    elif h < 0x4D71:       # ~15% -> L2
+        layer = "l2"
+        latency = rng.uniform(50.0, 350.0)
+    else:                  # ~65% -> L3
+        layer = "l3"
+        latency = rng.uniform(800.0, 2500.0)
+    return layer, latency
+
+
+def _simulate_warm(prompt: str) -> tuple[str, float]:
+    """
+    Simulate warm cache pass (second run with Isartor, cache populated).
+
+    Distribution reflects a fully warm cache — prompts seen in the cold pass
+    are now cached; repeated and semantically similar entries are deflected.
+      L1a ~42% (exact cache — all prior prompts now stored)
+      L1b ~22% (semantic cache — paraphrased variants hit L1b)
+      L2  ~10% (Qwen handles remaining novel but simple tasks)
+      L3  ~26% (cloud — only genuinely novel complex prompts)
+    """
+    rng, h = _stable_rng("warm:" + prompt)
+    if h < 0x6B85:         # ~42% -> L1a
+        layer = "l1a"
+        latency = rng.uniform(0.1, 0.8)
+    elif h < 0x9C28:       # ~22% -> L1b
+        layer = "l1b"
+        latency = rng.uniform(1.0, 8.0)
+    elif h < 0xB333:       # ~10% -> L2
+        layer = "l2"
+        latency = rng.uniform(50.0, 350.0)
+    else:                  # ~26% -> L3
 def _simulate_case_b(prompt: str) -> tuple[str, float]:
     """
     Simulate Case B (with Isartor + Qwen L2).  Distribution mirrors the
@@ -592,6 +705,9 @@ def _percentile(sorted_data: list[float], pct: float) -> float:
     return sorted_data[max(idx, 0)]
 
 
+# ── Benchmark runners ─────────────────────────────────────────────────────────
+
+def run_baseline(
 # ── Benchmark runner ──────────────────────────────────────────────────────────
 
 def run_case_a(
@@ -600,6 +716,13 @@ def run_case_a(
     dry_run: bool = False,
     direct_url: str = "",
     direct_api_key: str = "",
+    timeout: float = 120.0,
+) -> dict:
+    """
+    Run the baseline — without Isartor.
+
+    In live mode, sends each prompt directly to ``direct_url/v1/messages``
+    using the Anthropic Messages API format. Every request reaches the cloud.
     azure_url: str = "",
     azure_api_key: str = "",
     azure_deployment: str = "",
@@ -621,6 +744,9 @@ def run_case_a(
     all_latencies: list[float] = []
     errors = 0
 
+    for prompt in prompts:
+        if dry_run:
+            _, latency_ms = _simulate_baseline(prompt)
     use_azure = bool(azure_url and azure_api_key and azure_deployment)
 
     for prompt in prompts:
@@ -630,6 +756,32 @@ def run_case_a(
             continue
 
         start = time.perf_counter()
+        headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+        if direct_api_key:
+            headers["x-api-key"] = direct_api_key
+        body = json.dumps({
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": AVG_OUTPUT_TOKENS,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode()
+        req = urllib.request.Request(
+            f"{direct_url.rstrip('/')}/v1/messages",
+            data=body,
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout):
+                all_latencies.append((time.perf_counter() - start) * 1000)
+        except urllib.error.HTTPError as exc:
+            errors += 1
+            print(f"  [warn] Baseline HTTP {exc.code}: {exc}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            errors += 1
+            print(f"  [warn] Baseline request failed: {exc}", file=sys.stderr)
+
+    total = len(prompts)
+    if total == 0:
+        return _empty_baseline_result()
 
         if use_azure:
             # Azure OpenAI chat completions format.
@@ -677,6 +829,20 @@ def run_case_a(
     p50 = statistics.median(all_latencies) if all_latencies else 0.0
     p95 = _percentile(sorted_all, 95) if all_latencies else 0.0
     p99 = _percentile(sorted_all, 99) if all_latencies else 0.0
+    l3_hits = total - errors
+    cloud_input_tokens = l3_hits * AVG_INPUT_TOKENS
+    cloud_output_tokens = l3_hits * AVG_OUTPUT_TOKENS
+    total_cost_usd = (
+        cloud_input_tokens * CLAUDE_INPUT_PRICE_PER_TOKEN
+        + cloud_output_tokens * CLAUDE_OUTPUT_PRICE_PER_TOKEN
+    )
+    cost_per_req = total_cost_usd / total if total else 0.0
+
+    _print_baseline_summary(total, l3_hits, errors, p50, p95, p99, total_cost_usd, cost_per_req)
+
+    return {
+        "scenario": "baseline",
+        "label": "without_isartor",
 
     # In Case A every request hits the cloud.
     l3_hits = total - errors
@@ -717,6 +883,24 @@ def run_case_a(
         "p99_ms": round(p99, 2),
         "cloud_input_tokens": cloud_input_tokens,
         "cloud_output_tokens": cloud_output_tokens,
+        "total_cost_usd": round(total_cost_usd, 4),
+        "cost_per_req_usd": round(cost_per_req, 6),
+    }
+
+
+def run_isartor(
+    prompts: list[str],
+    *,
+    scenario: str,
+    dry_run: bool = False,
+    isartor_url: str = "http://localhost:8080",
+    api_key: str = "changeme",
+    timeout: float = 120.0,
+) -> dict:
+    """
+    Run a scenario through Isartor — cold or warm cache pass.
+
+    ``scenario`` must be one of ``"cold"`` or ``"warm"``.
         "total_cost_usd": round(total_cost_usd, 6),
         "cost_per_req_usd": round(cost_per_req, 8),
     }
@@ -737,6 +921,13 @@ def run_case_b(
     In live mode, sends each prompt to ``isartor_url/v1/messages`` and reads
     the X-Isartor-Layer response header to determine which layer resolved it.
 
+    In dry-run mode, uses a scenario-specific simulation distribution.
+    """
+    if scenario not in ("cold", "warm"):
+        raise ValueError(f"scenario must be 'cold' or 'warm', got {scenario!r}")
+
+    simulate_fn = _simulate_cold if scenario == "cold" else _simulate_warm
+
     In dry-run mode, simulates the expected layer distribution without a server.
     """
     layer_counts: dict[str, int] = {k: 0 for k in LAYERS}
@@ -746,6 +937,7 @@ def run_case_b(
 
     for prompt in prompts:
         if dry_run:
+            layer, latency_ms = simulate_fn(prompt)
             layer, latency_ms = _simulate_case_b(prompt)
             layer_counts[layer] += 1
             layer_latencies[layer].append(latency_ms)
@@ -758,6 +950,13 @@ def run_case_b(
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["X-API-Key"] = api_key
+        body = json.dumps({
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": AVG_OUTPUT_TOKENS,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode()
+        req = urllib.request.Request(
+            f"{isartor_url.rstrip('/')}/v1/messages",
         body = json.dumps({"prompt": prompt}).encode()
         req = urllib.request.Request(
             f"{isartor_url.rstrip('/')}/api/chat",
@@ -786,6 +985,17 @@ def run_case_b(
                     file=sys.stderr,
                 )
             else:
+                print(f"  [warn] Isartor HTTP {exc.code}: {exc}", file=sys.stderr)
+        except Exception as exc:  # noqa: BLE001
+            errors += 1
+            print(f"  [warn] Isartor request failed: {exc}", file=sys.stderr)
+
+    total = len(prompts)
+    if total == 0:
+        return _empty_isartor_result(scenario)
+
+    deflected = layer_counts["l1a"] + layer_counts["l1b"] + layer_counts["l2"]
+    deflection_rate = deflected / total if total else 0.0
                 print(f"  [warn] Case B HTTP {exc.code}: {exc}", file=sys.stderr)
         except Exception as exc:  # noqa: BLE001
             errors += 1
@@ -807,6 +1017,21 @@ def run_case_b(
         lats = layer_latencies.get(layer, [])
         return round(statistics.median(lats), 2) if lats else None
 
+    l3_hits = layer_counts["l3"]
+    cloud_input_tokens = l3_hits * AVG_INPUT_TOKENS
+    cloud_output_tokens = l3_hits * AVG_OUTPUT_TOKENS
+    total_cost_usd = (
+        cloud_input_tokens * CLAUDE_INPUT_PRICE_PER_TOKEN
+        + cloud_output_tokens * CLAUDE_OUTPUT_PRICE_PER_TOKEN
+    )
+    cost_per_req = total_cost_usd / total if total else 0.0
+
+    label = "with_isartor_cold" if scenario == "cold" else "with_isartor_warm"
+    _print_isartor_summary(scenario, total, layer_counts, layer_latencies, p50, p95, p99, deflection_rate, total_cost_usd, cost_per_req)
+
+    return {
+        "scenario": scenario,
+        "label": label,
     # Cloud tokens — only L3 requests consume cloud quota.
     l3_hits = layer_counts["l3"]
     cloud_input_tokens = l3_hits * AVG_INPUT_TOKENS
@@ -855,6 +1080,7 @@ def run_case_b(
 
 # ── Console printers ──────────────────────────────────────────────────────────
 
+def _print_baseline_summary(
 def _print_case_a_summary(
     label: str,
     total: int,
@@ -866,6 +1092,7 @@ def _print_case_a_summary(
     total_cost: float,
     cost_per_req: float,
 ) -> None:
+    print("\n-- Baseline — without Isartor --")
     print(f"\n-- {label} --")
     print(f"  Total requests : {total}")
     print(f"  L3  (cloud)    : {l3_hits:5d}  (100.0%)")
@@ -877,6 +1104,8 @@ def _print_case_a_summary(
     print(f"  Est. cloud cost: ${total_cost:.4f}  (${cost_per_req:.6f}/req)")
 
 
+def _print_isartor_summary(
+    scenario: str,
 def _print_case_b_summary(
     label: str,
     total: int,
@@ -893,6 +1122,8 @@ def _print_case_b_summary(
         lats = layer_latencies.get(layer, [])
         return f"{statistics.median(lats):.1f} ms" if lats else "-"
 
+    label = "cold cache" if scenario == "cold" else "warm cache"
+    print(f"\n-- Isartor {label} — with Qwen L2 --")
     print(f"\n-- {label} --")
     print(f"  Total requests : {total}")
     print(f"  L1a (exact)    : {layer_counts['l1a']:5d}  ({layer_counts['l1a'] / total * 100:.1f}%)")
@@ -920,6 +1151,9 @@ def _ms(v: float | None) -> str:
 
 
 def build_markdown_report(
+    baseline: dict | None,
+    cold: dict | None,
+    warm: dict | None,
     case_a: dict | None,
     case_b: dict | None,
     *,
@@ -928,6 +1162,7 @@ def build_markdown_report(
     hardware: str = "unknown",
     timestamp: str = "",
 ) -> str:
+    """Build the full three-way Markdown comparison report."""
     """Build the full Markdown comparison report."""
     if not timestamp:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -944,6 +1179,50 @@ def build_markdown_report(
         "",
         "## Summary",
         "",
+        "This report compares three execution paths for a deterministic TypeScript",
+        "todo-app coding workload that simulates a real Claude Code agent session:",
+        "",
+        "- **Baseline — without Isartor:** every prompt is forwarded directly to",
+        "  the cloud LLM provider. No local deflection occurs.",
+        "- **Isartor cold cache:** first pass through Isartor with an empty cache.",
+        "  Only exact duplicate prompts within the run hit L1a; novel prompts fall",
+        "  through to L2 (Qwen 2.5 Coder 7B) or L3 (cloud).",
+        "- **Isartor warm cache:** second pass with the cache populated from the cold",
+        "  run. All previously-seen prompts are deflected locally.",
+        "",
+    ]
+
+    # ── Three-way comparison table ────────────────────────────────────────────
+    if baseline and cold and warm:
+        total = baseline["total_requests"]
+        b_cost = baseline["total_cost_usd"]
+        c_cost = cold["total_cost_usd"]
+        w_cost = warm["total_cost_usd"]
+        cold_savings_pct = (b_cost - c_cost) / b_cost * 100 if b_cost > 0 else 0.0
+        warm_savings_pct = (b_cost - w_cost) / b_cost * 100 if b_cost > 0 else 0.0
+
+        lines += [
+            "## Three-Way Comparison",
+            "",
+            "| Metric                  | Baseline | Isartor Cold | Isartor Warm |",
+            "|-------------------------|----------|--------------|--------------|",
+            f"| Total requests          | {baseline['total_requests']} | {cold['total_requests']} | {warm['total_requests']} |",
+            f"| L3 (cloud) hits         | {baseline['l3_hits']} (100%) | {cold['l3_hits']} ({cold['l3_hits'] / total * 100:.0f}%) | {warm['l3_hits']} ({warm['l3_hits'] / total * 100:.0f}%) |",
+            f"| Deflection rate         | 0% | {cold['deflection_rate'] * 100:.1f}% | {warm['deflection_rate'] * 100:.1f}% |",
+            f"| Overall P50 latency     | {_ms(baseline.get('p50_ms'))} | {_ms(cold.get('p50_ms'))} | {_ms(warm.get('p50_ms'))} |",
+            f"| Overall P95 latency     | {_ms(baseline.get('p95_ms'))} | {_ms(cold.get('p95_ms'))} | {_ms(warm.get('p95_ms'))} |",
+            f"| Est. cloud cost (total) | ${b_cost:.4f} | ${c_cost:.4f} | ${w_cost:.4f} |",
+            f"| Cost vs baseline        | — | **−{cold_savings_pct:.1f}%** | **−{warm_savings_pct:.1f}%** |",
+            "",
+        ]
+
+    # ── Baseline detail ───────────────────────────────────────────────────────
+    if baseline:
+        total = baseline["total_requests"]
+        lines += [
+            "## Baseline — Without Isartor",
+            "",
+            "Every request is forwarded directly to the cloud provider. No local",
         "This report compares two execution paths for a deterministic TypeScript todo-app",
         "coding workload that simulates a real Claude Code agent session:",
         "",
@@ -992,6 +1271,63 @@ def build_markdown_report(
             f"| L1a (exact)        |      0 |        0.0%  |                 - |",
             f"| L1b (semantic)     |      0 |        0.0%  |                 - |",
             f"| L2  (SLM)          |      0 |        0.0%  |                 - |",
+            f"| L3  (cloud)        | {baseline['l3_hits']:6d} |      100.0%  | {_ms(baseline.get('p50_ms'))} |",
+            f"| **Total deflected**|      0 |       **0%** |                   |",
+            f"| **Est. cost**      |        |              | **${baseline['cost_per_req_usd']:.6f}/req** |",
+            "",
+            f"> Overall latency — P50: {_ms(baseline.get('p50_ms'))} | P95: {_ms(baseline.get('p95_ms'))} | P99: {_ms(baseline.get('p99_ms'))}",
+            ">",
+            f"> Errors: {baseline['error_count']}",
+            "",
+        ]
+
+    # ── Cold cache detail ─────────────────────────────────────────────────────
+    if cold:
+        total = cold["total_requests"]
+        deflected = cold["l1a_hits"] + cold["l1b_hits"] + cold["l2_hits"]
+        lines += [
+            "## Isartor Cold Cache (First Pass)",
+            "",
+            "First run through Isartor's deflection stack with an empty cache.",
+            "Prompts route: L1a exact cache → L1b semantic cache → L2 Qwen → L3 cloud.",
+            "",
+            "| Layer              | Hits   | % of Traffic | Avg Latency (p50) |",
+            "|--------------------|--------|--------------|-------------------|",
+            f"| L1a (exact)        | {cold['l1a_hits']:6d} | {cold['l1a_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(cold, 'l1a'):>17} |",
+            f"| L1b (semantic)     | {cold['l1b_hits']:6d} | {cold['l1b_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(cold, 'l1b'):>17} |",
+            f"| L2  (Qwen)         | {cold['l2_hits']:6d} | {cold['l2_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(cold, 'l2'):>17} |",
+            f"| L3  (cloud)        | {cold['l3_hits']:6d} | {cold['l3_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(cold, 'l3'):>17} |",
+            f"| **Total deflected**| **{deflected}** | **{cold['deflection_rate'] * 100:.1f}%** | |",
+            f"| **Est. cost**      |        |              | **${cold['cost_per_req_usd']:.6f}/req** |",
+            "",
+            f"> Overall latency — P50: {_ms(cold.get('p50_ms'))} | P95: {_ms(cold.get('p95_ms'))} | P99: {_ms(cold.get('p99_ms'))}",
+            ">",
+            f"> Errors: {cold['error_count']}",
+            "",
+        ]
+
+    # ── Warm cache detail ─────────────────────────────────────────────────────
+    if warm:
+        total = warm["total_requests"]
+        deflected = warm["l1a_hits"] + warm["l1b_hits"] + warm["l2_hits"]
+        lines += [
+            "## Isartor Warm Cache (Second Pass)",
+            "",
+            "Second run through Isartor with the cache fully populated from the cold pass.",
+            "All previously-seen prompts are now deflected locally.",
+            "",
+            "| Layer              | Hits   | % of Traffic | Avg Latency (p50) |",
+            "|--------------------|--------|--------------|-------------------|",
+            f"| L1a (exact)        | {warm['l1a_hits']:6d} | {warm['l1a_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(warm, 'l1a'):>17} |",
+            f"| L1b (semantic)     | {warm['l1b_hits']:6d} | {warm['l1b_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(warm, 'l1b'):>17} |",
+            f"| L2  (Qwen)         | {warm['l2_hits']:6d} | {warm['l2_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(warm, 'l2'):>17} |",
+            f"| L3  (cloud)        | {warm['l3_hits']:6d} | {warm['l3_hits'] / total * 100:>10.1f}%  | {_layer_p50_fmt(warm, 'l3'):>17} |",
+            f"| **Total deflected**| **{deflected}** | **{warm['deflection_rate'] * 100:.1f}%** | |",
+            f"| **Est. cost**      |        |              | **${warm['cost_per_req_usd']:.6f}/req** |",
+            "",
+            f"> Overall latency — P50: {_ms(warm.get('p50_ms'))} | P95: {_ms(warm.get('p95_ms'))} | P99: {_ms(warm.get('p99_ms'))}",
+            ">",
+            f"> Errors: {warm['error_count']}",
             f"| L3  (cloud)        | {case_a['l3_hits']:6d} |      100.0%  | {_ms(case_a.get('p50_ms'))} |",
             f"| **Total deflected**|      0 |       **0%** |                   |",
             f"| **Est. cost**      |        |              | **${case_a['cost_per_req_usd']:.6f}/req** |",
@@ -1028,6 +1364,18 @@ def build_markdown_report(
         ]
 
     # ── ROI section ───────────────────────────────────────────────────────────
+    if baseline and cold and warm:
+        b_cost = baseline["total_cost_usd"]
+        c_cost = cold["total_cost_usd"]
+        w_cost = warm["total_cost_usd"]
+        cold_savings = b_cost - c_cost
+        warm_savings = b_cost - w_cost
+        cold_roi_pct = cold_savings / b_cost * 100 if b_cost > 0 else 0.0
+        warm_roi_pct = warm_savings / b_cost * 100 if b_cost > 0 else 0.0
+        cold_reqs_saved = baseline["l3_hits"] - cold["l3_hits"]
+        warm_reqs_saved = baseline["l3_hits"] - warm["l3_hits"]
+        cold_tokens = cold_reqs_saved * (AVG_INPUT_TOKENS + AVG_OUTPUT_TOKENS)
+        warm_tokens = warm_reqs_saved * (AVG_INPUT_TOKENS + AVG_OUTPUT_TOKENS)
     if case_a and case_b:
         a_cost = case_a["total_cost_usd"]
         b_cost = case_b["total_cost_usd"]
@@ -1039,6 +1387,17 @@ def build_markdown_report(
         lines += [
             "## ROI Analysis",
             "",
+            "| Metric                          | Baseline | Isartor Cold | Isartor Warm |",
+            "|---------------------------------|----------|--------------|--------------|",
+            f"| Cloud requests avoided          | 0 | {cold_reqs_saved} | {warm_reqs_saved} |",
+            f"| Cloud tokens avoided            | 0 | {cold_tokens:,} | {warm_tokens:,} |",
+            f"| Estimated cloud cost            | ${b_cost:.4f} | ${c_cost:.4f} | ${w_cost:.4f} |",
+            f"| Cost reduction vs baseline      | 0% | **{cold_roi_pct:.1f}%** | **{warm_roi_pct:.1f}%** |",
+            "",
+            f"**Interpretation:** For a typical Claude Code session replaying this "
+            f"todo-app workload ({baseline['total_requests']} prompts):",
+            f"- Cold cache avoids **{cold_roi_pct:.0f}%** of cloud token spend.",
+            f"- Warm cache (repeat session) avoids **{warm_roi_pct:.0f}%** of cloud token spend.",
             "| Metric                        | Value |",
             "|-------------------------------|-------|",
             f"| Cloud requests avoided        | {cloud_reqs_saved} of {case_a['l3_hits']} ({case_b['deflection_rate'] * 100:.1f}%) |",
@@ -1063,6 +1422,13 @@ def build_markdown_report(
         "  simulating a Claude Code agent session that builds a TypeScript todo application.",
         "  The corpus includes unique implementation prompts, semantic variants (paraphrased",
         "  rewrites), and exact repeats to exercise all three deflection layers.",
+        "- **Baseline control path:** Claude Code → direct Anthropic/Copilot API.",
+        "  A simulated all-L3 baseline is used in dry-run mode (100% L3, realistic",
+        "  cloud-latency distribution for code-generation tasks).",
+        "- **Cold cache pass:** Claude Code → Isartor `/v1/messages` →",
+        "  L1a/L1b cache (empty at start) → L2 Qwen 2.5 Coder 7B → L3 cloud.",
+        "- **Warm cache pass:** identical prompts sent again through the same Isartor",
+        "  instance. Cache is fully populated from the cold pass.",
         "- **Case A control path:** Claude Code → direct Anthropic/Copilot API.",
         "  If a true direct Claude Code + Copilot path is not available without Isartor,",
         "  a simulated cloud-only baseline is used (100% L3, realistic latency distribution).",
@@ -1082,6 +1448,9 @@ def build_markdown_report(
 
 # ── Result serialisation ──────────────────────────────────────────────────────
 
+def _empty_baseline_result() -> dict:
+    return {
+        "scenario": "baseline", "label": "without_isartor",
 def _empty_case_a_result() -> dict:
     return {
         "case": "A", "label": "without_isartor",
@@ -1093,6 +1462,10 @@ def _empty_case_a_result() -> dict:
     }
 
 
+def _empty_isartor_result(scenario: str) -> dict:
+    label = "with_isartor_cold" if scenario == "cold" else "with_isartor_warm"
+    return {
+        "scenario": scenario, "label": label,
 def _empty_case_b_result() -> dict:
     return {
         "case": "B", "label": "with_isartor_qwen_l2",
@@ -1128,6 +1501,9 @@ def hardware_summary() -> str:
 
 
 def write_results(
+    baseline: dict | None,
+    cold: dict | None,
+    warm: dict | None,
     case_a: dict | None,
     case_b: dict | None,
     report_md: str,
@@ -1139,11 +1515,18 @@ def write_results(
 
     payload: dict = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "benchmark": "claude_code_three_way",
         "benchmark": "claude_code_copilot",
         "fixture": "claude_code_todo_app",
         "hardware": hardware_summary(),
         "layer2_model": "Qwen2.5-Coder-7B-Instruct-Q4_K_M",
     }
+    if baseline:
+        payload["baseline"] = baseline
+    if cold:
+        payload["isartor_cold"] = cold
+    if warm:
+        payload["isartor_warm"] = warm
     if case_a:
         payload["case_a"] = case_a
     if case_b:
@@ -1159,6 +1542,7 @@ def write_results(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
+        description="Claude Code + GitHub Copilot Benchmark Harness (3-way: baseline / cold / warm)",
         description="Claude Code + GitHub Copilot Benchmark Harness",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
@@ -1167,6 +1551,17 @@ def main() -> None:
     default_api_key = os.environ.get("ISARTOR_API_KEY", "changeme")
     default_direct_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
     default_direct_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    parser.add_argument(
+        "--three-way",
+        action="store_true",
+        dest="three_way",
+        help="Run baseline + cold + warm and generate a three-way comparison report",
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=["baseline", "cold", "warm"],
+        help="Run a single scenario: baseline, cold, or warm",
     default_azure_url = os.environ.get("AZURE_OPENAI_URL", "")
     default_azure_key = os.environ.get("AZURE_OPENAI_API_KEY", "")
     default_azure_deploy = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
@@ -1192,24 +1587,30 @@ def main() -> None:
         "--isartor-url",
         default=default_isartor_url,
         dest="isartor_url",
+        metavar="URL",
         help="Base URL of the Isartor instance (default: $ISARTOR_URL or http://localhost:8080)",
     )
     parser.add_argument(
         "--api-key",
         default=default_api_key,
         dest="api_key",
+        metavar="KEY",
         help="X-API-Key for Isartor (default: $ISARTOR_API_KEY or 'changeme')",
     )
     parser.add_argument(
         "--direct-url",
         default=default_direct_url,
         dest="direct_url",
+        metavar="URL",
+        help="Direct API base URL for baseline (default: $ANTHROPIC_BASE_URL or https://api.anthropic.com)",
         help="Direct Anthropic API base URL for Case A (default: $ANTHROPIC_BASE_URL)",
     )
     parser.add_argument(
         "--direct-api-key",
         default=default_direct_key,
         dest="direct_api_key",
+        metavar="KEY",
+        help="API key for baseline direct calls (default: $ANTHROPIC_API_KEY)",
         help="Anthropic API key for Case A (default: $ANTHROPIC_API_KEY)",
     )
     parser.add_argument(
@@ -1239,18 +1640,28 @@ def main() -> None:
     parser.add_argument(
         "--input",
         default=str(FIXTURE_FILE),
+        metavar="FILE",
         help=f"Path to a JSONL fixture file (default: {FIXTURE_FILE})",
     )
     parser.add_argument(
         "--requests",
         type=int,
         default=0,
+        metavar="N",
+        help="Limit number of prompts per scenario (0 = all)",
         help="Limit number of prompts (0 = all)",
     )
     parser.add_argument(
         "--timeout",
         type=float,
         default=float(os.environ.get("ISARTOR_TIMEOUT", "120")),
+        metavar="SECONDS",
+        help="Per-request timeout in seconds (default: $ISARTOR_TIMEOUT or 120)",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(RESULTS_DIR / "claude_code_benchmark.json"),
+        metavar="FILE",
         help="Per-request timeout in seconds (default: $ISARTOR_TIMEOUT or 120)",
     )
     parser.add_argument(
@@ -1335,11 +1746,18 @@ def main() -> None:
     )
     parser.add_argument(
         "--report",
+        default=str(RESULTS_DIR / "claude_code_benchmark_report.md"),
+        metavar="FILE",
         default=str(RESULTS_DIR / "claude_code_copilot_report.md"),
         help="Path for the Markdown report file",
     )
     args = parser.parse_args()
 
+    # --dry-run alone implies --three-way
+    if not args.three_way and not args.scenario and not args.dry_run:
+        parser.print_help()
+        print(
+            "\nError: specify --three-way, --scenario <name>, or --dry-run.",
     if not args.case and not args.compare and not args.dry_run:
         parser.print_help()
         print(
@@ -1348,6 +1766,11 @@ def main() -> None:
         )
         sys.exit(1)
 
+    # --dry-run without --scenario implies --three-way (run everything)
+    implicit_three_way = args.dry_run and not args.scenario and not args.three_way
+    run_baseline_flag = args.three_way or args.scenario == "baseline" or implicit_three_way
+    run_cold_flag = args.three_way or args.scenario == "cold" or implicit_three_way
+    run_warm_flag = args.three_way or args.scenario == "warm" or implicit_three_way
     # --dry-run without explicit --case or --compare implies --compare
     run_a = args.compare or args.case == "A" or args.dry_run
     run_b = args.compare or args.case == "B" or args.dry_run
@@ -1365,6 +1788,12 @@ def main() -> None:
     if args.dry_run:
         print("Mode: DRY-RUN (simulated responses — no server required)")
 
+    baseline_result: dict | None = None
+    cold_result: dict | None = None
+    warm_result: dict | None = None
+
+    if run_baseline_flag:
+        baseline_result = run_baseline(
     case_a_result: dict | None = None
     case_b_result: dict | None = None
 
@@ -1374,6 +1803,26 @@ def main() -> None:
             dry_run=args.dry_run,
             direct_url=args.direct_url,
             direct_api_key=args.direct_api_key,
+            timeout=args.timeout,
+        )
+
+    if run_cold_flag:
+        cold_result = run_isartor(
+            prompts,
+            scenario="cold",
+            dry_run=args.dry_run,
+            isartor_url=args.isartor_url,
+            api_key=args.api_key,
+            timeout=args.timeout,
+        )
+
+    if run_warm_flag:
+        warm_result = run_isartor(
+            prompts,
+            scenario="warm",
+            dry_run=args.dry_run,
+            isartor_url=args.isartor_url,
+            api_key=args.api_key,
             azure_url=args.azure_url,
             azure_api_key=args.azure_api_key,
             azure_deployment=args.azure_deployment,
@@ -1394,6 +1843,9 @@ def main() -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     hw = hardware_summary()
     report_md = build_markdown_report(
+        baseline_result,
+        cold_result,
+        warm_result,
         case_a_result,
         case_b_result,
         total_prompts=len(prompts),
@@ -1406,6 +1858,9 @@ def main() -> None:
     print(report_md)
 
     write_results(
+        baseline_result,
+        cold_result,
+        warm_result,
         case_a_result,
         case_b_result,
         report_md,

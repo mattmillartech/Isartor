@@ -1,3 +1,5 @@
+.PHONY: benchmark benchmark-dry-run \
+        benchmark-claude-code benchmark-claude-code-dry-run \
 .PHONY: benchmark benchmark-dry-run report report-dry-run build test smoke-claude-copilot
 .PHONY: benchmark benchmark-dry-run benchmark-qwen build test smoke-claude-copilot
 .PHONY: benchmark benchmark-dry-run build test smoke-claude-copilot \
@@ -24,6 +26,21 @@ benchmark:
 benchmark-dry-run:
 	python3 benchmarks/run.py --all --dry-run
 
+## Run the Claude Code three-way benchmark (baseline / cold / warm) against a
+## live Isartor instance with Qwen 2.5 Coder 7B as Layer 2.
+## Requires: Isartor running at ISARTOR_URL with Qwen L2 sidecar enabled.
+## Usage: make benchmark-claude-code
+##        ISARTOR_URL=http://localhost:8080 ISARTOR_API_KEY=changeme make benchmark-claude-code
+benchmark-claude-code:
+	./scripts/run_claude_code_benchmark.sh \
+		--isartor-url "$${ISARTOR_URL:-http://localhost:8080}" \
+		--api-key "$${ISARTOR_API_KEY:-changeme}"
+
+## Run the Claude Code three-way benchmark in dry-run mode (no server required).
+## Produces a realistic three-way comparison report using simulated responses.
+## Usage: make benchmark-claude-code-dry-run
+benchmark-claude-code-dry-run:
+	./scripts/run_claude_code_benchmark.sh --dry-run
 ## Generate the with/without-Isartor ROI report from existing benchmark results.
 ## Requires a live benchmark to have been run first (make benchmark).
 ## Writes benchmarks/results/roi_report.json and benchmarks/results/roi_report.md.

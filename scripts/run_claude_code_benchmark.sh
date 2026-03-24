@@ -2,6 +2,13 @@
 # =============================================================================
 # scripts/run_claude_code_benchmark.sh
 #
+# Full end-to-end benchmark for Claude Code + GitHub Copilot vs Isartor,
+# using Qwen 2.5 Coder 7B via llama.cpp as the Layer 2 sidecar.
+#
+# Runs three scenarios:
+#   1. Baseline  — prompts go directly to the cloud LLM (no Isartor)
+#   2. Cold cache — first pass through Isartor (cache empty)
+#   3. Warm cache — second pass through Isartor (cache populated from cold run)
 # Full end-to-end benchmark for Claude Code + GitHub Copilot with and without
 # Isartor, using Qwen 2.5 Coder 7B via llama.cpp as the Layer 2 sidecar.
 #
@@ -18,6 +25,31 @@
 #   # Dry-run (no servers, no model downloads — fully CI-safe):
 #   ./scripts/run_claude_code_benchmark.sh --dry-run
 #
+#   # Live benchmark with a pre-configured Isartor:
+#   ./scripts/run_claude_code_benchmark.sh \
+#       --isartor-url http://localhost:8080 \
+#       --api-key changeme
+#
+#   # Full setup with auto-start (requires Qwen GGUF and llama-server):
+#   GITHUB_TOKEN=ghp_... \
+#   ./scripts/run_claude_code_benchmark.sh \
+#       --start-llama-server \
+#       --start-isartor \
+#       --github-token ghp_...
+#
+#   # With direct Anthropic API for baseline:
+#   ANTHROPIC_API_KEY=sk-ant-... \
+#   ./scripts/run_claude_code_benchmark.sh \
+#       --direct-api-key sk-ant-...
+#
+# Environment variables:
+#   ISARTOR_URL         Isartor base URL (default: http://localhost:8080)
+#   ISARTOR_API_KEY     Gateway API key (default: changeme)
+#   ANTHROPIC_API_KEY   Direct Anthropic API key for baseline
+#   GITHUB_TOKEN        GitHub token for Copilot L3
+#   LLAMA_SERVER_BIN    Path to llama-server binary (default: llama-server)
+#   ISARTOR_BINARY      Path to isartor binary (default: ./target/release/isartor)
+#   MODELS_DIR          Model directory (default: ./models)
 #   # Live benchmark with a pre-configured Isartor (Case B only):
 #   ./scripts/run_claude_code_benchmark.sh --case B \
 #       --isartor-url http://localhost:8080 \
@@ -69,6 +101,8 @@ MODELS_DIR="${MODELS_DIR:-./models}"
 GGUF_FILE="${MODELS_DIR}/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
 
 OUTPUT_DIR="benchmarks/results"
+OUTPUT_JSON="${OUTPUT_DIR}/claude_code_benchmark.json"
+OUTPUT_REPORT="${OUTPUT_DIR}/claude_code_benchmark_report.md"
 OUTPUT_JSON="${OUTPUT_DIR}/claude_code_copilot.json"
 OUTPUT_REPORT="${OUTPUT_DIR}/claude_code_copilot_report.md"
 
@@ -105,6 +139,7 @@ trap cleanup EXIT
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 usage() {
+    sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
     sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
 }
 
@@ -142,6 +177,8 @@ require_prereqs() {
     fi
 
     if [[ "${START_ISARTOR}" == true ]]; then
+        [[ -f "${ISARTOR_BINARY}" ]] \
+            || fail "isartor binary not found at ${ISARTOR_BINARY} (run: cargo build --release)"
         [[ -f "${ISARTOR_BINARY}" ]] || fail "isartor binary not found at ${ISARTOR_BINARY} (run: cargo build --release)"
     fi
 
@@ -191,6 +228,7 @@ start_isartor() {
     local llm_api_key="${GITHUB_TOKEN}"
 
     if [[ -z "${GITHUB_TOKEN}" ]]; then
+        warn "GITHUB_TOKEN not set — Isartor will use offline_mode for L3"
         warn "GITHUB_TOKEN is not set — Isartor will use offline_mode for L3"
         llm_provider="offline"
         llm_api_key="dummy"
@@ -223,6 +261,7 @@ start_isartor() {
 
 # ── Run benchmark harness ─────────────────────────────────────────────────────
 run_benchmark() {
+    local args=(
     local args=()
 
     if [[ "${DRY_RUN}" == true ]]; then
@@ -243,6 +282,12 @@ run_benchmark() {
         --report "${OUTPUT_REPORT}"
     )
 
+    if [[ "${DRY_RUN}" == true ]]; then
+        args+=(--dry-run)
+    else
+        args+=(--three-way)
+    fi
+
     if [[ -n "${DIRECT_API_KEY}" ]]; then
         args+=(--direct-api-key "${DIRECT_API_KEY}")
     fi
@@ -254,6 +299,7 @@ run_benchmark() {
 print_banner() {
     echo ""
     bold "═══════════════════════════════════════════════════════════════════════"
+    bold "  Claude Code + GitHub Copilot — Isartor Three-Way Benchmark"
     bold "  Claude Code + GitHub Copilot — Isartor Benchmark"
     bold "═══════════════════════════════════════════════════════════════════════"
     echo ""

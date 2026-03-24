@@ -11,6 +11,9 @@
 #   MODELS_DIR=/data/models ./scripts/download_qwen_gguf.sh
 #
 # Environment variables:
+#   MODELS_DIR    Directory to store the model file (default: ./models)
+#   QUANTIZATION  GGUF quantization variant (default: q4_k_m)
+#                 Supported: q4_k_m, q5_k_m, q8_0
 #   MODELS_DIR   Directory to store the model file (default: ./models)
 #   QUANTIZATION GGUF quantization variant to download (default: q4_k_m)
 #                Supported: q4_k_m, q5_k_m, q8_0
@@ -19,6 +22,14 @@
 #
 #   ./llama-server \
 #     --model models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
+#     --host 127.0.0.1 --port 8090 \
+#     --ctx-size 4096 --n-predict 512
+#
+# Then configure Isartor:
+#   ISARTOR__ENABLE_SLM_ROUTER=true
+#   ISARTOR__LAYER2__SIDECAR_URL=http://127.0.0.1:8090/v1
+#
+# Security: downloaded files are verified against expected SHA-256 checksums.
 #     --host 127.0.0.1 \
 #     --port 8090 \
 #     --ctx-size 4096 \
@@ -84,6 +95,9 @@ verify_sha256() {
 case "$QUANTIZATION" in
     q4_k_m)
         FILENAME="qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+        # SHA-256 of the Q4_K_M GGUF from the Qwen GGUF repository.
+        # Update this value when the upstream model file changes.
+        # Set to empty string to skip verification (e.g. before the real hash is known).
         # SHA-256 of the Q4_K_M GGUF from the official Qwen GGUF repo.
         # To obtain the real checksum, run:
         #   curl -sL https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/resolve/main/qwen2.5-coder-7b-instruct-q4_k_m.gguf.sha256
@@ -159,6 +173,10 @@ echo "    --port 8090 \\"
 echo "    --ctx-size 4096 \\"
 echo "    --n-predict 512"
 echo ""
+log "Configure Isartor to use it as Layer 2:"
+echo ""
+echo "  export ISARTOR__ENABLE_SLM_ROUTER=true"
+echo "  export ISARTOR__LAYER2__SIDECAR_URL=http://127.0.0.1:8090/v1"
 log "Then configure Isartor to use it as Layer 2:"
 echo ""
 echo "  export ISARTOR__ENABLE_SLM_ROUTER=true"
