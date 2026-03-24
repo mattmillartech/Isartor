@@ -174,6 +174,44 @@ def get_isartor_stats(port: int) -> dict:
     return stats or {}
 
 
+def preflight_api_test(port: int) -> bool:
+    """Send a tiny /v1/messages request to verify Isartor→Copilot chain works."""
+    url = f"http://127.0.0.1:{port}/v1/messages"
+    payload = json.dumps({
+        "model": "gpt-5.4",
+        "max_tokens": 50,
+        "messages": [{"role": "user", "content": "Say hello"}],
+    }).encode()
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "X-API-Key": "benchmark-key",
+            "anthropic-version": "2023-06-01",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = json.loads(resp.read().decode())
+            text = ""
+            for block in body.get("content", []):
+                if block.get("type") == "text":
+                    text += block.get("text", "")
+            if text:
+                print(f"  ✅ Preflight OK: \"{text[:80]}\"", file=sys.stderr)
+                return True
+            print(f"  ⚠ Preflight: empty response body: {json.dumps(body)[:300]}", file=sys.stderr)
+            return False
+    except Exception as e:
+        print(f"  ❌ Preflight failed: {e}", file=sys.stderr)
+        # Dump Isartor log for debugging
+        isartor_log = Path.home() / ".isartor" / "isartor.log"
+        if isartor_log.exists():
+            print(f"  Isartor log tail:\n{isartor_log.read_text()[-1500:]}", file=sys.stderr)
+        return False
+
+
 # ── Claude CLI ─────────────────────────────────────────────────────────────
 
 
@@ -196,6 +234,8 @@ def run_claude_cli(
     env["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1"
     env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
     env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = "16000"
+    # Ensure Claude doesn't try to phone home or check for updates
+    env["CLAUDE_CODE_SKIP_UPDATE_CHECK"] = "1"
 
     cmd = [
         "claude",
@@ -203,6 +243,7 @@ def run_claude_cli(
         "--dangerously-skip-permissions",
         "--output-format", "json",
         "--max-turns", str(max_turns),
+        "--model", model,
         "--verbose",
     ]
 
@@ -409,6 +450,14 @@ def run_scenario(
         res.claude_exit_code = -2
         return res
     print(f"  ✅ Isartor ready on port {port}", file=sys.stderr)
+
+    # Pre-flight: verify Isartor→Copilot chain before running Claude CLI
+    print(f"  Running preflight API test...", file=sys.stderr)
+    if not preflight_api_test(port):
+        stop_isartor(proc)
+        print(f"  ❌ Preflight failed — Isartor→Copilot chain is broken", file=sys.stderr)
+        res.claude_exit_code = -3
+        return res
 
     # Run Claude CLI
     print(f"  Running `claude -p` (max {max_turns} turns, timeout {timeout}s)...", file=sys.stderr)
