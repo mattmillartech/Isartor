@@ -181,18 +181,25 @@ jobs:
             find /tmp/llama-cpp -maxdepth 3 -type f | sort | sed -n '1,200p'
             exit 1
           fi
-          LLAMA_BIN_DIR=$(dirname "$LLAMA_SERVER_PATH")
-          LLAMA_RUNTIME_ROOT=$(dirname "$LLAMA_BIN_DIR")
           sudo rm -rf /usr/local/llama-cpp
           sudo mkdir -p /usr/local/llama-cpp
-          sudo cp -a "$LLAMA_RUNTIME_ROOT"/. /usr/local/llama-cpp/
-          sudo ln -sf /usr/local/llama-cpp/bin/llama-server /usr/local/bin/llama-server
-          echo "LLAMA_RUNTIME_DIR=/usr/local/llama-cpp" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=/usr/local/llama-cpp/lib" >> "$GITHUB_ENV"
-          if [ -d /usr/local/llama-cpp/lib ]; then
-            find /usr/local/llama-cpp/lib -maxdepth 1 \( -type f -o -type l \) | sort | sed -n '1,200p'
+          sudo cp -a /tmp/llama-cpp/. /usr/local/llama-cpp/
+          LLAMA_SERVER_RELATIVE_PATH="${LLAMA_SERVER_PATH#/tmp/llama-cpp/}"
+          LLAMA_SERVER_CMD="/usr/local/llama-cpp/${LLAMA_SERVER_RELATIVE_PATH}"
+          if [ ! -x "$LLAMA_SERVER_CMD" ]; then
+            echo "::error::Expected llama-server executable was not found after install: ${LLAMA_SERVER_CMD}"
+            find /usr/local/llama-cpp -maxdepth 4 -type f | sort | sed -n '1,200p'
+            exit 1
           fi
-          LD_LIBRARY_PATH=/usr/local/llama-cpp/lib llama-server --version
+          sudo ln -sf "$LLAMA_SERVER_CMD" /usr/local/bin/llama-server
+          LLAMA_LIBRARY_PATHS=$(find /usr/local/llama-cpp -type f \( -name '*.so' -o -name '*.so.*' \) -exec dirname {} \; | sort -u | paste -sd: -)
+          echo "LLAMA_RUNTIME_DIR=/usr/local/llama-cpp" >> "$GITHUB_ENV"
+          echo "LLAMA_SERVER_CMD=${LLAMA_SERVER_CMD}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=${LLAMA_LIBRARY_PATHS}" >> "$GITHUB_ENV"
+          if [ -n "${LLAMA_LIBRARY_PATHS}" ]; then
+            echo "llama.cpp library search path: ${LLAMA_LIBRARY_PATHS}"
+          fi
+          LD_LIBRARY_PATH="${LLAMA_LIBRARY_PATHS}" "$LLAMA_SERVER_CMD" --version
 
       # ── Post env setup comment ─────────────────────────────────────────────
       - name: Post environment setup comment
@@ -224,7 +231,7 @@ jobs:
       - name: Start llama-server (Qwen L2)
         if: env.DRY_RUN == 'false'
         run: |
-          LD_LIBRARY_PATH="${LLAMA_RUNTIME_DIR}/lib:${LD_LIBRARY_PATH:-}" llama-server \
+          LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" "${LLAMA_SERVER_CMD}" \
             --model ./models/qwen2.5-coder-7b-instruct-q4_k_m.gguf \
             --host 127.0.0.1 \
             --port 8090 \
