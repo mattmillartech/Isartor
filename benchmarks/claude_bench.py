@@ -220,23 +220,48 @@ def run_claude_cli(
 
 
 def parse_claude_json(stdout: str) -> dict:
-    """Parse the JSON output from `claude --output-format json`."""
+    """Parse the JSON output from `claude --output-format json`.
+
+    Claude CLI may return a single JSON object or a JSON array of
+    message objects.  When it returns an array, the last element with
+    type "result" carries the summary we need.
+    """
     stdout = stdout.strip()
     if not stdout:
         return {}
-    # Try full output as JSON first
+
+    parsed: Any = None
     try:
-        return json.loads(stdout)
+        parsed = json.loads(stdout)
     except json.JSONDecodeError:
-        pass
-    # Try last line (claude may print non-JSON before the result)
-    for line in reversed(stdout.split("\n")):
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        # Try last line (claude may print non-JSON before the result)
+        for line in reversed(stdout.split("\n")):
+            line = line.strip()
+            if line.startswith(("{", "[")):
+                try:
+                    parsed = json.loads(line)
+                    break
+                except json.JSONDecodeError:
+                    continue
+
+    if parsed is None:
+        return {}
+
+    # If it's already a dict, return as-is
+    if isinstance(parsed, dict):
+        return parsed
+
+    # If it's a list, find the last "result" entry (or last dict)
+    if isinstance(parsed, list):
+        result_entry: dict = {}
+        for item in reversed(parsed):
+            if isinstance(item, dict):
+                if item.get("type") == "result":
+                    return item
+                if not result_entry:
+                    result_entry = item
+        return result_entry
+
     return {}
 
 
