@@ -98,8 +98,8 @@ def send_anthropic_request(
     import urllib.error
 
     body = json.dumps({
-        "model": "claude-sonnet-4-20250514",
-        "max_tokens": 4096,
+        "model": "gpt-5.4",
+        "max_tokens": 16000,
         "messages": [{"role": "user", "content": prompt}],
     }).encode()
 
@@ -139,39 +139,47 @@ def send_copilot_request(
     prompt: str,
     github_token: str,
     timeout: float,
+    model: str = "gpt-5.4",
+    _session_cache: dict[str, str] = {},
 ) -> tuple[int, dict[str, str], str]:
     """Direct Copilot request (baseline, no Isartor)."""
     import urllib.request
     import urllib.error
 
-    # Exchange token
-    tok_body = json.dumps({}).encode()
-    tok_req = urllib.request.Request(
-        "https://api.github.com/copilot_internal/v2/token",
-        data=tok_body,
-        headers={
-            "Authorization": f"token {github_token}",
-            "Accept": "application/json",
-        },
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(tok_req, timeout=30) as resp:
-            session = json.loads(resp.read().decode())
-            session_token = session.get("token", "")
-    except Exception as e:
-        return 0, {}, f"copilot token exchange failed: {e}"
+    # Cache the session token to avoid exchanging on every request
+    if "token" not in _session_cache or "expires_at" not in _session_cache \
+       or time.time() > _session_cache.get("expires_at", 0) - 60:
+        tok_req = urllib.request.Request(
+            "https://api.github.com/copilot_internal/v2/token",
+            headers={
+                "Authorization": f"token {github_token}",
+                "Accept": "application/json",
+                "User-Agent": "GitHubCopilotChat/0.29.1",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(tok_req, timeout=30) as resp:
+                session = json.loads(resp.read().decode())
+                _session_cache["token"] = session.get("token", "")
+                _session_cache["expires_at"] = session.get("expires_at", time.time() + 600)
+        except Exception as e:
+            return 0, {}, f"copilot token exchange failed: {e}"
+
+    session_token = _session_cache["token"]
 
     body = json.dumps({
-        "model": "gpt-4o-mini",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 4096,
+        "max_tokens": 16000,
     }).encode()
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {session_token}",
-        "Editor-Version": "isartor-benchmark/1.0",
+        "Editor-Version": "vscode/1.99.0",
+        "Copilot-Integration-Id": "vscode-chat",
+        "User-Agent": "GitHubCopilotChat/0.29.1",
     }
 
     for attempt in range(1, MAX_HTTP_ATTEMPTS + 1):
@@ -341,6 +349,32 @@ def commit_workspace(ws: Path, message: str) -> None:
         )
 
 
+def push_workspace(ws: Path, repo_url: str, branch: str) -> None:
+    """Push workspace contents to a remote git repo."""
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "isartor-benchmark",
+        "GIT_AUTHOR_EMAIL": "bench@isartor.ai",
+        "GIT_COMMITTER_NAME": "isartor-benchmark",
+        "GIT_COMMITTER_EMAIL": "bench@isartor.ai",
+    }
+    # Add remote if not already set
+    result = subprocess.run(
+        ["git", "remote", "get-url", "origin"], cwd=ws, capture_output=True,
+    )
+    if result.returncode != 0:
+        subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=ws, check=True)
+    else:
+        subprocess.run(["git", "remote", "set-url", "origin", repo_url], cwd=ws, check=True)
+
+    # Force push to branch (overwrites previous benchmark results)
+    subprocess.run(
+        ["git", "push", "--force", "origin", f"HEAD:{branch}"],
+        cwd=ws, check=True, env=env,
+    )
+    print(f"  Pushed {ws.name} → {repo_url} branch={branch}", file=sys.stderr)
+
+
 # ---------------------------------------------------------------------------
 # Dry-run simulation
 # ---------------------------------------------------------------------------
@@ -396,6 +430,7 @@ def run_scenario(
             if args.copilot_token:
                 status, headers, body = send_copilot_request(
                     prompt, args.copilot_token, args.timeout,
+                    model=args.model,
                 )
             else:
                 status, headers, body = send_anthropic_request(
@@ -671,6 +706,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--timeout", type=float,
                    default=float(os.environ.get("ISARTOR_TIMEOUT", "120")),
                    help="Request timeout in seconds.")
+    p.add_argument("--model", default=os.environ.get("COPILOT_MODEL", "gpt-5.4"),
+                   help="Model name for Copilot requests (default: gpt-5.4).")
+    p.add_argument("--push-repo",
+                   default=os.environ.get("PUSH_REPO", ""),
+                   help="Git repo URL to push workspaces (e.g. https://github.com/org/repo).")
 
     return p
 
@@ -754,6 +794,23 @@ def main() -> int:
             d = asdict(res)
             full_results[label] = d
     (output_dir / "full_results.json").write_text(json.dumps(full_results, indent=2) + "\n")
+
+    # Push workspaces to remote repo
+    if args.push_repo:
+        print("\n═══ Pushing workspaces ═══", file=sys.stderr)
+        timestamp = time.strftime("%Y%m%d-%H%M", time.gmtime())
+        if baseline_result:
+            push_workspace(
+                Path(baseline_result.workspace),
+                args.push_repo,
+                f"benchmark/baseline-{timestamp}",
+            )
+        if isartor_result:
+            push_workspace(
+                Path(isartor_result.workspace),
+                args.push_repo,
+                f"benchmark/isartor-{timestamp}",
+            )
 
     print(f"\n✅ All outputs in {output_dir}/", file=sys.stderr)
     return 0
