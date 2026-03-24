@@ -1,0 +1,474 @@
+name: Scenario Runner — Code Generation Benchmark
+
+# Replays claude_code_todo_app.jsonl through two scenarios:
+#   A) Baseline  — Claude Code + Copilot (no Isartor)
+#   B) Isartor   — Claude Code + Isartor + Copilot
+#
+# Produces tokens.json, code.diff, summary.md, and full_results.json
+# as downloadable workflow artifacts.
+#
+# Usage (dry-run):
+#   gh workflow run scenario-run.yml -f mode=dry_run
+#
+# Usage (live, Isartor-only):
+#   gh workflow run scenario-run.yml -f mode=isartor_only
+#
+# Usage (full comparison):
+#   gh workflow run scenario-run.yml -f mode=both
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'dry_run'
+        type: choice
+        options:
+          - 'dry_run'
+          - 'isartor_only'
+          - 'baseline_only'
+          - 'both'
+      request_count:
+        description: 'Number of prompts (0 = all 78)'
+        required: false
+        default: '0'
+        type: number
+      issue_number:
+        description: 'GitHub issue number to post results to (optional)'
+        required: false
+        type: number
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  scenario-run:
+    name: Code Generation Scenario Run
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      MODE: ${{ inputs.mode }}
+      REQUEST_COUNT: ${{ inputs.request_count || '0' }}
+      ISARTOR_API_KEY: benchmark-key
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── Post "started" comment ──────────────────────────────────────────
+      - name: Post started comment
+        if: inputs.issue_number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const mode = process.env.MODE;
+            const modeLabel = {
+              dry_run: '🔵 Dry-run (simulated responses)',
+              isartor_only: '🟡 Isartor-only',
+              baseline_only: '🟠 Baseline-only',
+              both: '🟢 Full comparison',
+            }[mode] || mode;
+            const body = [
+              `## 🚀 Scenario Runner Started`,
+              ``,
+              `**Run:** [#${context.runId}](${runUrl})`,
+              `**Mode:** ${modeLabel}`,
+              `**Commit:** \`${context.sha.slice(0, 8)}\``,
+              `**Prompts:** ${process.env.REQUEST_COUNT === '0' ? 'all 78' : process.env.REQUEST_COUNT}`,
+              ``,
+              `Scenarios:`,
+              mode !== 'isartor_only' ? `- ⬜ **Baseline** — Claude Code + Copilot (no Isartor)` : '',
+              mode !== 'baseline_only' ? `- ⬜ **Isartor** — Claude Code + Isartor + Copilot` : '',
+            ].filter(Boolean).join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER),
+              body,
+            });
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+
+      # ── Copilot auth (live baseline only) ───────────────────────────────
+      - name: Prepare Copilot authentication
+        if: env.MODE == 'baseline_only' || env.MODE == 'both'
+        id: copilot_auth_prepare
+        env:
+          COPILOT_KEY_SECRET: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          def secret_has_copilot_access(token: str) -> tuple:
+              req = urllib.request.Request(
+                  "https://api.github.com/copilot_internal/v2/token",
+                  headers={
+                      "Authorization": f"token {token}",
+                      "Accept": "application/json",
+                      "User-Agent": "GitHubCopilotChat/0.29.1",
+                  },
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      payload = json.loads(resp.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  return False, f"http_{exc.code}"
+              return bool(payload.get("token")), "missing_token"
+
+          def request_device_code() -> dict:
+              payload = json.dumps({
+                  "client_id": "Iv1.b507a08c87ecfe98",
+                  "scope": "read:user",
+              }).encode("utf-8")
+              req = urllib.request.Request(
+                  "https://github.com/login/device/code",
+                  data=payload,
+                  headers={
+                      "Accept": "application/json",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          secret = os.environ.get("COPILOT_KEY_SECRET", "")
+          outputs = {}
+          if secret:
+              ok, reason = secret_has_copilot_access(secret)
+              if ok:
+                  outputs["auth_mode"] = "secret"
+              else:
+                  device = request_device_code()
+                  with open("/tmp/copilot_device_code.json", "w") as fh:
+                      json.dump(device, fh)
+                  outputs["auth_mode"] = "device"
+                  outputs["fallback_reason"] = reason
+                  outputs["user_code"] = device["user_code"]
+                  outputs["verification_uri"] = device["verification_uri"]
+                  outputs["expires_in"] = str(device["expires_in"])
+          else:
+              device = request_device_code()
+              with open("/tmp/copilot_device_code.json", "w") as fh:
+                  json.dump(device, fh)
+              outputs["auth_mode"] = "device"
+              outputs["fallback_reason"] = "missing_secret"
+              outputs["user_code"] = device["user_code"]
+              outputs["verification_uri"] = device["verification_uri"]
+              outputs["expires_in"] = str(device["expires_in"])
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              for key, value in outputs.items():
+                  out.write(f"{key}={value}\n")
+          PY
+
+      - name: Post device-flow login instructions
+        if: |
+          (env.MODE == 'baseline_only' || env.MODE == 'both') &&
+          steps.copilot_auth_prepare.outputs.auth_mode == 'device' &&
+          inputs.issue_number
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          FALLBACK_REASON: ${{ steps.copilot_auth_prepare.outputs.fallback_reason }}
+          USER_CODE: ${{ steps.copilot_auth_prepare.outputs.user_code }}
+          VERIFICATION_URI: ${{ steps.copilot_auth_prepare.outputs.verification_uri }}
+        with:
+          script: |
+            const body = [
+              `## 🔐 GitHub Device Login Required`,
+              ``,
+              process.env.FALLBACK_REASON === 'missing_secret'
+                ? `No Copilot key configured — manual device-flow login needed.`
+                : `Copilot key invalid (${process.env.FALLBACK_REASON}) — falling back to device-flow.`,
+              ``,
+              `1. Open: ${process.env.VERIFICATION_URI}`,
+              `2. Enter code: \`${process.env.USER_CODE}\``,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER),
+              body,
+            });
+
+      - name: Resolve Copilot authentication
+        if: env.MODE == 'baseline_only' || env.MODE == 'both'
+        id: copilot_auth
+        env:
+          COPILOT_KEY_SECRET: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.copilot_auth_prepare.outputs.auth_mode }}" = "secret" ]; then
+            COPILOT_WORKFLOW_KEY="${COPILOT_KEY_SECRET}"
+          else
+            python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          with open("/tmp/copilot_device_code.json", "r") as fh:
+              device = json.load(fh)
+
+          deadline = time.time() + max(int(device.get("expires_in", 900)), 300)
+          interval = max(int(device.get("interval", 5)), 5)
+
+          while time.time() < deadline:
+              payload = json.dumps({
+                  "client_id": "Iv1.b507a08c87ecfe98",
+                  "device_code": device["device_code"],
+                  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+              }).encode("utf-8")
+              req = urllib.request.Request(
+                  "https://github.com/login/oauth/access_token",
+                  data=payload,
+                  headers={
+                      "Accept": "application/json",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  body = json.loads(resp.read().decode("utf-8"))
+
+              if body.get("access_token"):
+                  with open("/tmp/copilot_workflow_key.txt", "w") as fh:
+                      fh.write(body["access_token"])
+                  raise SystemExit(0)
+
+              err = body.get("error")
+              if err in {"authorization_pending", "slow_down"}:
+                  time.sleep(interval)
+                  continue
+
+              raise SystemExit(f"GitHub device login failed: {err or body}")
+
+          raise SystemExit("Device login timed out.")
+          PY
+            COPILOT_WORKFLOW_KEY="$(cat /tmp/copilot_workflow_key.txt)"
+          fi
+
+          # Validate Copilot access
+          python3 - <<'VALIDATE'
+          import json, os, urllib.request, urllib.error
+          token = os.environ.get("COPILOT_WORKFLOW_KEY", "")
+          if not token:
+              raise SystemExit("No Copilot token resolved")
+          req = urllib.request.Request(
+              "https://api.github.com/copilot_internal/v2/token",
+              headers={
+                  "Authorization": f"token {token}",
+                  "Accept": "application/json",
+                  "User-Agent": "GitHubCopilotChat/0.29.1",
+              },
+              method="GET",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  payload = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(f"Copilot access check failed: HTTP {exc.code}")
+          if not payload.get("token"):
+              raise SystemExit("Copilot token did not produce a session token")
+          print("✅ Copilot access validated")
+          VALIDATE
+
+          echo "COPILOT_WORKFLOW_KEY=${COPILOT_WORKFLOW_KEY}" >> "$GITHUB_ENV"
+        env:
+          COPILOT_WORKFLOW_KEY: ""
+
+      # ── Build Isartor (live isartor scenarios) ──────────────────────────
+      - name: Install system dependencies
+        if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq protobuf-compiler cmake
+
+      - name: Install Rust toolchain
+        if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Isartor (release)
+        if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        run: cargo build --release
+
+      - name: Start Isartor gateway
+        if: env.MODE == 'isartor_only' || env.MODE == 'both'
+        run: |
+          set -euo pipefail
+          export ISARTOR__API_KEY="${ISARTOR_API_KEY}"
+          export ISARTOR__LLM_PROVIDER=copilot
+          export ISARTOR__COPILOT_TOKEN="${COPILOT_WORKFLOW_KEY:-}"
+          export ISARTOR__LAYER2__ENABLE_SLM_ROUTER=false
+          ./target/release/isartor up --detach 2>&1 || true
+
+          # Wait for health
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "✅ Isartor healthy after ${i}s"
+              break
+            fi
+            [ "$i" -eq 30 ] && { echo "❌ Isartor failed to start"; exit 1; }
+            sleep 1
+          done
+
+      # ── Run scenario_runner ─────────────────────────────────────────────
+      - name: Run scenario runner
+        id: run
+        run: |
+          set -euo pipefail
+          ARGS=""
+
+          case "${MODE}" in
+            dry_run)        ARGS="--dry-run" ;;
+            isartor_only)   ARGS="--isartor-only --api-key ${ISARTOR_API_KEY}" ;;
+            baseline_only)  ARGS="--baseline-only --copilot-token ${COPILOT_WORKFLOW_KEY:-none}" ;;
+            both)           ARGS="--api-key ${ISARTOR_API_KEY} --copilot-token ${COPILOT_WORKFLOW_KEY:-none}" ;;
+          esac
+
+          REQ_ARGS=""
+          if [ "${REQUEST_COUNT}" != "0" ]; then
+            REQ_ARGS="--requests ${REQUEST_COUNT}"
+          fi
+
+          python3 benchmarks/scenario_runner.py \
+            --output-dir results \
+            ${ARGS} \
+            ${REQ_ARGS}
+
+          echo "output_dir=results" >> "$GITHUB_OUTPUT"
+
+      # ── Upload artifacts ────────────────────────────────────────────────
+      - name: Upload scenario results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-run-results
+          path: |
+            results/tokens.json
+            results/code.diff
+            results/summary.md
+            results/full_results.json
+          retention-days: 30
+
+      - name: Upload generated workspaces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scenario-workspaces
+          path: |
+            results/workspace_baseline/
+            results/workspace_isartor/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # ── Post results to issue ───────────────────────────────────────────
+      - name: Post results to issue
+        if: always() && inputs.issue_number
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          OUTPUT_DIR: ${{ steps.run.outputs.output_dir || 'results' }}
+          JOB_STATUS: ${{ job.status }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            let summaryContent = '';
+            const summaryPath = path.join(process.env.OUTPUT_DIR, 'summary.md');
+            if (fs.existsSync(summaryPath)) {
+              summaryContent = fs.readFileSync(summaryPath, 'utf8');
+            }
+
+            let tokensInfo = '';
+            const tokensPath = path.join(process.env.OUTPUT_DIR, 'tokens.json');
+            if (fs.existsSync(tokensPath)) {
+              try {
+                const data = JSON.parse(fs.readFileSync(tokensPath, 'utf8'));
+                if (data.comparison) {
+                  const c = data.comparison;
+                  tokensInfo = [
+                    ``,
+                    `### 💰 Token Savings`,
+                    `| Metric | Value |`,
+                    `|--------|-------|`,
+                    `| Baseline cloud tokens | ${c.baseline_cloud_tokens.toLocaleString()} |`,
+                    `| Isartor cloud tokens | ${c.isartor_cloud_tokens.toLocaleString()} |`,
+                    `| **Tokens saved** | **${c.tokens_saved.toLocaleString()} (${c.savings_pct}%)** |`,
+                  ].join('\n');
+                }
+              } catch {}
+            }
+
+            const statusIcon = process.env.JOB_STATUS === 'success' ? '✅' : '❌';
+            const body = [
+              `## ${statusIcon} Scenario Runner Complete`,
+              ``,
+              `**Run:** [#${context.runId}](${runUrl})`,
+              `**Status:** ${process.env.JOB_STATUS}`,
+              ``,
+              summaryContent || '_No summary generated._',
+              tokensInfo,
+              ``,
+              `📎 Full results available as [workflow artifacts](${runUrl}).`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER),
+              body,
+            });
+
+      # ── Validate outputs (always, even on failure) ──────────────────────
+      - name: Validate output artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "=== Checking output files ==="
+          for f in results/tokens.json results/summary.md results/full_results.json; do
+            if [ -f "$f" ]; then
+              echo "✅ $f exists ($(wc -c < "$f") bytes)"
+            else
+              echo "⚠️  $f not found"
+            fi
+          done
+
+          if [ -f results/tokens.json ]; then
+            python3 -c "
+          import json, sys
+          data = json.load(open('results/tokens.json'))
+          assert 'generated_at' in data, 'missing generated_at'
+          print('✅ tokens.json is valid JSON with expected schema')
+          for scenario in ('baseline', 'isartor'):
+              if scenario in data:
+                  s = data[scenario]
+                  print(f'  {scenario}: {s[\"total_input_tokens\"]+s[\"total_output_tokens\"]:,} total tokens, '
+                        f'deflection {s[\"deflection_rate_pct\"]}%')
+          if 'comparison' in data:
+              c = data['comparison']
+              print(f'  savings: {c[\"tokens_saved\"]:,} tokens ({c[\"savings_pct\"]}%)')
+          "
+          fi
