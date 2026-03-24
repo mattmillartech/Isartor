@@ -77,6 +77,173 @@ jobs:
               body,
             });
 
+      - name: Prepare Copilot authentication
+        if: env.DRY_RUN == 'false'
+        id: copilot_auth_prepare
+        env:
+          COPILOT_KEY_SECRET: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${COPILOT_KEY_SECRET:-}" ]; then
+            echo "auth_mode=secret" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          payload = json.dumps({
+              "client_id": "Iv1.b507a08c87ecfe98",
+              "scope": "read:user",
+          }).encode("utf-8")
+
+          req = urllib.request.Request(
+              "https://github.com/login/device/code",
+              data=payload,
+              headers={
+                  "Accept": "application/json",
+                  "Content-Type": "application/json",
+              },
+              method="POST",
+          )
+
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              device = json.loads(resp.read().decode("utf-8"))
+
+          with open("/tmp/copilot_device_code.json", "w", encoding="utf-8") as fh:
+              json.dump(device, fh)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("auth_mode=device\n")
+              out.write(f"user_code={device['user_code']}\n")
+              out.write(f"verification_uri={device['verification_uri']}\n")
+              out.write(f"expires_in={device['expires_in']}\n")
+          PY
+
+      - name: Post device-flow login instructions
+        if: env.DRY_RUN == 'false' && steps.copilot_auth_prepare.outputs.auth_mode == 'device'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `## 🔐 GitHub Device Login Required`,
+              ``,
+              `**Workflow run:** [#${context.runId}](${runUrl})`,
+              ``,
+              `No repository Copilot key was configured, so this benchmark is waiting for a manual GitHub device-flow login.`,
+              ``,
+              `1. Open: ${process.env.VERIFICATION_URI}`,
+              `2. Enter code: \`${process.env.USER_CODE}\``,
+              ``,
+              `After authorization completes, the workflow will validate Copilot access and continue automatically.`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER),
+              body,
+            });
+        env:
+          USER_CODE: ${{ steps.copilot_auth_prepare.outputs.user_code }}
+          VERIFICATION_URI: ${{ steps.copilot_auth_prepare.outputs.verification_uri }}
+
+      - name: Resolve and validate Copilot authentication
+        if: env.DRY_RUN == 'false'
+        id: copilot_auth
+        env:
+          COPILOT_KEY_SECRET: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${COPILOT_KEY_SECRET:-}" ]; then
+            COPILOT_WORKFLOW_KEY="${COPILOT_KEY_SECRET}"
+            AUTH_SOURCE="secret"
+          else
+            python3 - <<'PY'
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+
+          with open("/tmp/copilot_device_code.json", "r", encoding="utf-8") as fh:
+              device = json.load(fh)
+
+          deadline = time.time() + max(int(device.get("expires_in", 900)), 300)
+          interval = max(int(device.get("interval", 5)), 5)
+
+          while time.time() < deadline:
+              payload = json.dumps({
+                  "client_id": "Iv1.b507a08c87ecfe98",
+                  "device_code": device["device_code"],
+                  "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+              }).encode("utf-8")
+              req = urllib.request.Request(
+                  "https://github.com/login/oauth/access_token",
+                  data=payload,
+                  headers={
+                      "Accept": "application/json",
+                      "Content-Type": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  body = json.loads(resp.read().decode("utf-8"))
+
+              if body.get("access_token"):
+                  with open("/tmp/copilot_workflow_key.txt", "w", encoding="utf-8") as fh:
+                      fh.write(body["access_token"])
+                  raise SystemExit(0)
+
+              err = body.get("error")
+              if err in {"authorization_pending", "slow_down"}:
+                  time.sleep(interval)
+                  continue
+
+              raise SystemExit(f"GitHub device login failed: {err or body}")
+
+          raise SystemExit("GitHub device login timed out before authorization completed.")
+          PY
+            COPILOT_WORKFLOW_KEY="$(cat /tmp/copilot_workflow_key.txt)"
+            AUTH_SOURCE="device_flow"
+          fi
+          export COPILOT_WORKFLOW_KEY
+          export AUTH_SOURCE
+
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          token = os.environ["COPILOT_WORKFLOW_KEY"]
+          req = urllib.request.Request(
+              "https://api.github.com/copilot_internal/v2/token",
+              headers={
+                  "Authorization": f"token {token}",
+                  "Accept": "application/json",
+                  "User-Agent": "GitHubCopilotChat/0.29.1",
+              },
+              method="GET",
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  payload = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              raise SystemExit(
+                  f"Validated GitHub token still failed Copilot access check with HTTP {exc.code}"
+              ) from exc
+
+          if not payload.get("token"):
+              raise SystemExit("Validated GitHub token did not produce a Copilot session token.")
+          PY
+
+          echo "COPILOT_WORKFLOW_KEY=${COPILOT_WORKFLOW_KEY}" >> "$GITHUB_ENV"
+          echo "COPILOT_AUTH_SOURCE=${AUTH_SOURCE}" >> "$GITHUB_ENV"
+
       # ── Build Isartor ──────────────────────────────────────────────────────
       - name: Install system dependencies
         if: env.DRY_RUN == 'false'
@@ -256,17 +423,14 @@ jobs:
         env:
           ISARTOR__GATEWAY_API_KEY: ${{ env.ISARTOR_API_KEY }}
           ISARTOR__LLM_PROVIDER: copilot
-          # Prefer COPILOT_KEY for live benchmark auth; fall back to ISARTOR_COPILOT_TOKEN.
-          # This workflow is intended to execute a real Copilot-backed L3 path.
-          ISARTOR__EXTERNAL_LLM_API_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
           ISARTOR__ENABLE_SLM_ROUTER: "true"
           ISARTOR__LAYER2__SIDECAR_URL: "http://127.0.0.1:8090/v1"
         run: |
-          if [ -z "${ISARTOR__EXTERNAL_LLM_API_KEY:-}" ]; then
-            echo "::error::Repository secret COPILOT_KEY or ISARTOR_COPILOT_TOKEN is required for the live Claude benchmark workflow."
+          if [ -z "${COPILOT_WORKFLOW_KEY:-}" ]; then
+            echo "::error::No validated Copilot workflow key is available for the live Claude benchmark workflow."
             exit 1
           fi
-          ./target/release/isartor up >/tmp/isartor.log 2>&1 &
+          ISARTOR__EXTERNAL_LLM_API_KEY="${COPILOT_WORKFLOW_KEY}" ./target/release/isartor up >/tmp/isartor.log 2>&1 &
           echo "ISARTOR_PID=$!" >> "$GITHUB_ENV"
 
           echo "Waiting for Isartor to be ready..."
@@ -285,12 +449,10 @@ jobs:
         timeout-minutes: 60
         env:
           DIRECT_LLM_URL: https://api.githubcopilot.com/chat/completions
-          COPILOT_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
-          DIRECT_LLM_API_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${COPILOT_KEY:-${DIRECT_LLM_API_KEY:-}}" ]; then
-            echo "::error::Repository secret COPILOT_KEY or ISARTOR_COPILOT_TOKEN is required for the direct Copilot baseline benchmark."
+          if [ -z "${COPILOT_WORKFLOW_KEY:-}" ]; then
+            echo "::error::No validated Copilot workflow key is available for the direct Copilot baseline benchmark."
             exit 1
           fi
           EXTRA_ARGS=""
@@ -305,7 +467,7 @@ jobs:
             --scenario baseline \
             $EXTRA_ARGS \
             --direct-url "${DIRECT_LLM_URL}" \
-            --direct-api-key "${COPILOT_KEY:-${DIRECT_LLM_API_KEY}}" \
+            --direct-api-key "${COPILOT_WORKFLOW_KEY}" \
             --output benchmarks/results/claude_code_benchmark.json \
             --report benchmarks/results/claude_code_benchmark_report.md \
             2>&1 | tee /tmp/baseline_output.txt
@@ -354,12 +516,10 @@ jobs:
 
       - name: Validate Copilot key before Isartor cache runs
         if: env.DRY_RUN == 'false' && steps.baseline.outcome == 'success'
-        env:
-          COPILOT_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${COPILOT_KEY:-}" ]; then
-            echo "::error::Repository secret COPILOT_KEY or ISARTOR_COPILOT_TOKEN is required before cold/warm benchmark runs."
+          if [ -z "${COPILOT_WORKFLOW_KEY:-}" ]; then
+            echo "::error::No validated Copilot workflow key is available before cold/warm benchmark runs."
             exit 1
           fi
 
@@ -373,7 +533,7 @@ jobs:
           req = urllib.request.Request(
               "https://api.github.com/copilot_internal/v2/token",
               headers={
-                  "Authorization": f"token {os.environ['COPILOT_KEY']}",
+                  "Authorization": f"token {os.environ['COPILOT_WORKFLOW_KEY']}",
                   "Accept": "application/json",
                   "User-Agent": "GitHubCopilotChat/0.29.1",
               },
@@ -544,12 +704,10 @@ jobs:
         timeout-minutes: 10
         env:
           DIRECT_LLM_URL: https://api.githubcopilot.com/chat/completions
-          COPILOT_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
-          DIRECT_LLM_API_KEY: ${{ secrets.COPILOT_KEY || secrets.ISARTOR_COPILOT_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${COPILOT_KEY:-${DIRECT_LLM_API_KEY:-}}" ]; then
-            echo "::error::Repository secret COPILOT_KEY or ISARTOR_COPILOT_TOKEN is required for the direct Copilot baseline benchmark."
+          if [ -z "${COPILOT_WORKFLOW_KEY:-}" ]; then
+            echo "::error::No validated Copilot workflow key is available for the direct Copilot baseline benchmark."
             exit 1
           fi
           EXTRA_ARGS=""
@@ -566,7 +724,7 @@ jobs:
             --isartor-url http://localhost:8080 \
             --api-key "${ISARTOR_API_KEY}" \
             --direct-url "${DIRECT_LLM_URL}" \
-            --direct-api-key "${COPILOT_KEY:-${DIRECT_LLM_API_KEY}}" \
+            --direct-api-key "${COPILOT_WORKFLOW_KEY}" \
             --output benchmarks/results/claude_code_benchmark.json \
             --report benchmarks/results/claude_code_benchmark_report.md \
             2>&1 | tee /tmp/three_way_output.txt
