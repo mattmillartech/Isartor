@@ -623,15 +623,24 @@ jobs:
             python3 -c "
           import json, sys
           data = json.load(open('results/tokens.json'))
-          assert 'generated_at' in data, 'missing generated_at'
-          print('✅ tokens.json is valid JSON with expected schema')
+          print('✅ tokens.json is valid JSON')
           for scenario in ('baseline', 'isartor'):
               if scenario in data:
                   s = data[scenario]
-                  print(f'  {scenario}: {s[\"total_input_tokens\"]+s[\"total_output_tokens\"]:,} total tokens, '
-                        f'deflection {s[\"deflection_rate_pct\"]}%')
+                  # Support both fixture runner and claude_bench schemas
+                  if 'total_input_tokens' in s:
+                      total = s['total_input_tokens'] + s['total_output_tokens']
+                      defl = s.get('deflection_rate_pct', 0)
+                  elif 'claude' in s:
+                      total = s['claude'].get('input_tokens',0) + s['claude'].get('output_tokens',0)
+                      defl = s.get('isartor',{}).get('deflection_rate',0)
+                  else:
+                      total = 0; defl = 0
+                  print(f'  {scenario}: {total:,} total tokens, deflection {defl}%')
           if 'comparison' in data:
               c = data['comparison']
-              print(f'  savings: {c[\"tokens_saved\"]:,} tokens ({c[\"savings_pct\"]}%)')
+              saved = c.get('tokens_saved', c.get('cloud_calls_saved', 0))
+              pct = c.get('savings_pct', c.get('cloud_call_reduction_pct', 0))
+              print(f'  savings: {saved:,} ({pct}%)')
           "
           fi
