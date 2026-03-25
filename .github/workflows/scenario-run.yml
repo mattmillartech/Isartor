@@ -471,7 +471,8 @@ jobs:
 
           PUSH_ARGS=""
           if [ "${MODE}" != "dry_run" ]; then
-            PUSH_ARGS="--push-repo https://x-access-token:${GITHUB_TOKEN}@github.com/isartor-ai/isartor-dist.git"
+            PUSH_TOKEN="${DIST_PUSH_TOKEN:-${GITHUB_TOKEN}}"
+            PUSH_ARGS="--push-repo https://x-access-token:${PUSH_TOKEN}@github.com/isartor-ai/isartor-dist.git"
           fi
 
           if [ "${RUNNER}" = "claude_cli" ]; then
@@ -521,6 +522,7 @@ jobs:
           echo "output_dir=results" >> "$GITHUB_OUTPUT"
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          DIST_PUSH_TOKEN: ${{ secrets.DIST_PUSH_TOKEN }}
 
       # ── Upload artifacts ────────────────────────────────────────────────
       - name: Upload scenario results
