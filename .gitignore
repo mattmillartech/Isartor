@@ -20,6 +20,11 @@ benchmarks/results/roi_dryrun.json
 benchmarks/results/claude_code_*.json
 benchmarks/results/claude_code_roi_report.md
 benchmarks/results/scenario_run/
+benchmarks/results/*.json
+benchmarks/results/*.md
+
+# Generated docs assets (CI copies from docs/logo.png)
+docs-site/src/logo.png
 
 # Local config with secrets
 isartor.toml

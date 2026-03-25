@@ -28,11 +28,11 @@ jobs:
           chmod +x mdbook
           sudo mv mdbook /usr/local/bin/
 
+      - name: Copy logo
+        run: cp docs/logo.png docs-site/src/logo.png
+
       - name: Build docs
         run: mdbook build docs-site
-
-      - name: Copy logo
-        run: cp docs/logo.png docs-site/book/logo.png 2>/dev/null || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
