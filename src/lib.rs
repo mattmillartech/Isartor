@@ -9,6 +9,7 @@ pub mod adapters;
 pub mod anthropic_sse;
 pub mod cli;
 pub mod clients;
+pub mod compression;
 pub mod config;
 pub mod core;
 pub mod demo;

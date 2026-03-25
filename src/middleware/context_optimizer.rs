@@ -71,10 +71,10 @@ pub async fn context_optimizer_middleware(request: Request, next: Next) -> Respo
 
         // ── 4. Record telemetry ───────────────────────────────────────
         tracing::Span::current().record("context.bytes_saved", result.bytes_saved as u64);
-        tracing::Span::current().record("context.strategy", result.strategy);
+        tracing::Span::current().record("context.strategy", result.strategy.as_str());
         tracing::info!(
             bytes_saved = result.bytes_saved,
-            strategy = result.strategy,
+            strategy = result.strategy.as_str(),
             "L2.5: compressed instruction context"
         );
 

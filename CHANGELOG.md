@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **L2.5 Context Optimizer** (#85): New middleware layer between L2 SLM triage and L3 cloud handler that compresses instruction payloads (CLAUDE.md, copilot-instructions.md, skills blocks) before cloud calls. Two strategies:
   - **Session dedup** — hashes instruction content per session; on repeat turns, replaces with a compact hash reference.
   - **Static minify** — strips HTML/XML comments, decorative rules, consecutive blank lines, and Unicode box-drawing markers.
+- **CompressionPipeline** (Isartor-private#79): Refactored L2.5 into a modular, staged pipeline architecture (`src/compression/`). Three built-in stages: `ContentClassifier`, `DedupStage`, `LogCrunchStage`. Custom stages can be added via the `CompressionStage` trait.
 - New config fields: `ISARTOR__ENABLE_CONTEXT_OPTIMIZER` (default: true), `ISARTOR__CONTEXT_OPTIMIZER_DEDUP` (default: true), `ISARTOR__CONTEXT_OPTIMIZER_MINIFY` (default: true).
 - Observability: `x-isartor-context-optimized` response header and `layer2_5_context_optimizer` tracing span with `context.bytes_saved` and `context.strategy` fields.
 

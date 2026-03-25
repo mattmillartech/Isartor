@@ -74,6 +74,7 @@ Provider selection is config-driven in `AppState::new()`.
 - `src/middleware/cache.rs` — L1a exact + L1b semantic cache
 - `src/middleware/slm_triage.rs` — L2 classifier / local-answer short circuit
 - `src/middleware/context_optimizer.rs` — L2.5 instruction dedup + minification
+- `src/compression/` — Modular `CompressionPipeline` with pluggable stages
 
 ### Runtime state / providers
 

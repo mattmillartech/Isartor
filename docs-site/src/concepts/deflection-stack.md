@@ -80,20 +80,33 @@ L2 runs a lightweight language model to classify the prompt's intent. Simple req
 
 ### L2.5 — Context Optimiser
 
-**Algorithm:** Instruction Dedup + Static Minification
+**Algorithm:** CompressionPipeline — Modular staged compression
 
 Agentic coding tools (Copilot, Claude Code, Cursor) send large instruction files
 (CLAUDE.md, copilot-instructions.md, skills blocks) with every turn.  L2.5 detects
 and compresses these payloads before they reach the cloud, saving input tokens on
 every L3 call.
 
-**Two strategies, applied in order:**
+**Pipeline architecture (`src/compression/`):**
 
-1. **Session dedup** — Hashes instruction content per session.  When the same
-   instructions appear on a subsequent turn, they are replaced with a compact
-   reference: `[Context instructions unchanged since turn 1 (hash=…)]`.
-2. **Static minify** — Strips HTML/XML comments, decorative horizontal rules,
-   consecutive blank lines, and Unicode box-drawing decoration.
+L2.5 uses a modular `CompressionPipeline` with pluggable stages that execute in
+order.  Each stage is a stateless `CompressionStage` trait object.  If a stage sets
+`short_circuit = true`, subsequent stages are skipped.
+
+**Built-in stages (run in order):**
+
+1. **ContentClassifier** — Gate stage: detects instruction vs conversational content.
+   Short-circuits on conversational messages so downstream stages skip work.
+2. **DedupStage** — Session-aware cross-turn deduplication.  Hashes instruction
+   content per session; on repeat turns, replaces with a compact hash reference.
+   Short-circuits on dedup hit.
+3. **LogCrunchStage** — Static minification: strips HTML/XML comments, decorative
+   horizontal rules, consecutive blank lines, and Unicode box-drawing decoration.
+
+**Adding custom stages:**
+
+Implement the `CompressionStage` trait and add your stage to the pipeline via
+`build_pipeline()` in `src/core/context_compress.rs`.
 
 **Configuration:**
 
@@ -107,12 +120,12 @@ every L3 call.
 
 - **Instrumented as:** `layer2_5_context_optimizer` span in distributed traces.
 - **Response header:** `x-isartor-context-optimized: bytes_saved=<N>` on optimised requests.
-- Span fields: `context.bytes_saved`, `context.strategy` (none / minify / dedup+minify).
+- Span fields: `context.bytes_saved`, `context.strategy` (e.g. "classifier+dedup", "classifier+log_crunch").
 
 | Mode | Implementation |
 |:-----|:---------------|
-| Minimalist | In-process instruction dedup + minify |
-| Enterprise | In-process instruction dedup + minify |
+| Minimalist | In-process CompressionPipeline (classifier → dedup → log_crunch) |
+| Enterprise | In-process CompressionPipeline (extensible with custom stages) |
 
 ### L3 — Cloud Logic
 
