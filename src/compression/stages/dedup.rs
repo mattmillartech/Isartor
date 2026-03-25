@@ -8,8 +8,8 @@
 // thousands of tokens.  On first-seen, records the hash for future
 // turns.  Short-circuits on dedup hit since the text is replaced.
 
+use crate::compression::cache::hash_instructions;
 use crate::compression::pipeline::{CompressionInput, CompressionStage, StageOutput};
-use crate::core::context_compress::hash_instructions;
 
 /// Cross-turn instruction deduplication stage.
 pub struct DedupStage;
@@ -50,7 +50,7 @@ impl CompressionStage for DedupStage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::context_compress::InstructionCache;
+    use crate::compression::cache::InstructionCache;
 
     #[test]
     fn no_session_scope_passes_through() {

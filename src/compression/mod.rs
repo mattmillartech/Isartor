@@ -8,16 +8,23 @@
 //   - The pipeline executor runs stages in order, threading the
 //     accumulated text through each stage and collecting telemetry.
 //
-// Built-in stages:
-//   - `ContentClassifier`  — detects instruction vs. conversational content
-//   - `DedupStage`         — session-aware cross-turn deduplication
-//   - `LogCrunchStage`     — static minification (comments, decoration, whitespace)
+// Modules:
+//   - `cache`     — InstructionCache (per-session dedup state)
+//   - `pipeline`  — CompressionPipeline executor and stage trait
+//   - `stages`    — Built-in stages (ContentClassifier, Dedup, LogCrunch)
+//   - `optimize`  — Request-body rewriting (JSON extraction + pipeline)
 // ═════════════════════════════════════════════════════════════════════
 
+pub mod cache;
+pub mod optimize;
 pub mod pipeline;
 pub mod stages;
 
+// Re-export key types for ergonomic imports.
+pub use cache::{InstructionCache, hash_instructions};
+pub use optimize::{OptimizeResult, build_pipeline, optimize_request_body};
 pub use pipeline::{
-    CompressionInput, CompressionOutput, CompressionPipeline, StageOutput, StageReport,
+    CompressionInput, CompressionOutput, CompressionPipeline, CompressionStage, StageOutput,
+    StageReport,
 };
 pub use stages::{ContentClassifier, DedupStage, LogCrunchStage};

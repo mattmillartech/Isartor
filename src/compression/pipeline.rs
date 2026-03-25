@@ -32,7 +32,7 @@ pub struct CompressionInput<'a> {
     pub session_scope: Option<&'a str>,
 
     /// Shared dedup cache from `AppState`.
-    pub instruction_cache: &'a crate::core::context_compress::InstructionCache,
+    pub instruction_cache: &'a crate::compression::cache::InstructionCache,
 }
 
 /// Result of a single stage's `process()` call.
@@ -188,7 +188,7 @@ impl Default for CompressionPipeline {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::context_compress::InstructionCache;
+    use crate::compression::cache::InstructionCache;
 
     /// A test stage that uppercases text.
     struct UpperStage;

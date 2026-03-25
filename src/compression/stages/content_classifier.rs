@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn classifier_stage_short_circuits_on_conversational() {
-        use crate::core::context_compress::InstructionCache;
+        use crate::compression::cache::InstructionCache;
         let cache = InstructionCache::new();
         let input = CompressionInput {
             session_scope: None,
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn classifier_stage_passes_instruction_content() {
-        use crate::core::context_compress::InstructionCache;
+        use crate::compression::cache::InstructionCache;
         let cache = InstructionCache::new();
         let input = CompressionInput {
             session_scope: None,

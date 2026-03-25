@@ -97,7 +97,7 @@ impl CompressionStage for LogCrunchStage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::context_compress::InstructionCache;
+    use crate::compression::cache::InstructionCache;
 
     #[test]
     fn strips_single_line_comments() {
