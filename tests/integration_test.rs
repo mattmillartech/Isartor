@@ -250,6 +250,7 @@ async fn body_survives_all_middleware() {
         AppConfig, CacheBackend, CacheMode, ClassifierMode, EmbeddingSidecarSettings,
         InferenceEngineMode, Layer2Settings, RouterBackend,
     };
+    use isartor::core::context_compress::InstructionCache;
     use isartor::handler::chat_handler;
     use isartor::layer1::embeddings::TextEmbedder;
     use isartor::layer1::layer1a_cache::ExactMatchCache;
@@ -315,6 +316,9 @@ async fn body_survives_all_middleware() {
         otel_exporter_endpoint: "http://localhost:4317".into(),
         offline_mode: false,
         proxy_port: "0.0.0.0:8081".into(),
+        enable_context_optimizer: true,
+        context_optimizer_dedup: true,
+        context_optimizer_minify: true,
     });
 
     let state = Arc::new(AppState {
@@ -324,6 +328,7 @@ async fn body_survives_all_middleware() {
         llm_agent: Arc::new(EchoAgent),
         slm_client: Arc::new(SlmClient::new(&config.layer2)),
         text_embedder: Arc::new(TextEmbedder::new().expect("TextEmbedder init")),
+        instruction_cache: Arc::new(InstructionCache::new()),
         config,
         #[cfg(feature = "embedded-inference")]
         embedded_classifier: None,

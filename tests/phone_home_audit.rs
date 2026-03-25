@@ -32,6 +32,7 @@ use isartor::config::{
     AppConfig, CacheBackend, CacheMode, ClassifierMode, EmbeddingSidecarSettings,
     InferenceEngineMode, Layer2Settings, RouterBackend,
 };
+use isartor::core::context_compress::InstructionCache;
 use isartor::handler::chat_handler;
 use isartor::layer1::embeddings::TextEmbedder;
 use isartor::layer1::layer1a_cache::ExactMatchCache;
@@ -110,6 +111,9 @@ fn build_audit_state(
         otel_exporter_endpoint: "http://localhost:4317".into(),
         offline_mode: offline,
         proxy_port: "0.0.0.0:8081".into(),
+        enable_context_optimizer: true,
+        context_optimizer_dedup: true,
+        context_optimizer_minify: true,
     });
 
     let exact_cache = Arc::new(ExactMatchCache::new(NonZeroUsize::new(1_000).unwrap()));
@@ -133,6 +137,7 @@ fn build_audit_state(
         llm_agent: agent,
         slm_client,
         text_embedder,
+        instruction_cache: Arc::new(InstructionCache::new()),
         config,
         #[cfg(feature = "embedded-inference")]
         embedded_classifier: None,

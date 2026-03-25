@@ -216,6 +216,7 @@ mod tests {
 
     use crate::clients::slm::SlmClient;
     use crate::config::{AppConfig, CacheMode, EmbeddingSidecarSettings, Layer2Settings};
+    use crate::core::context_compress::InstructionCache;
     use crate::layer1::embeddings::shared_test_embedder;
     use crate::layer1::layer1a_cache::ExactMatchCache;
     use crate::models::ChatResponse;
@@ -276,6 +277,9 @@ mod tests {
             otel_exporter_endpoint: "http://localhost:4317".into(),
             offline_mode: false,
             proxy_port: "0.0.0.0:8081".into(),
+            enable_context_optimizer: true,
+            context_optimizer_dedup: true,
+            context_optimizer_minify: true,
         });
 
         Arc::new(AppState {
@@ -285,6 +289,7 @@ mod tests {
             llm_agent: Arc::new(MockAgent),
             slm_client: Arc::new(SlmClient::new(&config.layer2)),
             text_embedder: shared_test_embedder(),
+            instruction_cache: Arc::new(InstructionCache::new()),
             config,
             #[cfg(feature = "embedded-inference")]
             embedded_classifier: None,

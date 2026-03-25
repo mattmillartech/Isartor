@@ -30,7 +30,7 @@ Authenticated routes are wired in `src/main.rs` and intentionally go through the
 
 The intended request execution order is:
 
-`body buffer -> monitoring -> auth -> cache -> slm triage -> handler`
+`body buffer -> monitoring -> auth -> cache -> slm triage -> context optimizer -> handler`
 
 Axum middleware wraps inside-out, so the last `.layer(...)` added runs first. Do not reorder casually.
 
@@ -73,6 +73,7 @@ Provider selection is config-driven in `AppState::new()`.
 - `src/middleware/auth.rs` — gateway API key auth
 - `src/middleware/cache.rs` — L1a exact + L1b semantic cache
 - `src/middleware/slm_triage.rs` — L2 classifier / local-answer short circuit
+- `src/middleware/context_optimizer.rs` — L2.5 instruction dedup + minification
 
 ### Runtime state / providers
 
@@ -80,6 +81,7 @@ Provider selection is config-driven in `AppState::new()`.
 - `src/providers/` — L3 providers
 - `src/providers/copilot.rs` — GitHub Copilot-backed L3 provider
 - `src/core/prompt.rs` — stable prompt extraction for cache keys
+- `src/core/context_compress.rs` — L2.5 instruction detection, dedup, minification
 - `src/errors.rs` — gateway error formatting and error-chain handling
 
 ### CONNECT proxy

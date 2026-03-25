@@ -16,6 +16,7 @@ use isartor::config::{
     AppConfig, CacheBackend, CacheMode, ClassifierMode, EmbeddingSidecarSettings,
     InferenceEngineMode, Layer2Settings, RouterBackend,
 };
+use isartor::core::context_compress::InstructionCache;
 use isartor::layer1::layer1a_cache::ExactMatchCache;
 use isartor::state::{AppLlmAgent, AppState};
 use isartor::vector_cache::VectorCache;
@@ -123,6 +124,9 @@ pub fn test_config(mode: CacheMode, sidecar_url: &str) -> Arc<AppConfig> {
         otel_exporter_endpoint: "http://localhost:4317".into(),
         offline_mode: false,
         proxy_port: "0.0.0.0:8081".into(),
+        enable_context_optimizer: true,
+        context_optimizer_dedup: true,
+        context_optimizer_minify: true,
     })
 }
 
@@ -157,6 +161,7 @@ pub fn build_state(
         llm_agent: agent,
         slm_client: Arc::new(SlmClient::new(&config.layer2)),
         text_embedder: embedder,
+        instruction_cache: Arc::new(InstructionCache::new()),
         config,
         #[cfg(feature = "embedded-inference")]
         embedded_classifier: None,

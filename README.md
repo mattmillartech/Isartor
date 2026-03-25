@@ -51,7 +51,7 @@ Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM 
 | **L1a — Exact Cache** | Fast Hashing (`ahash`) | Sub-millisecond duplicate detection. Traps infinite agent loops instantly. | < 1 ms |
 | **L1b — Semantic Cache** | Cosine Similarity (Embeddings) | Computes mathematical meaning via pure-Rust `candle` models (`all-MiniLM-L6-v2`) to catch variations ("Price?" ≈ "Cost?"). | 1–5 ms |
 | **L2 — SLM Router** | Neural Classification (LLM) | Triages intent using an embedded Small Language Model (e.g. Qwen-1.5B) to resolve simple data extraction tasks. | 50–200 ms |
-| **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. | 5–50 ms |
+| **L2.5 — Context Optimiser** | Instruction Dedup + Minify | Compresses repeated instruction files (CLAUDE.md, copilot-instructions.md) via session dedup and static minification to reduce cloud input tokens. | < 1 ms |
 | **L3 — Cloud Logic** | Load Balancing & Retries | Routes surviving complex prompts to OpenAI, Anthropic, or Azure, with built-in fallback resilience. | Network-bound |
 
 Layers 1a and 1b deflect **71% of repetitive agentic traffic** (FAQ/agent loop patterns) and **38% of diverse task traffic** before any neural inference runs. [Full benchmark →](benchmarks/README.md)
@@ -67,7 +67,7 @@ Isartor uses a **Pluggable Trait Provider** pattern (Hexagonal Architecture). Th
 | **L1a Exact Cache** | In-memory LRU (`ahash` + `parking_lot`) | Redis cluster (shared across replicas) |
 | **L1b Semantic Cache** | In-process `candle` BertModel | External TEI sidecar (optional) |
 | **L2 SLM Router** | Embedded `candle` GGUF inference | Remote vLLM / TGI server (GPU pool) |
-| **L2.5 Context Optimiser** | In-process retrieve + rerank (top-K selection) | Distributed rerank (optional TEI / ANN pool) |
+| **L2.5 Context Optimiser** | In-process instruction dedup + minify | In-process instruction dedup + minify |
 | **L3 Cloud Logic** | Direct to OpenAI / Anthropic | Direct to OpenAI / Anthropic |
 
 **Minimalist Mode** — zero external dependencies. Download the binary and run it.

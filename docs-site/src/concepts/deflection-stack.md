@@ -16,7 +16,7 @@ Request ──► L1a Exact Cache ──► L1b Semantic Cache ──► L2 SLM 
 | **L1a — Exact Cache** | Fast Hashing (`ahash`) | Sub-millisecond duplicate detection. Traps infinite agent loops instantly. | < 1 ms |
 | **L1b — Semantic Cache** | Cosine Similarity (Embeddings) | Computes mathematical meaning via pure-Rust `candle` models (`all-MiniLM-L6-v2`) to catch variations ("Price?" ≈ "Cost?"). | 1–5 ms |
 | **L2 — SLM Router** | Neural Classification (LLM) | Triages intent using an embedded Small Language Model (e.g. Qwen-1.5B) to resolve simple data extraction tasks. | 50–200 ms |
-| **L2.5 — Context Optimiser** | Retrieve + Rerank (top-K) | Retrieves and reranks candidate documents to minimise token usage before the cloud call. | 5–50 ms |
+| **L2.5 — Context Optimiser** | Instruction Dedup + Minify | Compresses repeated instruction files (CLAUDE.md, copilot-instructions.md) via session dedup and static minification to reduce cloud input tokens. | < 1 ms |
 | **L3 — Cloud Logic** | Load Balancing & Retries | Routes surviving complex prompts to OpenAI, Anthropic, or Azure, with built-in fallback resilience. | Network-bound |
 
 Layers 1a and 1b deflect **71% of repetitive agentic traffic** (FAQ/agent loop patterns) and **38% of diverse task traffic** before any neural inference runs.
@@ -80,16 +80,39 @@ L2 runs a lightweight language model to classify the prompt's intent. Simple req
 
 ### L2.5 — Context Optimiser
 
-**Algorithm:** Retrieve + Rerank (top-K selection)
+**Algorithm:** Instruction Dedup + Static Minification
 
-L2.5 retrieves and reranks candidate documents or responses to minimise downstream token usage. This layer compresses the context window before forwarding to the cloud LLM, reducing both cost and latency.
+Agentic coding tools (Copilot, Claude Code, Cursor) send large instruction files
+(CLAUDE.md, copilot-instructions.md, skills blocks) with every turn.  L2.5 detects
+and compresses these payloads before they reach the cloud, saving input tokens on
+every L3 call.
 
-- **Instrumented as:** `context_optimise` span in distributed traces.
+**Two strategies, applied in order:**
+
+1. **Session dedup** — Hashes instruction content per session.  When the same
+   instructions appear on a subsequent turn, they are replaced with a compact
+   reference: `[Context instructions unchanged since turn 1 (hash=…)]`.
+2. **Static minify** — Strips HTML/XML comments, decorative horizontal rules,
+   consecutive blank lines, and Unicode box-drawing decoration.
+
+**Configuration:**
+
+| Variable | Default | Description |
+|:---------|:--------|:------------|
+| `ISARTOR__ENABLE_CONTEXT_OPTIMIZER` | `true` | Master switch for L2.5 |
+| `ISARTOR__CONTEXT_OPTIMIZER_DEDUP` | `true` | Enable cross-turn instruction deduplication |
+| `ISARTOR__CONTEXT_OPTIMIZER_MINIFY` | `true` | Enable static minification |
+
+**Observability:**
+
+- **Instrumented as:** `layer2_5_context_optimizer` span in distributed traces.
+- **Response header:** `x-isartor-context-optimized: bytes_saved=<N>` on optimised requests.
+- Span fields: `context.bytes_saved`, `context.strategy` (none / minify / dedup+minify).
 
 | Mode | Implementation |
 |:-----|:---------------|
-| Minimalist | In-process retrieve + rerank (top-K selection) |
-| Enterprise | Distributed rerank (optional TEI / ANN pool) |
+| Minimalist | In-process instruction dedup + minify |
+| Enterprise | In-process instruction dedup + minify |
 
 ### L3 — Cloud Logic
 

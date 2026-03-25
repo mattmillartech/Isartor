@@ -126,6 +126,9 @@ mod tests {
             otel_exporter_endpoint: "http://localhost:4317".into(),
             offline_mode: false,
             proxy_port: "0.0.0.0:8081".into(),
+            enable_context_optimizer: true,
+            context_optimizer_dedup: true,
+            context_optimizer_minify: true,
         }
     }
 

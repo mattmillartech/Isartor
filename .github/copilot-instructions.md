@@ -30,6 +30,7 @@
   - auth
   - Layer 1 cache
   - Layer 2 SLM triage
+  - Layer 2.5 context optimizer
   - Layer 3 handler
 - That order is easy to break because Axum middleware wraps inside-out: the last `.layer(...)` added runs first. `src/main.rs` documents this explicitly and the stack should stay in that order.
 - Public health routes (`/health`, `/healthz`) intentionally bypass the deflection stack. The authenticated routes are `/api/chat`, `/api/v1/chat`, `/v1/chat/completions`, and `/v1/messages`.

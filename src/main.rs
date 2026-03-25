@@ -235,12 +235,13 @@ async fn main() -> anyhow::Result<()> {
     //    `.layer()` call is the *outermost* (first to run).
     //
     //    We want execution order:
-    //      Layer 0 (Auth) → Layer 1 (Cache) → Layer 2 (SLM) → Handler
+    //      Layer 0 (Auth) → Layer 1 (Cache) → Layer 2 (SLM) → Layer 2.5 (Context Optimizer) → Handler
     //
     //    Therefore we add them in reverse:
-    //      .layer(Layer 0)   ← outermost, added last
+    //      .layer(Layer 0)     ← outermost, added last
     //      .layer(Layer 1)
-    //      .layer(Layer 2)   ← innermost, added first
+    //      .layer(Layer 2)
+    //      .layer(Layer 2.5)   ← innermost, added first
     // ------------------------------------------------------------------
     let state_for_ext = app_state.clone();
 
@@ -254,7 +255,11 @@ async fn main() -> anyhow::Result<()> {
             post(handler::openai_chat_completions_handler),
         )
         .route("/v1/messages", post(handler::anthropic_messages_handler))
-        // Layer 2 – SLM triage (innermost, runs last before handler).
+        // Layer 2.5 – Context Optimizer (innermost, runs just before handler).
+        .layer(axum_mw::from_fn(
+            middleware::context_optimizer::context_optimizer_middleware,
+        ))
+        // Layer 2 – SLM triage (runs after cache, before context optimizer).
         .layer(axum_mw::from_fn(
             middleware::slm_triage::slm_triage_middleware,
         ))

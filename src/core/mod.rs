@@ -1,4 +1,5 @@
 pub mod cache_scope;
+pub mod context_compress;
 pub mod ports;
 pub mod prompt;
 pub mod retry;

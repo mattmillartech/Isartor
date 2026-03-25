@@ -360,6 +360,27 @@ pub struct AppConfig {
     /// is available.
     pub enable_slm_router: bool,
 
+    // ── L2.5 Context Optimizer ──────────────────────────────────────
+    /// Enable the L2.5 context optimizer that compresses instruction
+    /// payloads (CLAUDE.md, copilot-instructions.md, etc.) before
+    /// forwarding to L3.  Reduces cloud input tokens in agentic mode.
+    ///
+    /// Set via `ISARTOR__ENABLE_CONTEXT_OPTIMIZER=true`. Default is true.
+    pub enable_context_optimizer: bool,
+
+    /// Enable cross-turn instruction deduplication within a session.
+    /// When the same instruction hash is seen again, it is replaced
+    /// with a compact reference.
+    ///
+    /// Set via `ISARTOR__CONTEXT_OPTIMIZER_DEDUP=true`. Default is true.
+    pub context_optimizer_dedup: bool,
+
+    /// Enable static minification of instruction text (strip comments,
+    /// collapse whitespace, remove decorative rules).
+    ///
+    /// Set via `ISARTOR__CONTEXT_OPTIMIZER_MINIFY=true`. Default is true.
+    pub context_optimizer_minify: bool,
+
     // ── Observability ───────────────────────────────────────────────
     pub enable_monitoring: bool,
     pub otel_exporter_endpoint: String,
@@ -436,6 +457,9 @@ impl AppConfig {
             .set_default("azure_api_version", "2024-08-01-preview")?
             // Observability
             .set_default("enable_slm_router", false)?
+            .set_default("enable_context_optimizer", true)?
+            .set_default("context_optimizer_dedup", true)?
+            .set_default("context_optimizer_minify", true)?
             .set_default("enable_monitoring", false)?
             .set_default("otel_exporter_endpoint", "http://localhost:4317")?
             // Air-gap / offline mode
@@ -706,6 +730,12 @@ mod tests {
             .unwrap()
             .set_default("enable_slm_router", false)
             .unwrap()
+            .set_default("enable_context_optimizer", true)
+            .unwrap()
+            .set_default("context_optimizer_dedup", true)
+            .unwrap()
+            .set_default("context_optimizer_minify", true)
+            .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
             .unwrap()
             .set_default("offline_mode", false)
@@ -746,6 +776,9 @@ mod tests {
         assert_eq!(config.l3_timeout_secs, 120);
         assert!(!config.enable_monitoring);
         assert!(!config.enable_slm_router);
+        assert!(config.enable_context_optimizer);
+        assert!(config.context_optimizer_dedup);
+        assert!(config.context_optimizer_minify);
     }
 
     #[test]
@@ -817,6 +850,12 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("enable_slm_router", false)
+            .unwrap()
+            .set_default("enable_context_optimizer", true)
+            .unwrap()
+            .set_default("context_optimizer_dedup", true)
+            .unwrap()
+            .set_default("context_optimizer_minify", true)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
             .unwrap()
@@ -919,6 +958,12 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("enable_slm_router", false)
+            .unwrap()
+            .set_default("enable_context_optimizer", true)
+            .unwrap()
+            .set_default("context_optimizer_dedup", true)
+            .unwrap()
+            .set_default("context_optimizer_minify", true)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
             .unwrap()
@@ -1026,6 +1071,12 @@ mod tests {
             .set_default("enable_monitoring", false)
             .unwrap()
             .set_default("enable_slm_router", false)
+            .unwrap()
+            .set_default("enable_context_optimizer", true)
+            .unwrap()
+            .set_default("context_optimizer_dedup", true)
+            .unwrap()
+            .set_default("context_optimizer_minify", true)
             .unwrap()
             .set_default("otel_exporter_endpoint", "http://localhost:4317")
             .unwrap()

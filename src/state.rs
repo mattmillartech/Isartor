@@ -14,6 +14,7 @@ use rig::providers::{
 
 use crate::clients::slm::SlmClient;
 use crate::config::AppConfig;
+use crate::core::context_compress::InstructionCache;
 use crate::layer1::embeddings::TextEmbedder;
 use crate::layer1::layer1a_cache::ExactMatchCache;
 use crate::providers::copilot::CopilotAgent;
@@ -81,6 +82,9 @@ pub struct AppState {
     /// In-process sentence embedding model for Layer 1 semantic cache.
     /// Pure-Rust candle BertModel with sentence-transformers/all-MiniLM-L6-v2.
     pub text_embedder: Arc<TextEmbedder>,
+
+    /// L2.5 instruction dedup cache for cross-turn session deduplication.
+    pub instruction_cache: Arc<InstructionCache>,
 
     #[cfg(feature = "embedded-inference")]
     pub embedded_classifier: Option<Arc<crate::services::local_inference::EmbeddedClassifier>>,
@@ -335,6 +339,7 @@ impl AppState {
             llm_agent: agent,
             slm_client,
             text_embedder,
+            instruction_cache: Arc::new(InstructionCache::new()),
             #[cfg(feature = "embedded-inference")]
             embedded_classifier,
         }
@@ -417,6 +422,9 @@ mod tests {
                 model_name: "test-embed".into(),
                 timeout_seconds: 30,
             },
+            enable_context_optimizer: true,
+            context_optimizer_dedup: true,
+            context_optimizer_minify: true,
         })
     }
 
