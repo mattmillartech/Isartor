@@ -600,6 +600,24 @@ jobs:
                     `| **Bytes saved** | **${l25.total_bytes_saved.toLocaleString()}** |`,
                   ].join('\n');
                 }
+
+                // Validation quality comparison
+                const val = c.validation;
+                if (val) {
+                  const icon = val.quality_parity ? '✅' : '⚠️';
+                  const delta = val.isartor_checks_passed - val.baseline_checks_passed;
+                  let deltaStr;
+                  if (delta > 0) deltaStr = `+${delta} (Isartor better)`;
+                  else if (delta < 0) deltaStr = `${delta} (regression)`;
+                  else deltaStr = '0 (parity)';
+                  tokensInfo += [
+                    ``,
+                    `### ${icon} Code Quality Parity`,
+                    `| Metric | Baseline | Isartor | Delta |`,
+                    `|--------|----------|---------|-------|`,
+                    `| Checks passed | ${val.baseline_checks_passed}/${val.total_checks} | ${val.isartor_checks_passed}/${val.total_checks} | ${deltaStr} |`,
+                  ].join('\n');
+                }
               } catch {}
             }
 

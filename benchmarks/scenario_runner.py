@@ -708,6 +708,12 @@ def write_tokens_json(
                 "optimized_requests": result.l2_5_optimized,
                 "total_bytes_saved": result.l2_5_bytes_saved,
             },
+            "validation": {
+                "passed": result.validation_passed,
+                "total_checks": result.validation_total,
+                "checks_passed": result.validation_total - result.validation_failed,
+                "checks_failed": result.validation_failed,
+            },
             "prompts": [
                 {
                     "step": p.step,
@@ -728,11 +734,20 @@ def write_tokens_json(
         is_cloud = isartor.total_cloud_input_tokens + isartor.total_cloud_output_tokens
         saved = bl_cloud - is_cloud
         pct = (saved / bl_cloud * 100) if bl_cloud > 0 else 0
+        bl_passed = baseline.validation_total - baseline.validation_failed
+        is_passed = isartor.validation_total - isartor.validation_failed
         data["comparison"] = {
             "baseline_cloud_tokens": bl_cloud,
             "isartor_cloud_tokens": is_cloud,
             "tokens_saved": saved,
             "savings_pct": round(pct, 1),
+            "validation": {
+                "baseline_checks_passed": bl_passed,
+                "isartor_checks_passed": is_passed,
+                "total_checks": baseline.validation_total,
+                "regression_count": max(0, bl_passed - is_passed),
+                "quality_parity": is_passed >= bl_passed,
+            },
         }
 
     output_path.write_text(json.dumps(data, indent=2) + "\n")
@@ -774,7 +789,8 @@ def write_summary_report(
         if result.l2_5_optimized > 0:
             lines.append(f"| L2.5 context optimized | {result.l2_5_optimized}/{result.total_prompts} requests ({result.l2_5_bytes_saved:,} bytes saved) |")
         lines.append(f"| Errors | {result.errors} |")
-        lines.append(f"| Validation | {'✅ passed' if result.validation_passed else '❌ failed'} ({result.validation_total} checks, {result.validation_failed} failed) |")
+        val_passed_n = result.validation_total - result.validation_failed
+        lines.append(f"| Validation | {val_passed_n}/{result.validation_total} checks passed |")
 
     if baseline and isartor:
         bl_cloud = baseline.total_cloud_input_tokens + baseline.total_cloud_output_tokens
@@ -782,10 +798,21 @@ def write_summary_report(
         saved = bl_cloud - is_cloud
         pct = (saved / bl_cloud * 100) if bl_cloud > 0 else 0
         lines.append("\n## Comparison\n")
-        lines.append(f"| Metric | Baseline | Isartor | Savings |")
-        lines.append(f"|--------|----------|---------|---------|")
-        lines.append(f"| Cloud tokens | {bl_cloud:,} | {is_cloud:,} | {saved:,} ({pct:.0f}%) |")
-        lines.append(f"| Cloud requests | {baseline.l3_hits} | {isartor.l3_hits} | {baseline.l3_hits - isartor.l3_hits} |")
+        lines.append(f"| Metric | Baseline | Isartor | Delta |")
+        lines.append(f"|--------|----------|---------|-------|")
+        lines.append(f"| Cloud tokens | {bl_cloud:,} | {is_cloud:,} | {saved:,} ({pct:.0f}%) saved |")
+        lines.append(f"| Cloud requests | {baseline.l3_hits} | {isartor.l3_hits} | {baseline.l3_hits - isartor.l3_hits} fewer |")
+        bl_val = baseline.validation_total - baseline.validation_failed
+        is_val = isartor.validation_total - isartor.validation_failed
+        val_delta = is_val - bl_val
+        if val_delta > 0:
+            val_delta_str = f"+{val_delta} (Isartor better)"
+        elif val_delta < 0:
+            val_delta_str = f"{val_delta} (regression)"
+        else:
+            val_delta_str = "0 (parity)"
+        parity_icon = "✅" if is_val >= bl_val else "⚠️"
+        lines.append(f"| Validation checks passed | {bl_val}/{baseline.validation_total} | {is_val}/{isartor.validation_total} | {parity_icon} {val_delta_str} |")
 
     lines.append("")
     output_path.write_text("\n".join(lines))
