@@ -155,4 +155,103 @@ mod tests {
         assert!(!out.modified);
         assert!(!out.short_circuit);
     }
+
+    // ── Marker coverage ─────────────────────────────────────────
+
+    #[test]
+    fn detects_copilot_instructions_marker() {
+        let text = "# Copilot Instructions\ncopilot-instructions for this repo.\n".to_string()
+            + &"content ".repeat(40);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_claude_md_marker() {
+        let text = "This is CLAUDE.MD content for the project.\n".to_string()
+            + &"instructions ".repeat(30);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_environment_context_marker() {
+        let text = "<environment_context>\nOS: Linux\nCWD: /home/user\n</environment_context>\n"
+            .to_string()
+            + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_session_context_marker() {
+        let text = "<session_context>\nSession folder: /tmp/session\n</session_context>\n"
+            .to_string()
+            + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_tool_calling_marker() {
+        let text = "<tool_calling>\nYou can call tools.\n</tool_calling>\n".to_string()
+            + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_available_skills_marker() {
+        let text = "<available_skills>\n<skill>pdf</skill>\n</available_skills>\n".to_string()
+            + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_code_change_instructions_marker() {
+        let text = "<code_change_instructions>\n<rules_for_code_changes>Be careful</rules_for_code_changes>\n</code_change_instructions>\n"
+            .to_string() + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn detects_you_are_an_ai_marker() {
+        let text = "You are an AI programming assistant built by GitHub.\n".to_string()
+            + &"Be helpful and precise. ".repeat(20);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    // ── Edge cases ──────────────────────────────────────────────
+
+    #[test]
+    fn exactly_200_bytes_without_markers_is_conversational() {
+        let text = "a".repeat(200);
+        assert_eq!(
+            ContentClassifier::classify(&text),
+            ContentKind::Conversational
+        );
+    }
+
+    #[test]
+    fn exactly_199_bytes_is_conversational() {
+        let text = "a".repeat(199);
+        assert_eq!(
+            ContentClassifier::classify(&text),
+            ContentKind::Conversational
+        );
+    }
+
+    #[test]
+    fn empty_string_is_conversational() {
+        assert_eq!(ContentClassifier::classify(""), ContentKind::Conversational);
+    }
+
+    #[test]
+    fn case_insensitive_marker_detection() {
+        let text = "YOU ARE AN AI assistant for this project.\n".to_string() + &"x ".repeat(100);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
+
+    #[test]
+    fn marker_in_middle_of_text_detected() {
+        let text = "Some preamble text. ".repeat(5)
+            + "<custom_instructions>payload</custom_instructions>"
+            + &" More text.".repeat(10);
+        assert_eq!(ContentClassifier::classify(&text), ContentKind::Instruction);
+    }
 }

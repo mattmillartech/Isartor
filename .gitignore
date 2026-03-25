@@ -20,3 +20,7 @@ benchmarks/results/roi_dryrun.json
 benchmarks/results/claude_code_*.json
 benchmarks/results/claude_code_roi_report.md
 benchmarks/results/scenario_run/
+
+# Local config with secrets
+isartor.toml
+isartor.toml.*

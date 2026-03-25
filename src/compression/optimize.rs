@@ -236,4 +236,223 @@ mod tests {
         assert!(result.modified);
         assert!(result.bytes_saved > 0);
     }
+
+    // ── Malformed / edge-case inputs ────────────────────────────
+
+    #[test]
+    fn malformed_json_returns_unmodified() {
+        let cache = InstructionCache::new();
+        let garbage = b"this is not json {{{";
+
+        let result = optimize_request_body(garbage, None, &cache, true, true);
+        assert!(!result.modified);
+        assert_eq!(result.bytes_saved, 0);
+        assert_eq!(result.strategy, "none");
+        assert_eq!(result.body.as_ref(), garbage);
+    }
+
+    #[test]
+    fn empty_body_returns_unmodified() {
+        let cache = InstructionCache::new();
+
+        let result = optimize_request_body(b"", None, &cache, true, true);
+        assert!(!result.modified);
+        assert_eq!(result.body.as_ref(), b"");
+    }
+
+    #[test]
+    fn json_without_system_or_messages_unmodified() {
+        let cache = InstructionCache::new();
+        let body = serde_json::json!({
+            "model": "gpt-4.1",
+            "prompt": "Just a prompt"
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        let result = optimize_request_body(&body_bytes, None, &cache, true, true);
+        assert!(!result.modified);
+    }
+
+    #[test]
+    fn user_messages_not_modified() {
+        let cache = InstructionCache::new();
+        let long_user_msg = "Tell me about ".to_string() + &"topic ".repeat(200);
+        let body = serde_json::json!({
+            "model": "gpt-4.1",
+            "messages": [
+                {"role": "user", "content": long_user_msg}
+            ]
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        let result = optimize_request_body(&body_bytes, None, &cache, true, true);
+        assert!(!result.modified, "User messages should never be modified");
+    }
+
+    // ── Anthropic array system field ────────────────────────────
+
+    #[test]
+    fn anthropic_system_array_format() {
+        let cache = InstructionCache::new();
+        let long_text =
+            "You are an AI assistant. <custom_instructions>Rules here.</custom_instructions>\n\
+            <!-- tracking -->\n---\n═══\n\n\nDo things.\n"
+                .to_string()
+                + &"padding ".repeat(50);
+        let body = serde_json::json!({
+            "model": "claude-sonnet-4-20250514",
+            "system": [
+                {"type": "text", "text": long_text}
+            ],
+            "messages": [{"role": "user", "content": "Hi"}]
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        let result = optimize_request_body(&body_bytes, None, &cache, false, true);
+        assert!(result.modified);
+
+        // Verify the result is still an array format
+        let doc: Value = serde_json::from_slice(&result.body).unwrap();
+        assert!(
+            doc["system"].is_array(),
+            "Anthropic system should remain array format"
+        );
+        assert!(doc["system"][0]["type"].as_str() == Some("text"));
+    }
+
+    // ── Pipeline config variations ──────────────────────────────
+
+    #[test]
+    fn dedup_disabled_only_minifies() {
+        let cache = InstructionCache::new();
+        let instructions = "You are an AI assistant. <custom_instructions>Long instructions.</custom_instructions>\n\
+            <!-- comment -->\n---\n═══\n\nContent.\n".to_string() + &"padding ".repeat(50);
+        let body = serde_json::json!({
+            "model": "gpt-4.1",
+            "system": &instructions,
+            "messages": [{"role": "user", "content": "Hello"}]
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        // Turn 1
+        let r1 = optimize_request_body(&body_bytes, Some("sess-no-dedup"), &cache, false, true);
+        assert!(r1.modified);
+        assert!(r1.strategy.contains("log_crunch"));
+
+        // Turn 2: no dedup since disabled
+        let r2 = optimize_request_body(&body_bytes, Some("sess-no-dedup"), &cache, false, true);
+        assert!(r2.modified);
+        assert!(!r2.strategy.contains("dedup"), "Dedup should be disabled");
+    }
+
+    #[test]
+    fn minify_disabled_only_dedups() {
+        let cache = InstructionCache::new();
+        let instructions = "You are an AI assistant. <custom_instructions>Long instructions.</custom_instructions>\n\
+            <!-- comment -->\n---\n═══\n\nContent.\n".to_string() + &"padding ".repeat(50);
+        let body = serde_json::json!({
+            "model": "gpt-4.1",
+            "system": &instructions,
+            "messages": [{"role": "user", "content": "Hello"}]
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        // Turn 1: register (no minify, no dedup on first pass)
+        let _r1 = optimize_request_body(&body_bytes, Some("sess-no-minify"), &cache, true, false);
+        // Content classifier may pass but log_crunch is disabled, so it depends on content
+        // Turn 2: should dedup
+        let r2 = optimize_request_body(&body_bytes, Some("sess-no-minify"), &cache, true, false);
+        assert!(r2.modified);
+        assert!(r2.strategy.contains("dedup"));
+        assert!(!r2.strategy.contains("log_crunch"));
+    }
+
+    #[test]
+    fn both_disabled_no_modification() {
+        let cache = InstructionCache::new();
+        let instructions =
+            "You are an AI assistant. <custom_instructions>Instructions.</custom_instructions>\n\
+            <!-- comment -->\nContent.\n"
+                .to_string()
+                + &"padding ".repeat(50);
+        let body = serde_json::json!({
+            "model": "gpt-4.1",
+            "system": &instructions,
+            "messages": [{"role": "user", "content": "Hello"}]
+        });
+        let body_bytes = serde_json::to_vec(&body).unwrap();
+
+        // Content classifier is always present but only gates; without dedup/minify no changes
+        let result = optimize_request_body(&body_bytes, None, &cache, false, false);
+        assert!(!result.modified);
+        assert_eq!(result.strategy, "none");
+    }
+
+    // ── build_pipeline ──────────────────────────────────────────
+
+    #[test]
+    fn build_pipeline_all_enabled() {
+        let p = build_pipeline(true, true);
+        assert_eq!(p.len(), 3); // classifier + dedup + log_crunch
+    }
+
+    #[test]
+    fn build_pipeline_none_enabled() {
+        let p = build_pipeline(false, false);
+        assert_eq!(p.len(), 1); // only classifier
+    }
+
+    #[test]
+    fn build_pipeline_dedup_only() {
+        let p = build_pipeline(true, false);
+        assert_eq!(p.len(), 2); // classifier + dedup
+    }
+
+    #[test]
+    fn build_pipeline_minify_only() {
+        let p = build_pipeline(false, true);
+        assert_eq!(p.len(), 2); // classifier + log_crunch
+    }
+
+    // ── extract_text_from_value ─────────────────────────────────
+
+    #[test]
+    fn extract_text_from_string_value() {
+        let val = Value::String("hello".into());
+        assert_eq!(extract_text_from_value(&val), Some("hello".into()));
+    }
+
+    #[test]
+    fn extract_text_from_content_blocks() {
+        let val = serde_json::json!([
+            {"type": "text", "text": "first"},
+            {"type": "text", "text": "second"}
+        ]);
+        assert_eq!(extract_text_from_value(&val), Some("first\nsecond".into()));
+    }
+
+    #[test]
+    fn extract_text_from_empty_array() {
+        let val = serde_json::json!([]);
+        assert_eq!(extract_text_from_value(&val), None);
+    }
+
+    #[test]
+    fn extract_text_from_non_text_blocks() {
+        let val = serde_json::json!([
+            {"type": "image", "url": "http://example.com/img.png"}
+        ]);
+        assert_eq!(extract_text_from_value(&val), None);
+    }
+
+    #[test]
+    fn extract_text_from_null() {
+        assert_eq!(extract_text_from_value(&Value::Null), None);
+    }
+
+    #[test]
+    fn extract_text_from_number() {
+        let val = serde_json::json!(42);
+        assert_eq!(extract_text_from_value(&val), None);
+    }
 }

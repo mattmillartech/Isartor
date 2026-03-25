@@ -313,4 +313,184 @@ mod tests {
         let out = pipeline.execute(&input, "hello");
         assert_eq!(out.strategy, "upper+upper");
     }
+
+    // ── Pipeline construction / metadata ─────────────────────────
+
+    #[test]
+    fn pipeline_len_and_is_empty() {
+        let p = CompressionPipeline::new();
+        assert!(p.is_empty());
+        assert_eq!(p.len(), 0);
+
+        let p = p.add_stage(Box::new(NoopStage));
+        assert!(!p.is_empty());
+        assert_eq!(p.len(), 1);
+
+        let p = p.add_stage(Box::new(UpperStage));
+        assert_eq!(p.len(), 2);
+    }
+
+    #[test]
+    fn default_pipeline_is_empty() {
+        let p = CompressionPipeline::default();
+        assert!(p.is_empty());
+    }
+
+    // ── Telemetry / StageReport ─────────────────────────────────
+
+    #[test]
+    fn stage_reports_include_duration() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: None,
+            instruction_cache: &cache,
+        };
+        let pipeline = CompressionPipeline::new()
+            .add_stage(Box::new(UpperStage))
+            .add_stage(Box::new(NoopStage));
+        let out = pipeline.execute(&input, "hello");
+        assert_eq!(out.stages.len(), 2);
+        // Duration should be >= 0 (can't assert exact value)
+        for report in &out.stages {
+            assert!(!report.name.is_empty());
+        }
+        assert!(out.total_duration_us < 1_000_000); // < 1s for trivial work
+    }
+
+    #[test]
+    fn bytes_saved_accumulates_across_stages() {
+        /// Stage that trims a fixed prefix.
+        struct TrimStage;
+        impl CompressionStage for TrimStage {
+            fn name(&self) -> &'static str {
+                "trim"
+            }
+            fn process(&self, _input: &CompressionInput, text: &str) -> StageOutput {
+                if let Some(trimmed) = text.strip_prefix("PREFIX_") {
+                    StageOutput {
+                        text: trimmed.to_string(),
+                        modified: true,
+                        bytes_saved: 7,
+                        short_circuit: false,
+                    }
+                } else {
+                    StageOutput::unchanged(text)
+                }
+            }
+        }
+
+        /// Stage that removes trailing exclamation marks.
+        struct StripBangStage;
+        impl CompressionStage for StripBangStage {
+            fn name(&self) -> &'static str {
+                "strip_bang"
+            }
+            fn process(&self, _input: &CompressionInput, text: &str) -> StageOutput {
+                let trimmed = text.trim_end_matches('!');
+                let saved = text.len() - trimmed.len();
+                if saved > 0 {
+                    StageOutput {
+                        text: trimmed.to_string(),
+                        modified: true,
+                        bytes_saved: saved,
+                        short_circuit: false,
+                    }
+                } else {
+                    StageOutput::unchanged(text)
+                }
+            }
+        }
+
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: None,
+            instruction_cache: &cache,
+        };
+        let pipeline = CompressionPipeline::new()
+            .add_stage(Box::new(TrimStage))
+            .add_stage(Box::new(StripBangStage));
+        let out = pipeline.execute(&input, "PREFIX_hello!!!");
+        assert_eq!(out.text, "hello");
+        assert_eq!(out.total_bytes_saved, 7 + 3); // 7 prefix + 3 bangs
+        assert_eq!(out.strategy, "trim+strip_bang");
+    }
+
+    // ── Composability / ordering ────────────────────────────────
+
+    #[test]
+    fn pipeline_stage_ordering_matters() {
+        /// Wraps text in brackets.
+        struct BracketStage;
+        impl CompressionStage for BracketStage {
+            fn name(&self) -> &'static str {
+                "bracket"
+            }
+            fn process(&self, _input: &CompressionInput, text: &str) -> StageOutput {
+                StageOutput {
+                    text: format!("[{text}]"),
+                    modified: true,
+                    bytes_saved: 0,
+                    short_circuit: false,
+                }
+            }
+        }
+
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: None,
+            instruction_cache: &cache,
+        };
+
+        // upper then bracket
+        let p1 = CompressionPipeline::new()
+            .add_stage(Box::new(UpperStage))
+            .add_stage(Box::new(BracketStage));
+        assert_eq!(p1.execute(&input, "hi").text, "[HI]");
+
+        // bracket then upper
+        let p2 = CompressionPipeline::new()
+            .add_stage(Box::new(BracketStage))
+            .add_stage(Box::new(UpperStage));
+        assert_eq!(p2.execute(&input, "hi").text, "[HI]");
+    }
+
+    #[test]
+    fn empty_text_input() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: None,
+            instruction_cache: &cache,
+        };
+        let pipeline = CompressionPipeline::new().add_stage(Box::new(UpperStage));
+        let out = pipeline.execute(&input, "");
+        assert_eq!(out.text, "");
+        assert!(out.modified); // UpperStage always reports modified
+    }
+
+    #[test]
+    fn short_circuit_at_second_stage_reports_first_two() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: None,
+            instruction_cache: &cache,
+        };
+        let pipeline = CompressionPipeline::new()
+            .add_stage(Box::new(UpperStage))
+            .add_stage(Box::new(ShortCircuitStage))
+            .add_stage(Box::new(NoopStage)); // should not run
+        let out = pipeline.execute(&input, "hello");
+        assert_eq!(out.stages.len(), 2);
+        assert_eq!(out.stages[0].name, "upper");
+        assert_eq!(out.stages[1].name, "short_circuit");
+        assert!(out.stages[1].short_circuited);
+    }
+
+    #[test]
+    fn stage_output_unchanged_helper() {
+        let out = StageOutput::unchanged("test data");
+        assert_eq!(out.text, "test data");
+        assert!(!out.modified);
+        assert_eq!(out.bytes_saved, 0);
+        assert!(!out.short_circuit);
+    }
 }

@@ -124,4 +124,94 @@ mod tests {
         assert!(out.modified);
         assert!(out.short_circuit);
     }
+
+    // ── Session isolation ───────────────────────────────────────
+
+    #[test]
+    fn different_sessions_are_independent() {
+        let cache = InstructionCache::new();
+        let stage = DedupStage;
+        let text = "Shared instructions. ".repeat(20);
+
+        // Session A: register
+        let input_a = CompressionInput {
+            session_scope: Some("sess-A"),
+            instruction_cache: &cache,
+        };
+        stage.process(&input_a, &text);
+
+        // Session B: same text, but first time in this session — no dedup
+        let input_b = CompressionInput {
+            session_scope: Some("sess-B"),
+            instruction_cache: &cache,
+        };
+        let out = stage.process(&input_b, &text);
+        assert!(!out.modified, "Different session should not dedup");
+    }
+
+    #[test]
+    fn dedup_reference_is_compact() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: Some("sess-compact"),
+            instruction_cache: &cache,
+        };
+        let stage = DedupStage;
+
+        let text = "Very long instruction block. ".repeat(100); // ~2900 chars
+        stage.process(&input, &text); // register
+
+        let out = stage.process(&input, &text); // dedup
+        assert!(out.modified);
+        assert!(
+            out.text.len() < 200,
+            "Dedup reference should be compact, got {} chars",
+            out.text.len()
+        );
+        assert!(
+            out.bytes_saved > text.len() / 2,
+            "Should save more than half the original"
+        );
+    }
+
+    #[test]
+    fn empty_text_with_session_scope() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: Some("sess-empty"),
+            instruction_cache: &cache,
+        };
+        let stage = DedupStage;
+
+        // First time
+        let out1 = stage.process(&input, "");
+        assert!(!out1.modified);
+
+        // Second time — should still dedup (empty is a valid instruction hash)
+        let out2 = stage.process(&input, "");
+        assert!(out2.modified);
+        assert!(out2.short_circuit);
+    }
+
+    #[test]
+    fn multiple_turns_increment_turn_counter() {
+        let cache = InstructionCache::new();
+        let input = CompressionInput {
+            session_scope: Some("sess-turns"),
+            instruction_cache: &cache,
+        };
+        let stage = DedupStage;
+        let text = "Repeating instruction block. ".repeat(20);
+
+        // Turn 1: register
+        stage.process(&input, &text);
+
+        // Turn 2: dedup
+        let out2 = stage.process(&input, &text);
+        assert!(out2.text.contains("turn=2"));
+
+        // Turn 3: dedup again with incremented turn
+        let out3 = stage.process(&input, &text);
+        assert!(out3.text.contains("turn=3"));
+    }
 }
