@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.2] - 2026-03-26
+
+### Fixed
+- **`isartor update` GitHub fallback**: when the GitHub releases API returns `403`, `401`, or `429`, Isartor now falls back to the public `releases/latest` redirect and still resolves the newest tag.
+
 ## [2026.3.1] - 2026-03-26
 
 ### Changed
