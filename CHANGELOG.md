@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.51] - 2026-03-26
+
+### Added
+- **OpenClaw integration guide**: Full documentation for `isartor connect openclaw` in docs-site.
+- **Antigravity integration guide**: New docs-site page for Antigravity connector.
+- **Comparative validation in benchmarks**: Scenario runner now shows code quality parity between baseline and Isartor workspaces instead of absolute pass/fail.
+- **L2.5 stats in benchmark reports**: Issue comments now include context optimizer hit rate and bytes saved.
+- **Mermaid diagram support**: docs-site renders Mermaid diagrams via CDN-loaded renderer.
+
+### Changed
+- **README rewritten for go-live**: Centered hero, Quick Start first, benchmark results table, integration matrix.
+- **Documentation cleanup**: Removed 11 superseded docs, consolidated logo source, updated deployment guides.
+- **CI/CD pipeline cleanup**: Removed superseded `claude-code-benchmark.yml` (−953 lines), `roi-report.yml`, and `integration-test.yml`. Trimmed stale validate-harness steps from `benchmark.yml`.
+
+### Fixed
+- **Benchmark fixture runner**: Inject system instructions for proper L2.5 testing.
+- **Scenario runner**: Non-fatal push_workspace on permission denied.
+- **docs CI**: Logo copy before mdBook build (not after).
+
 ## [0.1.50] - 2026-03-25
 
 ### Added
