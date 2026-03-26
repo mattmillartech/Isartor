@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.0] - 2026-03-26
+
+Isartor's first CalVer release — marking go-live readiness.
+
+### Changed
+- Version scheme switched from SemVer (`0.1.x`) to CalVer (`YYYY.M.PATCH`).
+
 ## [0.1.51] - 2026-03-26
 
 ### Added
