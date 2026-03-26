@@ -104,10 +104,11 @@ If gateway auth is enabled, also add:
 |------|---------|-----------|
 | [GitHub Copilot CLI](copilot.md) | `isartor connect copilot` | MCP server (cache-only) |
 | [GitHub Copilot in VS Code](copilot-vscode.md) | `isartor connect copilot-vscode` | Managed `settings.json` debug overrides |
-| [OpenClaw](openclaw.md) | `isartor connect openclaw` | Provider patch for `openclaw.json` |
+| [OpenClaw](openclaw.md) | `isartor connect openclaw` | Managed OpenClaw provider config (`openclaw.json`) |
 | [OpenCode](opencode.md) | `isartor connect opencode` | Global provider + auth config |
 | [Claude Code + GitHub Copilot](claude-copilot.md) | `isartor connect claude-copilot` | Claude base URL override + Copilot-backed L3 |
 | [Claude Code](claude-code.md) | `isartor connect claude` | Base URL override |
+| [Claude Desktop](claude-desktop.md) | `isartor connect claude-desktop` | Managed local MCP registration (`isartor mcp`) |
 | [Cursor IDE](cursor.md) | `isartor connect cursor` | Base URL override + MCP |
 | [OpenAI Codex CLI](codex.md) | `isartor connect codex` | Base URL override |
 | [Gemini CLI](gemini.md) | `isartor connect gemini` | Base URL override |

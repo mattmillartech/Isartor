@@ -1,77 +1,104 @@
 # OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a personal AI assistant that
-runs on your own devices and connects to channels like WhatsApp, Telegram, Slack,
-Discord, and more. Isartor integrates as an OpenAI-compatible provider so all of
-OpenClaw's LLM calls pass through the Deflection Stack — cache hits are resolved
-locally and context is compressed before reaching the cloud.
+[OpenClaw](https://github.com/openclaw/openclaw) is a self-hosted AI assistant that can connect chat apps and agent workflows to LLM providers. The pragmatic Isartor setup is to register Isartor as a custom OpenAI-compatible OpenClaw provider and let OpenClaw use that provider as its primary model path.
 
-## Step-by-step setup
+This is similar in spirit to the LiteLLM integration docs, but with one important difference:
+
+- **LiteLLM** is a multi-model gateway and catalog
+- **Isartor** is a prompt firewall / gateway that currently exposes the upstream model you configured in Isartor itself
+
+So the best OpenClaw UX is: **configure the model in Isartor first, then let `isartor connect openclaw` mirror that model into OpenClaw's provider config.**
+
+## Pragmatic setup
 
 ```bash
-# 1. Start Isartor
-isartor up
+# 1. Configure Isartor's upstream provider/model
+isartor set-key -p groq
+isartor check
 
-# 2. Generate the OpenClaw provider patch
+# 2. Start Isartor
+isartor up --detach
+
+# 3. Make sure OpenClaw is onboarded
+openclaw onboard --install-daemon
+
+# 4. Register Isartor as an OpenClaw provider
 isartor connect openclaw
 
-# 3. Apply the patch to your openclaw.json (see below)
+# 5. Verify OpenClaw sees the provider/model
+openclaw models status
 
-# 4. Restart OpenClaw
-openclaw gateway --port 18789
+# 6. Smoke test a prompt
+openclaw agent --agent main -m "Hello from OpenClaw through Isartor"
 ```
 
-## How it works
+## What `isartor connect openclaw` does
 
-1. `isartor connect openclaw` auto-detects your `openclaw.json` at:
-   - `~/.openclaw/openclaw.json` (default)
-   - `./openclaw.json` (current directory)
-   - or a custom path via `--config-path`
-2. It generates a JSON5 provider block and writes it to
-   `~/.isartor/patches/openclaw.patch.json5`
-3. You paste the block into the `models.providers` section of your `openclaw.json`
-4. OpenClaw then routes LLM calls through Isartor as an OpenAI-compatible provider
+It writes or updates your OpenClaw config (default: `~/.openclaw/openclaw.json`) with:
 
-## Applying the patch
+1. `models.providers.isartor`
+2. a single managed model entry matching Isartor's current upstream model
+3. `agents.defaults.model.primary = "isartor/<your-model>"`
 
-After running `isartor connect openclaw`, add the following to the
-`models.providers` block in your `openclaw.json`:
+Example generated provider block:
 
 ```json5
-"isartor": {
-  baseUrl: "http://localhost:8080/v1",
-  apiKey: "isartor-local",
-  api: "openai-chat",
-},
-```
-
-Then set your agent model to use the `isartor/` prefix:
-
-```json5
-agent: {
-  model: {
-    primary: "isartor/gpt-4o",
-    fallbacks: ["isartor/claude-sonnet-4-6", "isartor/groq/llama-3.1-8b-instant"]
+models: {
+  providers: {
+    isartor: {
+      baseUrl: "http://localhost:8080/v1",
+      apiKey: "isartor-local",
+      api: "openai-completions",
+      models: [
+        {
+          id: "openai/gpt-oss-120b",
+          name: "Isartor (openai/gpt-oss-120b)"
+        }
+      ]
+    }
   }
 }
 ```
+
+And the default model becomes:
+
+```json5
+agents: {
+  defaults: {
+    model: {
+      primary: "isartor/openai/gpt-oss-120b"
+    }
+  }
+}
+```
+
+## Why this is the best fit
+
+The upstream LiteLLM/OpenClaw docs assume the gateway can expose a multi-model catalog and route among many providers behind one endpoint.
+
+Isartor is different today:
+
+- OpenClaw talks to Isartor over the OpenAI-compatible `/v1/chat/completions` surface
+- Isartor forwards using **its configured upstream provider/model**
+- OpenClaw model refs should therefore mirror the model currently configured in Isartor
+
+That means:
+
+- if you change Isartor's provider/model later, rerun `isartor connect openclaw`
+- do **not** expect `isartor/openai/...` and `isartor/anthropic/...` fallbacks to behave like LiteLLM provider switching unless Isartor itself grows multi-provider routing later
 
 ## Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model` | `gpt-4o` | Primary model routed through Isartor |
-| `--fallbacks` | `claude-sonnet-4-6,groq/llama-3.1-8b-instant` | Comma-separated fallback models |
+| `--model` | Isartor's configured upstream model | Override the single model ID exposed to OpenClaw |
 | `--config-path` | auto-detected | Path to `openclaw.json` |
 | `--gateway-api-key` | (none) | Gateway key if auth is enabled |
 
 ## Files written
 
-- `~/.isartor/patches/openclaw.patch.json5` — provider block to paste into `openclaw.json`
-
-Backups (if `openclaw.json` is found):
-
-- `openclaw.json.isartor-backup`
+- `~/.openclaw/openclaw.json` — managed OpenClaw provider config
+- `openclaw.json.isartor-backup` — backup, when a prior config existed
 
 ## Disconnecting
 
@@ -79,23 +106,43 @@ Backups (if `openclaw.json` is found):
 isartor connect openclaw --disconnect
 ```
 
-This removes the patch file. Restore your original `openclaw.json` from the backup
-if needed.
+If a backup exists, Isartor restores it. Otherwise it removes only the managed `models.providers.isartor` entry and related `isartor/...` default-model references.
+
+## Recommended user workflow
+
+For day-to-day use:
+
+1. Pick your upstream provider with `isartor set-key`
+2. Validate with `isartor check`
+3. Keep Isartor running with `isartor up --detach`
+4. Let OpenClaw use `isartor/<configured-model>` as its primary model
+5. Use `openclaw models status` whenever you want to confirm what OpenClaw currently sees
+
+If you later switch Isartor from, for example, Groq to OpenAI or Azure:
+
+```bash
+isartor set-key -p openai
+isartor check
+isartor connect openclaw
+```
+
+That refreshes OpenClaw's provider model to match the new Isartor config.
 
 ## What Isartor does for OpenClaw
 
 | Benefit | How |
 |---------|-----|
-| **Cache agent loops** | OpenClaw's agent sends the same system instructions + context every turn. L1a exact cache traps repeated prompts instantly. |
-| **Semantic dedup** | L1b catches paraphrased follow-ups ("summarize this" ≈ "give me a summary") without an extra cloud call. |
-| **Context compression** | L2.5 deduplicates and minifies repeated instruction payloads per session, reducing input tokens sent to the cloud. |
-| **Observability** | `isartor stats --by-tool` shows OpenClaw-specific cache hits, latency, and token savings. |
+| **Cache repeated agent prompts** | OpenClaw often repeats the same context and system framing. L1a exact cache resolves those instantly. |
+| **Catch paraphrases** | L1b semantic cache resolves similar follow-ups locally when safe. |
+| **Compress repeated instructions** | L2.5 trims repeated context before cloud fallback. |
+| **Keep one stable gateway URL** | OpenClaw only needs `isartor/<model>` while Isartor owns the upstream provider configuration. |
+| **Observability** | `isartor stats --by-tool` lets you track OpenClaw cache hits, latency, and savings. |
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| OpenClaw cannot reach the provider | Isartor not running | Run `isartor up` first |
-| Model not found | Missing `isartor/` prefix | Use `isartor/gpt-4o`, not `gpt-4o` |
+| OpenClaw cannot reach the provider | Isartor not running | Run `isartor up --detach` first |
+| OpenClaw still shows the old model | Isartor model changed after initial connect | Re-run `isartor connect openclaw` |
 | Auth errors (401) | Gateway auth enabled | Re-run with `--gateway-api-key` or set `ISARTOR__GATEWAY_API_KEY` |
-| Patch file not found | First run needed | Run `isartor connect openclaw` |
+| "Model is not allowed" | OpenClaw allowlist still excludes the managed model | Re-run `isartor connect openclaw` so the managed model is re-added to the allowlist |

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.5] - 2026-03-26
+
+### Added
+- **Claude Desktop connector**: `isartor connect claude-desktop` now registers Isartor as a local MCP server in Claude Desktop, with backup and disconnect support.
+
+### Changed
+- **Claude Desktop documentation**: README and docs-site now include a first-class Claude Desktop integration guide built on `isartor mcp`.
+- **OpenClaw connector refactor**: `isartor connect openclaw` now writes a managed OpenClaw provider config directly instead of generating a manual patch file, and the docs now describe the pragmatic Isartor-first workflow.
+
 ## [2026.3.4] - 2026-03-26
 
 ### Changed
@@ -372,7 +381,13 @@ Isartor's first CalVer release — marking go-live readiness.
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v0.1.31...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v2026.3.5...HEAD
+[2026.3.5]: https://github.com/isartor-ai/Isartor/compare/v2026.3.4...v2026.3.5
+[2026.3.4]: https://github.com/isartor-ai/Isartor/compare/v2026.3.3...v2026.3.4
+[2026.3.3]: https://github.com/isartor-ai/Isartor/compare/v2026.3.2...v2026.3.3
+[2026.3.2]: https://github.com/isartor-ai/Isartor/compare/v2026.3.1...v2026.3.2
+[2026.3.1]: https://github.com/isartor-ai/Isartor/compare/v2026.3.0...v2026.3.1
+[2026.3.0]: https://github.com/isartor-ai/Isartor/compare/v0.1.51...v2026.3.0
 [0.1.31]: https://github.com/isartor-ai/Isartor/compare/v0.1.30...v0.1.31
 [0.1.30]: https://github.com/isartor-ai/Isartor/compare/v0.1.29...v0.1.30
 [0.1.29]: https://github.com/isartor-ai/Isartor/compare/v0.1.28...v0.1.29

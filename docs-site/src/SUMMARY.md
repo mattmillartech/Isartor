@@ -22,6 +22,7 @@
 - [OpenCode](integrations/opencode.md)
 - [Claude Code + GitHub Copilot](integrations/claude-copilot.md)
 - [Claude Code](integrations/claude-code.md)
+- [Claude Desktop](integrations/claude-desktop.md)
 - [Cursor IDE](integrations/cursor.md)
 - [OpenAI Codex CLI](integrations/codex.md)
 - [Gemini CLI](integrations/gemini.md)

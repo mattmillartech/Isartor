@@ -3,7 +3,7 @@
 //! Reads the PID from `~/.isartor/isartor.pid` and terminates the
 //! running Isartor server (SIGTERM on Unix, TerminateProcess on Windows).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -17,19 +17,27 @@ pub fn pid_file_path() -> Result<PathBuf> {
 /// Write the current process PID to `~/.isartor/isartor.pid`.
 pub fn write_pid_file() -> Result<()> {
     let path = pid_file_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, std::process::id().to_string())?;
-    tracing::debug!(path = %path.display(), pid = std::process::id(), "PID file written");
-    Ok(())
+    write_pid_file_at(&path)
 }
 
 /// Remove the PID file (best-effort, called on shutdown).
 pub fn remove_pid_file() {
     if let Ok(path) = pid_file_path() {
-        let _ = std::fs::remove_file(path);
+        remove_pid_file_at(&path);
     }
+}
+
+fn write_pid_file_at(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, std::process::id().to_string())?;
+    tracing::debug!(path = %path.display(), pid = std::process::id(), "PID file written");
+    Ok(())
+}
+
+fn remove_pid_file_at(path: &Path) {
+    let _ = std::fs::remove_file(path);
 }
 
 // ── Platform helpers ─────────────────────────────────────────────────
@@ -155,6 +163,7 @@ pub fn handle_stop(args: StopArgs) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn pid_file_path_returns_expected_location() {
@@ -164,15 +173,17 @@ mod tests {
 
     #[test]
     fn write_and_remove_pid_file() {
-        write_pid_file().unwrap();
-        let path = pid_file_path().unwrap();
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(".isartor").join("isartor.pid");
+
+        write_pid_file_at(&path).unwrap();
         assert!(path.exists());
 
         let content = std::fs::read_to_string(&path).unwrap();
         let pid: u32 = content.trim().parse().unwrap();
         assert_eq!(pid, std::process::id());
 
-        remove_pid_file();
+        remove_pid_file_at(&path);
         assert!(!path.exists());
     }
 
@@ -195,7 +206,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn stop_with_stale_pid_file() {
-        let path = PathBuf::from("/tmp/isartor-stale-test.pid");
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("isartor-stale-test.pid");
         std::fs::write(&path, "999999999").unwrap();
 
         let args = StopArgs {

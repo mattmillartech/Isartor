@@ -1,6 +1,7 @@
 pub mod antigravity;
 pub mod claude;
 pub mod claude_copilot;
+pub mod claude_desktop;
 pub mod codex;
 pub mod copilot;
 pub mod copilot_vscode;
@@ -37,6 +38,9 @@ pub enum ConnectClient {
 
     /// Connect Claude Code to Isartor
     Claude(claude::ClaudeArgs),
+
+    /// Connect Claude Desktop to Isartor
+    ClaudeDesktop(claude_desktop::ClaudeDesktopArgs),
 
     /// Connect Claude Code to GitHub Copilot through Isartor
     ClaudeCopilot(claude_copilot::ClaudeCopilotArgs),
@@ -324,6 +328,19 @@ pub async fn handle_connect(args: ConnectArgs) -> anyhow::Result<()> {
             let result = claude::handle_claude_connect(a).await;
             print_connect_result(&result);
             update_state("claude", &gateway, base.disconnect, base.dry_run, &result);
+        }
+        ConnectClient::ClaudeDesktop(a) => {
+            let base = a.base.clone();
+            let gateway = base.effective_gateway_url();
+            let result = claude_desktop::handle_claude_desktop_connect(a).await;
+            print_connect_result(&result);
+            update_state(
+                "claude-desktop",
+                &gateway,
+                base.disconnect,
+                base.dry_run,
+                &result,
+            );
         }
         ConnectClient::ClaudeCopilot(a) => {
             let base = a.base.clone();

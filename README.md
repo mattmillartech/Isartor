@@ -40,6 +40,7 @@ isartor demo
 isartor up
 isartor connect copilot          # GitHub Copilot CLI
 isartor connect claude           # Claude Code
+isartor connect claude-desktop   # Claude Desktop
 isartor connect cursor           # Cursor IDE
 isartor connect openclaw         # OpenClaw
 isartor connect codex            # OpenAI Codex CLI
@@ -138,8 +139,9 @@ One command connects your favourite tool. No proxy, no MITM, no CA certificates.
 |:-----|:--------|:----------|
 | **GitHub Copilot CLI** | `isartor connect copilot` | MCP server (stdio or HTTP/SSE at `/mcp/`) |
 | **GitHub Copilot in VS Code** | `isartor connect copilot-vscode` | Managed `settings.json` debug overrides |
-| **OpenClaw** | `isartor connect openclaw` | Provider patch for `openclaw.json` |
+| **OpenClaw** | `isartor connect openclaw` | Managed OpenClaw provider config (`openclaw.json`) |
 | **Claude Code** | `isartor connect claude` | `ANTHROPIC_BASE_URL` override |
+| **Claude Desktop** | `isartor connect claude-desktop` | Managed local MCP registration (`isartor mcp`) |
 | **Claude Code + Copilot** | `isartor connect claude-copilot` | Claude base URL + Copilot-backed L3 |
 | **Cursor IDE** | `isartor connect cursor` | Base URL + MCP registration at `/mcp/` |
 | **OpenAI Codex CLI** | `isartor connect codex` | `OPENAI_BASE_URL` override |

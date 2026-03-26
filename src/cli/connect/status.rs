@@ -233,7 +233,7 @@ fn integration_method(client: &str) -> &'static str {
         "copilot-vscode" => "VS Code settings.json debug overrides",
         "claude" => "base URL override (ANTHROPIC_BASE_URL)",
         "claude-copilot" => "base URL override + GitHub Copilot L3 provider",
-        "openclaw" => "provider base URL (OpenAI-compatible)",
+        "openclaw" => "managed OpenClaw provider config (OpenAI-compatible)",
         "opencode" => "OpenCode provider config (@ai-sdk/openai-compatible)",
         "antigravity" => "base URL override (OpenAI-compatible)",
         _ => "unknown",
