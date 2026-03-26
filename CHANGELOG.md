@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.3] - 2026-03-26
+
+### Changed
+- **`isartor check` command**: renamed the long `connectivity-check` diagnostic command to `check`, while keeping `ping` and `connectivity-check` as compatibility aliases.
+- **Provider-aware connectivity audit**: `isartor check` now shows the configured provider, model, masked API key, provider-specific endpoint, and a real ping result for Groq and other Layer 3 providers.
+
 ## [2026.3.2] - 2026-03-26
 
 ### Fixed

@@ -55,10 +55,10 @@ Complete these steps before deploying Isartor in an air-gapped environment:
    - To run fully local (cache + SLM only) with no outbound attempts, enable offline mode **and** leave `ISARTOR__EXTERNAL_LLM_API_KEY` unset.
    - To route L3 to a self-hosted model, see [Connecting to an Internal LLM](#connecting-to-an-internal-llm).
 
-5. **Run `isartor connectivity-check`** to confirm zero external connections:
+5. **Run `isartor check`** to confirm zero external connections:
 
    ```bash
-   isartor connectivity-check
+   isartor check
    ```
 
    Expected output (with offline mode active):
