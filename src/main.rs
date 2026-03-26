@@ -143,9 +143,7 @@ async fn main() -> anyhow::Result<()> {
     let first_run = isartor::first_run::is_first_run();
     let demo_mode = first_run;
 
-    if first_run {
-        isartor::first_run::print_welcome_banner();
-    }
+    isartor::first_run::print_startup_banner(first_run);
 
     // Print offline mode startup status.
     if config.offline_mode {

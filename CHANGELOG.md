@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.1] - 2026-03-26
+
+### Changed
+- **Startup banner refresh**: `isartor up` now shows the new Isartor ASCII gate on every startup, not only on first run.
+- **First-run banner behavior**: startup messaging now keeps first-run demo copy only for true first runs and shows a normal gateway-ready footer otherwise.
+
 ## [2026.3.0] - 2026-03-26
 
 Isartor's first CalVer release — marking go-live readiness.
