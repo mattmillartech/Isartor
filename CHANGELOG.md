@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.3.7] - 2026-03-27
+
+### Changed
+- **README terminal walkthrough**: the README now includes a generated terminal-style GIF that shows the first-run flow (`install` → `isartor up` → `isartor demo`) plus a clearer “How It Works” section for new users.
+- **README positioning refresh**: added community/distribution badges, a factual comparison table, and conservative trusted-by language to improve go-live clarity without overstating adoption.
+
 ## [2026.3.6] - 2026-03-27
 
 ### Added
@@ -389,7 +395,8 @@ Isartor's first CalVer release — marking go-live readiness.
 ### Fixed
 - Build musl targets with runner-based zigbuild (no Docker container)
 
-[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v2026.3.6...HEAD
+[Unreleased]: https://github.com/isartor-ai/Isartor/compare/v2026.3.7...HEAD
+[2026.3.7]: https://github.com/isartor-ai/Isartor/compare/v2026.3.6...v2026.3.7
 [2026.3.6]: https://github.com/isartor-ai/Isartor/compare/v2026.3.5...v2026.3.6
 [2026.3.5]: https://github.com/isartor-ai/Isartor/compare/v2026.3.4...v2026.3.5
 [2026.3.4]: https://github.com/isartor-ai/Isartor/compare/v2026.3.3...v2026.3.4

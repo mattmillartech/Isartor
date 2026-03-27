@@ -17,6 +17,9 @@
   <a href="https://codecov.io/gh/isartor-ai/Isartor"><img src="https://codecov.io/gh/isartor-ai/Isartor/branch/main/graph/badge.svg" alt="codecov" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License" /></a>
   <a href="https://github.com/isartor-ai/Isartor/releases/latest"><img src="https://img.shields.io/github/v/release/isartor-ai/Isartor?display_name=tag&sort=semver" alt="Release" /></a>
+  <a href="https://github.com/isartor-ai/Isartor/releases"><img src="https://img.shields.io/github/downloads/isartor-ai/Isartor/total?label=downloads&logo=github" alt="Downloads" /></a>
+  <a href="https://discord.com/channels/1487002530113257492/1487002530700464142"><img src="https://img.shields.io/discord/1487002530113257492?label=discord&logo=discord" alt="Discord" /></a>
+  <a href="https://github.com/orgs/isartor-ai/packages/container/package/isartor"><img src="https://img.shields.io/badge/container-ghcr.io%2Fisartor--ai%2Fisartor-2496ED?logo=docker&logoColor=white" alt="Container" /></a>
   <a href="https://isartor-ai.github.io/Isartor/"><img src="https://img.shields.io/badge/docs-isartor--ai.github.io-blue" alt="Docs" /></a>
 </p>
 
@@ -50,6 +53,16 @@ isartor connect claude-copilot   # Claude Code + GitHub Copilot
 
 The best first-run path is: **install → set key → check → demo → connect tool**. `isartor demo` still works without an API key, but with a configured provider it now also shows a live upstream round-trip before the cache replay.
 
+## See Isartor in the Terminal
+
+<p align="center">
+  <img src="docs/readme-demo.gif" alt="Animated terminal walkthrough showing install, isartor up, and isartor demo" width="900">
+</p>
+
+<p align="center">
+  <sub>Terminal walkthrough: install Isartor, start the gateway, then run the demo showcase.</sub>
+</p>
+
 <details>
 <summary><strong>More install options</strong> (Docker · Windows · Build from source)</summary>
 
@@ -79,6 +92,29 @@ cd Isartor && cargo build --release
 ```
 
 </details>
+
+---
+
+## How It Works
+
+Three steps, one binary:
+
+| Step | What you do | What Isartor does |
+|:-----|:------------|:------------------|
+| **1. Install** | `curl ... | sh` and run `isartor demo` | Installs a local gateway and shows the cache-first deflection flow in your terminal |
+| **2. Connect** | `isartor up --detach` then `isartor connect copilot|claude|cursor|openclaw` | Rewrites the client-side config so your tool points at Isartor instead of the raw provider |
+| **3. Save** | Keep using your tool normally | Deflects duplicate prompts, traps semantic repeats, compresses repeated instructions, and sends only the hard requests to the cloud |
+
+If you already know your provider credentials, the day-one path is:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/isartor-ai/Isartor/main/install.sh | sh
+isartor set-key -p groq
+isartor check
+isartor demo
+isartor up --detach
+isartor connect copilot
+```
 
 ---
 
@@ -153,6 +189,26 @@ One command connects your favourite tool. No proxy, no MITM, no CA certificates.
 
 ---
 
+## How Isartor Compares
+
+This is the honest version: Isartor is not trying to be every kind of AI platform. It is optimized for **local-first prompt deflection in front of coding tools and OpenAI-compatible clients**.
+
+| Product | Public positioning | Best fit | Where Isartor differs |
+|:--------|:-------------------|:---------|:----------------------|
+| **Isartor** | Open-source prompt firewall and local deflection gateway | Teams that want redundant prompt traffic resolved locally before it hits the cloud | Single Rust binary, client connectors, exact+semantic cache, context compression, coding-agent-first workflow |
+| **LiteLLM** | Open-source multi-provider LLM gateway with routing, fallbacks, and spend tracking | Teams that want one OpenAI-style API across many providers and models | LiteLLM is gateway/routing-first; Isartor is deflection-first and focuses on reducing traffic before cloud routing |
+| **Portkey** | AI gateway, observability, guardrails, governance, and prompt management platform | Teams that want a broader managed production control plane for GenAI apps | Portkey emphasizes platform governance and observability; Isartor emphasizes local cache/SLM deflection in a self-hosted binary |
+| **Bifrost** | Enterprise AI gateway with governance, guardrails, and MCP gateway positioning | Teams that want enterprise control, security, and production gateway features | Bifrost is enterprise-gateway oriented; Isartor is optimized for prompt firewall behavior and lightweight local deployment |
+| **Helicone** | Routing, debugging, and observability for AI apps | Teams that primarily want analytics, traces, and request inspection | Helicone is observability-first; Isartor is designed to stop repeat traffic from leaving your perimeter in the first place |
+
+The short version:
+
+- choose **Isartor** when your problem is repeated coding-agent traffic, prompt firewalling, and local-first savings
+- choose **LiteLLM** when your main problem is multi-provider routing and unified model access
+- choose **Portkey / Bifrost / Helicone** when your center of gravity is broader gateway control, observability, or enterprise governance
+
+---
+
 ## Drop-In for Any OpenAI SDK
 
 Isartor is fully OpenAI-compatible and Anthropic-compatible. Point any existing SDK at it by changing one URL:
@@ -218,6 +274,18 @@ export ISARTOR__OTEL_EXPORTER_ENDPOINT=http://otel-collector:4317
 ```
 
 [Observability guide →](https://isartor-ai.github.io/Isartor/observability/metrics-tracing.html)
+
+---
+
+## Trusted By
+
+Today, Isartor is dogfooded by the **Isartor AI engineering team** for:
+
+- connector development across Copilot, Claude, Cursor, and OpenClaw flows
+- benchmark and release validation runs
+- local-first prompt deflection testing during coding-agent workflows
+
+We are keeping this section intentionally conservative until external teams explicitly opt in to being listed.
 
 ---
 
