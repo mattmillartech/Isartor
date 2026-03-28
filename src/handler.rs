@@ -129,10 +129,12 @@ async fn send_openai_passthrough_request(
 
     let mut payload = serde_json::to_value(request)?;
     if let Value::Object(ref mut map) = payload {
-        map.insert(
-            "model".to_string(),
-            Value::String(configured_openai_model_id(state)),
-        );
+        if !map.contains_key("model") || map["model"].as_str().map(|m| m.is_empty()).unwrap_or(true) {
+            map.insert(
+                "model".to_string(),
+                Value::String(configured_openai_model_id(state)),
+            );
+        }
     }
 
     let mut request_builder = state
