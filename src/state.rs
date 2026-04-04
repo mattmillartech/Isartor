@@ -18,6 +18,8 @@ use crate::core::context_compress::InstructionCache;
 use crate::layer1::embeddings::TextEmbedder;
 use crate::layer1::layer1a_cache::ExactMatchCache;
 use crate::providers::copilot::CopilotAgent;
+use crate::providers::generic_openai::GenericOpenAIAgent;
+use crate::config::DEFAULT_OPENAI_CHAT_COMPLETIONS_URL;
 use crate::vector_cache::VectorCache;
 
 // ── Multi-provider Agent Wrapper ─────────────────────────────────────
@@ -291,13 +293,27 @@ impl AppState {
                 )
             }
             _ => {
-                build_rig_agent!(
-                    "openai",
-                    openai::Client,
-                    config.external_llm_api_key,
-                    &config.external_llm_model,
-                    rig_http_client
-                )
+                // If a custom URL is configured (not the default OpenAI endpoint),
+                // use a generic HTTP agent that respects the external_llm_url.
+                // This supports OpenAI-compatible endpoints like LiteLLM.
+                let url = config.external_llm_url.trim();
+                if !url.is_empty() && url != DEFAULT_OPENAI_CHAT_COMPLETIONS_URL {
+                    Arc::new(GenericOpenAIAgent::new(
+                        http_client.clone(),
+                        url.to_string(),
+                        config.external_llm_api_key.clone(),
+                        config.external_llm_model.clone(),
+                        l3_timeout,
+                    ))
+                } else {
+                    build_rig_agent!(
+                        "openai",
+                        openai::Client,
+                        config.external_llm_api_key,
+                        &config.external_llm_model,
+                        rig_http_client
+                    )
+                }
             }
         };
 

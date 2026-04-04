@@ -450,22 +450,10 @@ pub async fn openai_chat_completions_handler(request: Request) -> impl IntoRespo
         let provider_name = state.llm_agent.provider_name();
         tracing::info!(provider = provider_name, "OpenAI compat: forwarding to LLM");
 
-        if has_tooling(&body_bytes) {
-            let request = match serde_json::from_slice::<OpenAiChatRequest>(&body_bytes) {
-                Ok(request) => request,
-                Err(err) => {
-                    let mut resp = (
-                        StatusCode::BAD_REQUEST,
-                        Json(serde_json::json!({
-                            "error": {"message": format!("invalid OpenAI request body: {err}")}
-                        })),
-                    )
-                        .into_response();
-                    resp.extensions_mut().insert(FinalLayer::Cloud);
-                    return resp;
-                }
-            };
-
+        // ── Model passthrough: always forward the full OpenAI request ──
+        // The original model field from the request is preserved; if empty,
+        // send_openai_passthrough_request fills in external_llm_model.
+        if let Ok(request) = serde_json::from_slice::<OpenAiChatRequest>(&body_bytes) {
             let retry_cfg = RetryConfig::cloud_llm();
             let provider_for_err = provider_name.to_string();
             let state_for_retry = state.clone();
@@ -522,6 +510,7 @@ pub async fn openai_chat_completions_handler(request: Request) -> impl IntoRespo
                 }
             }
         }
+        // Fall through to legacy agent.chat() path if request parsing fails
 
         let prompt = extract_prompt(&body_bytes);
 
@@ -604,6 +593,7 @@ pub async fn openai_chat_completions_handler(request: Request) -> impl IntoRespo
 }
 
 /// OpenAI-compatible models endpoint — `GET /v1/models`.
+/// OpenAI-compatible models endpoint — `GET /v1/models`.
 pub async fn openai_models_handler(request: Request) -> impl IntoResponse {
     let state = match request.extensions().get::<Arc<AppState>>() {
         Some(s) => s.clone(),
@@ -617,6 +607,24 @@ pub async fn openai_models_handler(request: Request) -> impl IntoResponse {
                 .into_response();
         }
     };
+
+    // Proxy LiteLLM models when using LiteLLM
+    let external_url = &state.config.external_llm_url;
+    if external_url.contains("192.168.1.56:4000") || external_url.contains("litellm") {
+        match reqwest::Client::new()
+            .get(&format!("{}/v1/models", external_url.split("/v1").next().unwrap_or(external_url).trim_end_matches('/')))
+            .header("Authorization", format!("Bearer {}", &state.config.external_llm_api_key))
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if let Ok(models) = resp.json::<serde_json::Value>().await {
+                    return (StatusCode::OK, Json(models)).into_response();
+                }
+            }
+            Err(_) => {} // Fall through to default
+        }
+    }
 
     (StatusCode::OK, Json(configured_openai_models(&state))).into_response()
 }
