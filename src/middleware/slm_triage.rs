@@ -10,7 +10,7 @@ use axum::{
 };
 use tracing::{Instrument, info_span};
 
-use crate::core::prompt::{extract_prompt, extract_semantic_key};
+use crate::core::prompt::extract_semantic_key;
 use crate::middleware::body_buffer::BufferedBody;
 use crate::models::{
     ChatResponse, FinalLayer, OpenAiChatChoice, OpenAiChatResponse, OpenAiMessage,
