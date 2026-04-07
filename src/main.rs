@@ -50,6 +50,9 @@ enum Commands {
     Init,
     /// Replay bundled demo prompts against the local cache layers and print a deflection table.
     Demo,
+    /// Guided terminal setup for provider, Layer 2, connectors, and verification.
+    #[command(visible_alias = "configure")]
+    Setup(isartor::cli::setup::SetupArgs),
     /// Audit outbound provider connectivity and configuration.
     #[command(visible_alias = "ping", visible_alias = "connectivity-check")]
     Check,
@@ -57,12 +60,16 @@ enum Commands {
     Connect(isartor::cli::connect::ConnectArgs),
     /// Set the API key for an LLM provider (writes to isartor.toml or env file).
     SetKey(isartor::cli::set_key::SetKeyArgs),
+    /// Define a request-time model alias that resolves to a real provider model.
+    SetAlias(isartor::cli::set_key::SetAliasArgs),
     /// Stop a running Isartor server.
     Stop(isartor::cli::stop::StopArgs),
     /// Update Isartor to the latest release.
     Update(isartor::cli::update::UpdateArgs),
     /// Show prompt totals, layer hits, and recent request routing.
     Stats(isartor::cli::stats::StatsArgs),
+    /// Show the configured provider state and last-known in-memory health.
+    Providers(isartor::cli::providers::ProvidersArgs),
     /// Show or follow the detached Isartor log file.
     Logs(isartor::cli::logs::LogsArgs),
     /// Start a Model Context Protocol (MCP) stdio server for Copilot CLI integration.
@@ -100,6 +107,10 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Demo) => {
             return run_standalone_demo().await;
         }
+        Some(Commands::Setup(args)) => {
+            isartor::cli::setup::handle_setup(args).await?;
+            return Ok(());
+        }
         Some(Commands::Check) => {
             return run_connectivity_check().await;
         }
@@ -109,6 +120,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::SetKey(args)) => {
             isartor::cli::set_key::handle_set_key(args).await?;
+            return Ok(());
+        }
+        Some(Commands::SetAlias(args)) => {
+            isartor::cli::set_key::handle_set_alias(args).await?;
             return Ok(());
         }
         Some(Commands::Stop(args)) => {
@@ -121,6 +136,10 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Stats(args)) => {
             isartor::cli::stats::handle_stats(args).await?;
+            return Ok(());
+        }
+        Some(Commands::Providers(args)) => {
+            isartor::cli::providers::handle_providers(args).await?;
             return Ok(());
         }
         Some(Commands::Logs(args)) => {
@@ -175,6 +194,24 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("  │  ✓ License validation:  offline HMAC check           │");
         eprintln!("  └──────────────────────────────────────────────────────┘");
         eprintln!();
+    }
+
+    if config.enable_request_logs {
+        let request_log_path = isartor::core::request_logger::request_log_file_path(&config)?;
+        eprintln!();
+        eprintln!("  ┌──────────────────────────────────────────────────────┐");
+        eprintln!("  │  [Isartor] REQUEST BODY LOGGING ENABLED              │");
+        eprintln!("  ├──────────────────────────────────────────────────────┤");
+        eprintln!("  │  ⚠ Logs may contain sensitive prompt data            │");
+        eprintln!("  │  ⚠ Auth headers are redacted, but review access      │");
+        eprintln!("  │  Path: {:<45}│", request_log_path.display());
+        eprintln!("  │  View: isartor logs --requests                       │");
+        eprintln!("  └──────────────────────────────────────────────────────┘");
+        eprintln!();
+        tracing::warn!(
+            request_log_path = %request_log_path.display(),
+            "Request body logging is enabled — logs may contain sensitive prompt data"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -323,6 +360,7 @@ async fn main() -> anyhow::Result<()> {
             "/debug/stats/agents",
             get(isartor::visibility::agent_stats_handler),
         )
+        .route("/debug/providers", get(handler::provider_status_handler))
         .layer(axum_mw::from_fn(middleware::auth::auth_middleware))
         .layer(axum_mw::from_fn(
             middleware::monitoring::root_monitoring_middleware,
@@ -707,7 +745,7 @@ struct L3ConnectivityTarget {
 #[derive(Clone, Copy)]
 enum L3PingKind {
     OpenAiModels,
-    AzureDeployments,
+    AzureChatCompletions,
     AnthropicMessages,
     GeminiModelInfo,
     CopilotSessionToken,
@@ -739,12 +777,13 @@ fn l3_connectivity_target(config: &AppConfig) -> L3ConnectivityTarget {
             model,
             masked_key: mask_secret(&config.external_llm_api_key),
             endpoint: format!(
-                "{}/openai/deployments?api-version={}",
+                "{}/openai/deployments/{}/chat/completions?api-version={}",
                 config.external_llm_url.trim_end_matches('/'),
+                config.azure_deployment_id,
                 config.azure_api_version
             ),
             external: !isartor::core::is_internal_endpoint(&config.external_llm_url),
-            ping_kind: L3PingKind::AzureDeployments,
+            ping_kind: L3PingKind::AzureChatCompletions,
             requires_api_key: true,
         },
         LlmProvider::Anthropic => L3ConnectivityTarget {
@@ -830,6 +869,42 @@ fn l3_connectivity_target(config: &AppConfig) -> L3ConnectivityTarget {
             model,
             &config.external_llm_api_key,
             "https://api.groq.com/openai/v1/models",
+        ),
+        LlmProvider::Cerebras => openai_models_target(
+            "cerebras",
+            model,
+            &config.external_llm_api_key,
+            "https://api.cerebras.ai/v1/models",
+        ),
+        LlmProvider::Nebius => openai_models_target(
+            "nebius",
+            model,
+            &config.external_llm_api_key,
+            "https://api.studio.nebius.ai/v1/models",
+        ),
+        LlmProvider::Siliconflow => openai_models_target(
+            "siliconflow",
+            model,
+            &config.external_llm_api_key,
+            "https://api.siliconflow.cn/v1/models",
+        ),
+        LlmProvider::Fireworks => openai_models_target(
+            "fireworks",
+            model,
+            &config.external_llm_api_key,
+            "https://api.fireworks.ai/inference/v1/models",
+        ),
+        LlmProvider::Nvidia => openai_models_target(
+            "nvidia",
+            model,
+            &config.external_llm_api_key,
+            "https://integrate.api.nvidia.com/v1/models",
+        ),
+        LlmProvider::Chutes => openai_models_target(
+            "chutes",
+            model,
+            &config.external_llm_api_key,
+            "https://llm.chutes.ai/v1/models",
         ),
         LlmProvider::Deepseek => openai_models_target(
             "deepseek",
@@ -939,10 +1014,15 @@ async fn ping_l3_provider(config: &AppConfig, target: &L3ConnectivityTarget) -> 
             .await
             .map_err(anyhow::Error::from)
             .and_then(summarize_ping_response),
-        L3PingKind::AzureDeployments => client
-            .get(&target.endpoint)
+        L3PingKind::AzureChatCompletions => client
+            .post(&target.endpoint)
             .header("api-key", &config.external_llm_api_key)
+            .header(CONTENT_TYPE, "application/json")
             .header(ACCEPT, "application/json")
+            .json(&json!({
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 1
+            }))
             .send()
             .await
             .map_err(anyhow::Error::from)
@@ -1060,5 +1140,37 @@ mod tests {
         assert_eq!(target.model, "llama-3.1-8b-instant");
         assert_eq!(target.masked_key, "gsk_…5678");
         assert_eq!(target.endpoint, "https://api.groq.com/openai/v1/models");
+    }
+
+    #[test]
+    fn connectivity_target_uses_cerebras_endpoint_and_model() {
+        let mut config = AppConfig::load_with_validation(false).unwrap();
+        config.llm_provider = LlmProvider::Cerebras;
+        config.external_llm_model = "llama-3.3-70b".into();
+        config.external_llm_api_key = "cb_testkey12345678".into();
+
+        let target = l3_connectivity_target(&config);
+        assert_eq!(target.provider, "cerebras");
+        assert_eq!(target.model, "llama-3.3-70b");
+        assert_eq!(target.endpoint, "https://api.cerebras.ai/v1/models");
+    }
+
+    #[test]
+    fn connectivity_target_uses_azure_chat_completions_endpoint() {
+        let mut config = AppConfig::load_with_validation(false).unwrap();
+        config.llm_provider = LlmProvider::Azure;
+        config.external_llm_url = "https://example.openai.azure.com".into();
+        config.azure_deployment_id = "gpt-4o-mini".into();
+        config.azure_api_version = "2024-08-01-preview".into();
+        config.external_llm_model = "gpt-4o-mini".into();
+        config.external_llm_api_key = "azure-secret-key".into();
+
+        let target = l3_connectivity_target(&config);
+        assert_eq!(target.provider, "azure");
+        assert_eq!(target.model, "gpt-4o-mini (deployment; model gpt-4o-mini)");
+        assert_eq!(
+            target.endpoint,
+            "https://example.openai.azure.com/openai/deployments/gpt-4o-mini/chat/completions?api-version=2024-08-01-preview"
+        );
     }
 }
